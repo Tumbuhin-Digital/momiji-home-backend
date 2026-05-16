@@ -1,0 +1,34 @@
+# Security & Environment
+.env
+.env.local
+
+# Agent/IDE Specific
+.agent
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Binaries
+server
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+bin/
+
+# Dependencies
+vendor/
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Project Specific Documentation/Large Files
+Technical PRD (2).pdf
+/docs
+
+# Logs
+*.log

@@ -1,0 +1,11 @@
+default: &default
+  adapter: postgresql
+  pool: 10
+  idle_timeout: 5m
+  connection_timeout: 10s
+
+development:
+  <<: *default
+
+production:
+  <<: *default
