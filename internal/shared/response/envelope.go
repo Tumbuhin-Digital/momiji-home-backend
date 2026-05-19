@@ -1,28 +1,31 @@
 package response
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 )
 
 type Envelope struct {
-	Status        string      `json:"status"` // "success" or "error"
-	Data          interface{} `json:"data,omitempty"`
-	Meta          interface{} `json:"meta,omitempty"`
-	Error         *ErrorBlock `json:"error,omitempty"`
+	Status    string      `json:"status"` // "success" or "error"
+	Message   string      `json:"message,omitempty"`
+	Data      interface{} `json:"data,omitempty"`
+	Error     *ErrorBlock `json:"error,omitempty"`
+	Timestamp string      `json:"timestamp"`
 }
 
 type ErrorBlock struct {
-	Code          string `json:"code"`
-	Message       string `json:"message"`
-	CorrelationID string `json:"correlationId,omitempty"`
+	Code    string      `json:"code"`
+	Details interface{} `json:"details,omitempty"`
 }
 
-func Success(c *fiber.Ctx, status int, data interface{}, meta interface{}) error {
+func Success(c *fiber.Ctx, status int, message string, data interface{}) error {
 	return c.Status(status).JSON(Envelope{
-		Status: "success",
-		Data:   data,
-		Meta:   meta,
+		Status:    "success",
+		Message:   message,
+		Data:      data,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
@@ -32,14 +35,13 @@ func Error(c *fiber.Ctx, err error) error {
 		appErr = apierror.ErrInternal
 	}
 
-	correlationID, _ := c.Locals("correlation_id").(string)
-
 	return c.Status(appErr.Status).JSON(Envelope{
-		Status: "error",
+		Status:  "error",
+		Message: appErr.Message,
 		Error: &ErrorBlock{
-			Code:          appErr.Code,
-			Message:       appErr.Message,
-			CorrelationID: correlationID,
+			Code:    appErr.Code,
+			Details: appErr.Details,
 		},
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	})
 }
