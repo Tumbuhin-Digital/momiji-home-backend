@@ -1,6 +1,7 @@
 CREATE TABLE carts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id),
+    session_id VARCHAR(128) UNIQUE,
+    user_id UUID REFERENCES users(id),
     shopify_checkout_id VARCHAR(128),
     status VARCHAR(20) NOT NULL DEFAULT 'active',
     metadata JSONB,
@@ -11,9 +12,9 @@ CREATE TABLE carts (
 
 CREATE TABLE cart_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    cart_id UUID NOT NULL REFERENCES carts(id),
+    cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
     shopify_variant_id VARCHAR(64) NOT NULL,
-    type VARCHAR(16) NOT NULL,
+    fulfillment_type VARCHAR(32) NOT NULL,
     quantity INT NOT NULL CHECK (quantity > 0),
     unit_price NUMERIC(12,2) NOT NULL
 );
