@@ -13,6 +13,7 @@ type Config struct {
 	App      AppConfig
 	Database DatabaseConfig
 	Auth     AuthConfig
+	Shopify  ShopifyConfig
 }
 
 type AppConfig struct {
@@ -44,6 +45,13 @@ type AuthConfig struct {
 	} `yaml:"rate_limit"`
 	Secret        string
 	RefreshSecret string
+}
+
+type ShopifyConfig struct {
+	StoreDomain     string
+	AdminAPIToken   string
+	StorefrontToken string
+	WebhookSecret   string
 }
 
 func Load() (*Config, error) {
@@ -84,6 +92,11 @@ func Load() (*Config, error) {
 	}
 	cfg.Auth.Secret = os.Getenv("JWT_SECRET")
 	cfg.Auth.RefreshSecret = os.Getenv("JWT_REFRESH_SECRET")
+
+	cfg.Shopify.StoreDomain = os.Getenv("SHOPIFY_STORE_DOMAIN")
+	cfg.Shopify.AdminAPIToken = os.Getenv("SHOPIFY_ADMIN_API_TOKEN")
+	cfg.Shopify.StorefrontToken = os.Getenv("SHOPIFY_STOREFRONT_TOKEN")
+	cfg.Shopify.WebhookSecret = os.Getenv("SHOPIFY_WEBHOOK_SECRET")
 
 	return cfg, nil
 }
