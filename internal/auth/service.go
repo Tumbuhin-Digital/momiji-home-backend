@@ -12,9 +12,9 @@ import (
 )
 
 type AuthService interface {
-	Register(ctx context.Context, req RegisterRequest) (*TokenResponse, error)
 	Login(ctx context.Context, req LoginRequest) (*TokenResponse, error)
 	Refresh(ctx context.Context, refreshToken string) (*TokenResponse, error)
+	GetMe(ctx context.Context, userID string) (*UserResponse, error)
 }
 
 type service struct {
@@ -26,31 +26,21 @@ func NewAuthService(store AuthStore, cfg config.AuthConfig) AuthService {
 	return &service{store: store, cfg: cfg}
 }
 
-func (s *service) Register(ctx context.Context, req RegisterRequest) (*TokenResponse, error) {
-	existing, err := s.store.GetUserByEmail(ctx, req.Email)
+func (s *service) GetMe(ctx context.Context, userID string) (*UserResponse, error) {
+	user, err := s.store.GetUserByID(ctx, userID)
 	if err != nil {
 		return nil, apierror.ErrInternal
 	}
-	if existing != nil {
-		return nil, apierror.New(http.StatusConflict, "EMAIL_EXISTS", "Email is already registered")
+	if user == nil {
+		return nil, apierror.ErrNotFound
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), s.cfg.JWT.BcryptCost)
-	if err != nil {
-		return nil, apierror.ErrInternal
-	}
-
-	user := &User{
-		Email:        req.Email,
-		PasswordHash: string(hash),
-		Role:         "customer",
-	}
-
-	if err := s.store.CreateUser(ctx, user); err != nil {
-		return nil, apierror.ErrInternal
-	}
-
-	return s.generateTokens(user)
+	return &UserResponse{
+		ID:                user.ID,
+		Email:             user.Email,
+		Role:              user.Role,
+		ShopifyCustomerID: user.ShopifyCustomerID,
+	}, nil
 }
 
 func (s *service) Login(ctx context.Context, req LoginRequest) (*TokenResponse, error) {
@@ -59,11 +49,11 @@ func (s *service) Login(ctx context.Context, req LoginRequest) (*TokenResponse, 
 		return nil, apierror.ErrInternal
 	}
 	if user == nil {
-		return nil, apierror.New(http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid email or password")
+		return nil, apierror.New(http.StatusUnauthorized, "unauthorized", "Invalid email or password")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		return nil, apierror.New(http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid email or password")
+		return nil, apierror.New(http.StatusUnauthorized, "unauthorized", "Invalid email or password")
 	}
 
 	return s.generateTokens(user)
@@ -133,5 +123,11 @@ func (s *service) generateTokens(user *User) (*TokenResponse, error) {
 		AccessToken:  accessTokenString,
 		RefreshToken: refreshTokenString,
 		ExpiresIn:    int(accessDuration.Seconds()),
+		User: UserResponse{
+			ID:                user.ID,
+			Email:             user.Email,
+			Role:              user.Role,
+			ShopifyCustomerID: user.ShopifyCustomerID,
+		},
 	}, nil
 }
