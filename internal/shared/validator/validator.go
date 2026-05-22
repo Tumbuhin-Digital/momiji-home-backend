@@ -5,7 +5,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"net/http"
-	"strings"
 )
 
 var validate = validator.New()
@@ -17,12 +16,12 @@ func ValidateStruct(s interface{}) error {
 			return err
 		}
 
-		var errMsgs []string
+		details := make(map[string]string)
 		for _, err := range err.(validator.ValidationErrors) {
-			errMsgs = append(errMsgs, fmt.Sprintf("%s is invalid: %s", err.Field(), err.Tag()))
+			details[err.Field()] = fmt.Sprintf("failed on the '%s' tag", err.Tag())
 		}
 		
-		return apierror.New(http.StatusBadRequest, "VALIDATION_ERROR", strings.Join(errMsgs, ", "))
+		return apierror.NewWithDetails(http.StatusBadRequest, "validation_error", "Validation failed", details)
 	}
 	return nil
 }

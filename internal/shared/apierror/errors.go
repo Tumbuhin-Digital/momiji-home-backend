@@ -5,9 +5,10 @@ import (
 )
 
 type AppError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Status  int    `json:"-"`
+	Code    string      `json:"code"`
+	Message string      `json:"message"`
+	Details interface{} `json:"details,omitempty"`
+	Status  int         `json:"-"`
 }
 
 func (e *AppError) Error() string {
@@ -22,11 +23,20 @@ func New(status int, code, message string) *AppError {
 	}
 }
 
+func NewWithDetails(status int, code, message string, details interface{}) *AppError {
+	return &AppError{
+		Status:  status,
+		Code:    code,
+		Message: message,
+		Details: details,
+	}
+}
+
 // Common errors
 var (
-	ErrUnauthorized = New(http.StatusUnauthorized, "UNAUTHORIZED", "Invalid or missing token")
-	ErrForbidden    = New(http.StatusForbidden, "FORBIDDEN", "You don't have permission to perform this action")
-	ErrNotFound     = New(http.StatusNotFound, "NOT_FOUND", "Resource not found")
-	ErrInternal     = New(http.StatusInternalServerError, "INTERNAL_ERROR", "An internal error occurred")
-	ErrBadRequest   = New(http.StatusBadRequest, "BAD_REQUEST", "Invalid request body or parameters")
+	ErrUnauthorized = New(http.StatusUnauthorized, "unauthorized", "Invalid or missing token")
+	ErrForbidden    = New(http.StatusForbidden, "forbidden", "You don't have permission to perform this action")
+	ErrNotFound     = New(http.StatusNotFound, "not_found", "Resource not found")
+	ErrInternal     = New(http.StatusInternalServerError, "internal_error", "An internal error occurred")
+	ErrBadRequest   = New(http.StatusBadRequest, "validation_error", "Invalid request body or parameters")
 )

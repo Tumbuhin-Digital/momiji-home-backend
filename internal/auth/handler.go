@@ -10,11 +10,12 @@ import (
 )
 
 type Handler struct {
-	service AuthService
+	service   AuthService
+	jwtSecret string
 }
 
-func NewAuthHandler(service AuthService) *Handler {
-	return &Handler{service: service}
+func NewAuthHandler(service AuthService, jwtSecret string) *Handler {
+	return &Handler{service: service, jwtSecret: jwtSecret}
 }
 
 func (h *Handler) SetupRoutes(router fiber.Router) {
@@ -22,40 +23,34 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	
 	rateLimit := middleware.RateLimit(5, 15*time.Minute)
 
-	group.Post("/register", rateLimit, h.Register)
 	group.Post("/login", rateLimit, h.Login)
 	group.Post("/refresh", h.Refresh)
-	group.Post("/logout", h.Logout)
+
+	// Protected routes
+	protected := group.Group("/")
+	protected.Use(middleware.Auth(h.jwtSecret))
+	protected.Post("/logout", h.Logout)
+	protected.Get("/me", h.GetMe)
 }
 
-// Register godoc
-// @Summary Register a new user
-// @Description Register a new user and return tokens
+// GetMe godoc
+// @Summary Get current user
+// @Description Get current user profile
 // @Tags Auth
-// @Accept json
 // @Produce json
-// @Param request body RegisterRequest true "Register Request"
-// @Success 201 {object} response.Envelope{data=TokenResponse}
-// @Failure 400 {object} response.Envelope{error=response.ErrorBlock}
-// @Router /auth/register [post]
-func (h *Handler) Register(c *fiber.Ctx) error {
-	var req RegisterRequest
-	if err := c.BodyParser(&req); err != nil {
-		return response.Error(c, err)
-	}
+// @Security BearerAuth
+// @Success 200 {object} response.Envelope{data=UserResponse}
+// @Failure 401 {object} response.Envelope{error=response.ErrorBlock}
+// @Router /auth/me [get]
+func (h *Handler) GetMe(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(string)
 
-	if err := validator.ValidateStruct(&req); err != nil {
-		return response.Error(c, err)
-	}
-
-	res, err := h.service.Register(c.Context(), req)
+	res, err := h.service.GetMe(c.Context(), userID)
 	if err != nil {
 		return response.Error(c, err)
 	}
 
-	h.setRefreshCookie(c, res.RefreshToken)
-
-	return response.Success(c, fiber.StatusCreated, res, nil)
+	return response.Success(c, fiber.StatusOK, "Profile retrieved successfully", res)
 }
 
 // Login godoc
@@ -84,9 +79,7 @@ func (h *Handler) Login(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
-	h.setRefreshCookie(c, res.RefreshToken)
-
-	return response.Success(c, fiber.StatusOK, res, nil)
+	return response.Success(c, fiber.StatusOK, "Login successful", res)
 }
 
 // Refresh godoc
@@ -100,27 +93,17 @@ func (h *Handler) Login(c *fiber.Ctx) error {
 // @Failure 401 {object} response.Envelope{error=response.ErrorBlock}
 // @Router /auth/refresh [post]
 func (h *Handler) Refresh(c *fiber.Ctx) error {
-	refreshToken := c.Cookies("refresh_token")
-	if refreshToken == "" {
-		// Fallback to body
-		var req RefreshRequest
-		if err := c.BodyParser(&req); err == nil {
-			refreshToken = req.RefreshToken
-		}
+	var req RefreshRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
 	}
 
-	if refreshToken == "" {
-		return response.Error(c, fiber.ErrUnauthorized)
-	}
-
-	res, err := h.service.Refresh(c.Context(), refreshToken)
+	res, err := h.service.Refresh(c.Context(), req.RefreshToken)
 	if err != nil {
 		return response.Error(c, err)
 	}
 
-	h.setRefreshCookie(c, res.RefreshToken)
-
-	return response.Success(c, fiber.StatusOK, res, nil)
+	return response.Success(c, fiber.StatusOK, "Token refreshed successfully", res)
 }
 
 // Logout godoc
@@ -131,25 +114,7 @@ func (h *Handler) Refresh(c *fiber.Ctx) error {
 // @Success 200 {object} response.Envelope
 // @Router /auth/logout [post]
 func (h *Handler) Logout(c *fiber.Ctx) error {
-	c.Cookie(&fiber.Cookie{
-		Name:     "refresh_token",
-		Value:    "",
-		Expires:  time.Now().Add(-1 * time.Hour),
-		HTTPOnly: true,
-		Secure:   true,
-		SameSite: "Strict",
-	})
-
-	return response.Success(c, fiber.StatusOK, fiber.Map{"message": "Logged out successfully"}, nil)
-}
-
-func (h *Handler) setRefreshCookie(c *fiber.Ctx, token string) {
-	c.Cookie(&fiber.Cookie{
-		Name:     "refresh_token",
-		Value:    token,
-		Expires:  time.Now().Add(7 * 24 * time.Hour), // 7 days
-		HTTPOnly: true,
-		Secure:   true,
-		SameSite: "Strict",
-	})
+	// With tokens stored in the body/local storage, logout is primarily a client-side action.
+	// If a token blocklist is added, it would be checked/written here.
+	return response.Success(c, fiber.StatusOK, "Logged out successfully", nil)
 }

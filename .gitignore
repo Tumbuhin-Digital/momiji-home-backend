@@ -28,7 +28,14 @@ Thumbs.db
 
 # Project Specific Documentation/Large Files
 Technical PRD (2).pdf
-/docs
+/docs/*
+!/docs/swagger.json
+!/docs/swagger.yaml
+!/docs/docs.go
 
 # Logs
 *.log
+
+# Local Scripts
+cmd/seed/
+api_contract/
