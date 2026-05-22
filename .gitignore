@@ -10,7 +10,7 @@
 *.swo
 
 # Binaries
-server
+/server
 *.exe
 *.exe~
 *.dll
