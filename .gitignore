@@ -35,6 +35,7 @@ Technical PRD (2).pdf
 
 # Logs
 *.log
+*.txt
 
 # Local Scripts
 cmd/seed/
