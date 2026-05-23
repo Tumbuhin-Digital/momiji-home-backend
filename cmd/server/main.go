@@ -41,6 +41,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Update Swagger Host based on environment
+	docs.SwaggerInfo.Host = cfg.App.Host
+	if cfg.App.Env == "production" || cfg.App.Env == "staging" {
+		docs.SwaggerInfo.Schemes = []string{"https", "http"}
+	} else {
+		docs.SwaggerInfo.Schemes = []string{"http", "https"}
+	}
+
 	// Initialize Database
 	db, err := database.NewPostgresDB(cfg.Database)
 	if err != nil {

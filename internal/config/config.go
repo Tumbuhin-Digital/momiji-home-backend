@@ -19,6 +19,7 @@ type Config struct {
 type AppConfig struct {
 	Env  string
 	Port string
+	Host string
 }
 
 type DatabaseConfig struct {
@@ -66,10 +67,14 @@ func Load() (*Config, error) {
 		App: AppConfig{
 			Env:  env,
 			Port: os.Getenv("PORT"),
+			Host: os.Getenv("APP_HOST"),
 		},
 	}
 	if cfg.App.Port == "" {
 		cfg.App.Port = "3000"
+	}
+	if cfg.App.Host == "" {
+		cfg.App.Host = "localhost:" + cfg.App.Port
 	}
 
 	if err := loadYAML("config/database.yaml", env, &cfg.Database); err != nil {
