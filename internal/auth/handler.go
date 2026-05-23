@@ -37,13 +37,13 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 }
 
 // Register godoc
-// @Summary Register user (DEV ONLY)
-// @Description Temporary endpoint for FE development. Creates a new customer account.
+// @Summary Register a new user
+// @Description Register a new user and return tokens
 // @Tags Auth
 // @Accept json
 // @Produce json
-// @Param request body RegisterRequest true "Register Request"
-// @Success 201 {object} response.Envelope{data=TokenResponse}
+// @Param request body auth.RegisterRequest true "Register Request"
+// @Success 201 {object} response.Envelope{data=auth.TokenResponse}
 // @Failure 400 {object} response.Envelope{error=response.ErrorBlock}
 // @Failure 409 {object} response.Envelope{error=response.ErrorBlock}
 // @Router /auth/register [post]
