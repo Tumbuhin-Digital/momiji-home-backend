@@ -32,9 +32,11 @@ Technical PRD (2).pdf
 !/docs/swagger.json
 !/docs/swagger.yaml
 !/docs/docs.go
+!/docs/plans/
 
 # Logs
 *.log
+*.txt
 
 # Local Scripts
 cmd/seed/

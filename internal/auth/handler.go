@@ -20,8 +20,11 @@ func NewAuthHandler(service AuthService, jwtSecret string) *Handler {
 
 func (h *Handler) SetupRoutes(router fiber.Router) {
 	group := router.Group("/auth")
-	
+
 	rateLimit := middleware.RateLimit(5, 15*time.Minute)
+
+	// DEV ONLY — remove before production
+	group.Post("/register", rateLimit, h.Register)
 
 	group.Post("/login", rateLimit, h.Login)
 	group.Post("/refresh", h.Refresh)
@@ -31,6 +34,35 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	protected.Use(middleware.Auth(h.jwtSecret))
 	protected.Post("/logout", h.Logout)
 	protected.Get("/me", h.GetMe)
+}
+
+// Register godoc
+// @Summary Register user (DEV ONLY)
+// @Description Temporary endpoint for FE development. Creates a new customer account.
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param request body RegisterRequest true "Register Request"
+// @Success 201 {object} response.Envelope{data=TokenResponse}
+// @Failure 400 {object} response.Envelope{error=response.ErrorBlock}
+// @Failure 409 {object} response.Envelope{error=response.ErrorBlock}
+// @Router /auth/register [post]
+func (h *Handler) Register(c *fiber.Ctx) error {
+	var req RegisterRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	res, err := h.service.Register(c.Context(), req)
+	if err != nil {
+		return response.Error(c, err)
+	}
+
+	return response.Success(c, fiber.StatusCreated, "User registered successfully", res)
 }
 
 // GetMe godoc
