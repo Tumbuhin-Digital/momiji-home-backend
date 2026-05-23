@@ -57,6 +57,17 @@ definitions:
     required:
     - refresh_token
     type: object
+  internal_auth.RegisterRequest:
+    properties:
+      email:
+        type: string
+      password:
+        minLength: 8
+        type: string
+    required:
+    - email
+    - password
+    type: object
   internal_auth.TokenResponse:
     properties:
       access_token:
@@ -473,6 +484,51 @@ paths:
                   $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.ErrorBlock'
               type: object
       summary: Refresh token
+      tags:
+      - Auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Register a new user and return tokens
+      parameters:
+      - description: Register Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_auth.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_auth.TokenResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+            - properties:
+                error:
+                  $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.ErrorBlock'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+            - properties:
+                error:
+                  $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.ErrorBlock'
+              type: object
+      summary: Register a new user
       tags:
       - Auth
   /cart:
