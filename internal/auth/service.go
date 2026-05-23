@@ -12,6 +12,8 @@ import (
 )
 
 type AuthService interface {
+	// DEV ONLY — Register is a temporary endpoint for FE development.
+	Register(ctx context.Context, req RegisterRequest) (*TokenResponse, error)
 	Login(ctx context.Context, req LoginRequest) (*TokenResponse, error)
 	Refresh(ctx context.Context, refreshToken string) (*TokenResponse, error)
 	GetMe(ctx context.Context, userID string) (*UserResponse, error)
@@ -24,6 +26,34 @@ type service struct {
 
 func NewAuthService(store AuthStore, cfg config.AuthConfig) AuthService {
 	return &service{store: store, cfg: cfg}
+}
+
+// Register is DEV ONLY — creates a user account for FE development without direct DB access.
+func (s *service) Register(ctx context.Context, req RegisterRequest) (*TokenResponse, error) {
+	existing, err := s.store.GetUserByEmail(ctx, req.Email)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	if existing != nil {
+		return nil, apierror.New(http.StatusConflict, "conflict", "Email already registered")
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+
+	user := &User{
+		Email:        req.Email,
+		PasswordHash: string(hashed),
+		Role:         "admin",
+	}
+
+	if err := s.store.CreateUser(ctx, user); err != nil {
+		return nil, apierror.ErrInternal
+	}
+
+	return s.generateTokens(user)
 }
 
 func (s *service) GetMe(ctx context.Context, userID string) (*UserResponse, error) {

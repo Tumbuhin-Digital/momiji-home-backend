@@ -1,6 +1,11 @@
 package auth
 
-// Removed RegisterRequest as per API contract
+// RegisterRequest is DEV ONLY — remove or gate behind feature flag before production.
+// Added temporarily to allow FE development without direct DB access.
+type RegisterRequest struct {
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required,min=8"`
+}
 
 type LoginRequest struct {
 	Email    string `json:"email" validate:"required,email"`
