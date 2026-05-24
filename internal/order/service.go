@@ -8,6 +8,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/auth"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"golang.org/x/crypto/bcrypt"
 	"github.com/google/uuid"
@@ -19,18 +20,20 @@ type OrderService interface {
 }
 
 type service struct {
-	store       Store
-	cartService cart.CartService
-	authStore   auth.AuthStore
-	shopClient  shopify.Client
+	store         Store
+	cartService   cart.CartService
+	authStore     auth.AuthStore
+	shopClient    shopify.Client
+	preorderStore preorder.PreorderStore
 }
 
-func NewOrderService(store Store, cartService cart.CartService, authStore auth.AuthStore, shopClient shopify.Client) OrderService {
+func NewOrderService(store Store, cartService cart.CartService, authStore auth.AuthStore, shopClient shopify.Client, preorderStore preorder.PreorderStore) OrderService {
 	return &service{
-		store:       store,
-		cartService: cartService,
-		authStore:   authStore,
-		shopClient:  shopClient,
+		store:         store,
+		cartService:   cartService,
+		authStore:     authStore,
+		shopClient:    shopClient,
+		preorderStore: preorderStore,
 	}
 }
 
@@ -108,8 +111,12 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 		checkoutURL = chkRes.WebUrl
 	}
 
+	var hasPreOrder bool
+	var settlementAmount float64
+
 	// 4. Process PreOrder (Admin Draft Order)
 	if len(cartRes.PreOrder) > 0 {
+		hasPreOrder = true
 		var draftItems []shopify.DraftOrderLineItem
 		for _, item := range cartRes.PreOrder {
 			draftItems = append(draftItems, shopify.DraftOrderLineItem{
@@ -118,6 +125,9 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 			})
 			dep, _ := strconv.ParseFloat(item.DepositAmount, 64)
 			total += dep
+			
+			bal, _ := strconv.ParseFloat(item.BalanceDue, 64)
+			settlementAmount += bal
 			
 			orderItems = append(orderItems, OrderItem{
 				ShopifyVariantID: item.VariantID,
@@ -152,6 +162,16 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 
 	if err := s.store.CreateOrder(ctx, order); err != nil {
 		return nil, apierror.ErrInternal
+	}
+
+	// Auto-create settlement for pre_order items
+	if hasPreOrder {
+		settlement := &preorder.Settlement{
+			OrderID: order.ID,
+			Amount:  settlementAmount,
+			Status:  "pending",
+		}
+		_ = s.preorderStore.CreateSettlement(ctx, settlement)
 	}
 
 	// Clear cart after successful order creation
