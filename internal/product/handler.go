@@ -1,9 +1,12 @@
 package product
 
 import (
+	"log/slog"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server/middleware"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/response"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/validator"
 )
 
 type Handler struct {
@@ -18,14 +21,19 @@ func NewProductHandler(service ProductService, jwtSecret string) *Handler {
 func (h *Handler) SetupRoutes(router fiber.Router) {
 	group := router.Group("/products")
 
-	// Public
+	// Public endpoints
 	group.Get("/", h.GetProducts)
+	group.Get("/:id/variants", h.GetProductVariants)
+	group.Get("/:id", h.GetProductByID)
 
-	// Admin
+	// Admin endpoints
 	admin := group.Group("/")
 	admin.Use(middleware.Auth(h.jwtSecret))
-	// TODO: Add admin role check middleware
+	admin.Use(middleware.RBAC("admin"))
 	admin.Post("/sync", h.SyncProducts)
+	admin.Patch("/variant/:id/price", h.UpdateVariantPrice)
+	admin.Patch("/:id/status", h.UpdateProductStatus)
+	admin.Patch("/:id/batch", h.UpdateVariantBatchLabel)
 }
 
 // GetProducts godoc
@@ -50,9 +58,102 @@ func (h *Handler) GetProducts(c *fiber.Ctx) error {
 // @Success 200 {object} response.Envelope
 // @Router /products/sync [post]
 func (h *Handler) SyncProducts(c *fiber.Ctx) error {
-	// Role check could go here
 	if err := h.service.SyncFromShopify(c.Context()); err != nil {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Products synced successfully", nil)
+}
+
+// GetProductByID godoc
+// @Summary Get product by ID
+// @Tags Product
+// @Produce json
+// @Param id path string true "Product ID"
+// @Success 200 {object} response.Envelope{data=ProductDetailDTO}
+// @Failure 404 {object} response.Envelope{error=response.ErrorBlock}
+// @Router /products/{id} [get]
+func (h *Handler) GetProductByID(c *fiber.Ctx) error {
+	slog.InfoContext(c.Context(), "GetProductByID", slog.String("product_id", c.Params("id")))
+	dto, err := h.service.GetProductByID(c.Context(), c.Params("id"))
+	if err != nil { return response.Error(c, err) }
+	return response.Success(c, fiber.StatusOK, "Product retrieved", dto)
+}
+
+// GetProductVariants godoc
+// @Summary Get variants for a product
+// @Tags Product
+// @Produce json
+// @Param id path string true "Product ID"
+// @Success 200 {object} response.Envelope{data=[]VariantDTO}
+// @Router /products/{id}/variants [get]
+func (h *Handler) GetProductVariants(c *fiber.Ctx) error {
+	slog.InfoContext(c.Context(), "GetProductVariants", slog.String("product_id", c.Params("id")))
+	variants, err := h.service.GetVariantsByProductID(c.Context(), c.Params("id"))
+	if err != nil { return response.Error(c, err) }
+	return response.Success(c, fiber.StatusOK, "Variants retrieved", variants)
+}
+
+// UpdateProductStatus godoc
+// @Summary Update product status
+// @Tags Product
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Product ID"
+// @Success 200 {object} response.Envelope
+// @Failure 400 {object} response.Envelope{error=response.ErrorBlock}
+// @Router /products/{id}/status [patch]
+func (h *Handler) UpdateProductStatus(c *fiber.Ctx) error {
+	slog.InfoContext(c.Context(), "UpdateProductStatus", slog.String("product_id", c.Params("id")))
+	var req struct {
+		Status string `json:"status" validate:"required"`
+	}
+	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
+	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
+	if err := h.service.UpdateProductStatus(c.Context(), c.Params("id"), req.Status); err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Product status updated", nil)
+}
+
+// UpdateVariantBatchLabel godoc
+// @Summary Update preorder batch label for all variants of a product
+// @Tags Product
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Product ID"
+// @Router /products/{id}/batch [patch]
+func (h *Handler) UpdateVariantBatchLabel(c *fiber.Ctx) error {
+	slog.InfoContext(c.Context(), "UpdateVariantBatchLabel", slog.String("product_id", c.Params("id")))
+	var req struct {
+		BatchLabel string `json:"batch_label" validate:"required"`
+	}
+	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
+	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
+	if err := h.service.UpdateVariantBatchLabel(c.Context(), c.Params("id"), req.BatchLabel); err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Batch label updated", nil)
+}
+
+// UpdateVariantPrice godoc
+// @Summary Override ws_price and/or retail_price for a variant
+// @Tags Product
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Variant ID"
+// @Router /products/variant/{id}/price [patch]
+func (h *Handler) UpdateVariantPrice(c *fiber.Ctx) error {
+	slog.InfoContext(c.Context(), "UpdateVariantPrice", slog.String("variant_id", c.Params("id")))
+	var req struct {
+		WSPrice     *float64 `json:"ws_price"`
+		RetailPrice *float64 `json:"retail_price"`
+	}
+	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
+	if err := h.service.UpdateVariantPrice(c.Context(), c.Params("id"), req.WSPrice, req.RetailPrice); err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Variant price updated", nil)
 }

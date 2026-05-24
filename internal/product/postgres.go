@@ -61,3 +61,43 @@ func (s *PostgresStore) UpdateVariantPrices(ctx context.Context, variantID strin
 	}
 	return s.db.WithContext(ctx).Model(&ProductVariant{}).Where("id = ?", variantID).Updates(updates).Error
 }
+
+func (s *PostgresStore) GetProductByShopifyID(ctx context.Context, shopifyID string) (*Product, error) {
+	var product Product
+	err := s.db.WithContext(ctx).Where("shopify_id = ?", shopifyID).First(&product).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &product, nil
+}
+
+func (s *PostgresStore) GetProductByID(ctx context.Context, productID string) (*Product, error) {
+	var p Product
+	err := s.db.WithContext(ctx).Where("id = ?", productID).First(&p).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) { return nil, nil }
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (s *PostgresStore) GetVariantsByProductID(ctx context.Context, productID string) ([]ProductVariant, error) {
+	var variants []ProductVariant
+	err := s.db.WithContext(ctx).Where("product_id = ?", productID).Find(&variants).Error
+	return variants, err
+}
+
+func (s *PostgresStore) UpdateProductStatus(ctx context.Context, productID string, status string) error {
+	return s.db.WithContext(ctx).Model(&Product{}).
+		Where("id = ?", productID).
+		Updates(map[string]interface{}{"status": status, "updated_at": gorm.Expr("now()")}).Error
+}
+
+func (s *PostgresStore) UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string) error {
+	return s.db.WithContext(ctx).Model(&ProductVariant{}).
+		Where("product_id = ?", productID).
+		Updates(map[string]interface{}{"preorder_batch_label": batchLabel, "updated_at": gorm.Expr("now()")}).Error
+}
