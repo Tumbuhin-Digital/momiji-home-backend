@@ -20,26 +20,32 @@ func NewAuthHandler(service AuthService, jwtSecret string, secureCookie bool) *H
 	return &Handler{service: service, jwtSecret: jwtSecret, secureCookie: secureCookie}
 }
 
+func (h *Handler) getSameSite() string {
+	if h.secureCookie {
+		return "None" // For production/staging cross-origin
+	}
+	return "Lax" // For local development (HTTP)
+}
+
 func (h *Handler) setTokenCookies(c *fiber.Ctx, accessToken, refreshToken string) {
+	sameSite := h.getSameSite()
 	c.Cookie(&fiber.Cookie{
 		Name:     "access_token",
 		Value:    accessToken,
 		HTTPOnly: true,
 		Secure:   h.secureCookie,
-		SameSite: "None",
-		// Path:     "/api/v1",
-		Path:   "/",
-		MaxAge: 900, // 15 minutes
+		SameSite: sameSite,
+		Path:     "/",
+		MaxAge:   900, // 15 minutes
 	})
 	c.Cookie(&fiber.Cookie{
 		Name:     "refresh_token",
 		Value:    refreshToken,
 		HTTPOnly: true,
 		Secure:   h.secureCookie,
-		SameSite: "None",
-		// Path:     "/api/v1/auth/refresh",
-		Path:   "/",
-		MaxAge: 604800, // 7 days
+		SameSite: sameSite,
+		Path:     "/",
+		MaxAge:   604800, // 7 days
 	})
 }
 
