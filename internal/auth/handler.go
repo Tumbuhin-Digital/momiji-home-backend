@@ -20,16 +20,38 @@ func NewAuthHandler(service AuthService, jwtSecret string, secureCookie bool) *H
 	return &Handler{service: service, jwtSecret: jwtSecret, secureCookie: secureCookie}
 }
 
-func setRefreshCookie(c *fiber.Ctx, token string, ttl time.Duration, secure bool) {
+func (h *Handler) setTokenCookies(c *fiber.Ctx, accessToken, refreshToken string) {
+	c.Cookie(&fiber.Cookie{
+		Name:     "access_token",
+		Value:    accessToken,
+		HTTPOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: "Strict",
+		Path:     "/api/v1",
+		MaxAge:   900, // 15 minutes
+	})
 	c.Cookie(&fiber.Cookie{
 		Name:     "refresh_token",
-		Value:    token,
+		Value:    refreshToken,
 		HTTPOnly: true,
-		Secure:   secure,
+		Secure:   h.secureCookie,
 		SameSite: "Strict",
 		Path:     "/api/v1/auth/refresh",
-		MaxAge:   int(ttl.Seconds()),
+		MaxAge:   604800, // 7 days
 	})
+}
+
+func (h *Handler) clearTokenCookies(c *fiber.Ctx) {
+	for _, name := range []string{"access_token", "refresh_token"} {
+		c.Cookie(&fiber.Cookie{
+			Name:     name,
+			Value:    "",
+			HTTPOnly: true,
+			Secure:   h.secureCookie,
+			SameSite: "Strict",
+			MaxAge:   -1,
+		})
+	}
 }
 
 func (h *Handler) SetupRoutes(router fiber.Router) {
@@ -76,7 +98,7 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
-	setRefreshCookie(c, res.RefreshToken, 7*24*time.Hour, h.secureCookie)
+	h.setTokenCookies(c, res.AccessToken, res.RefreshToken)
 
 	return response.Success(c, fiber.StatusCreated, "User registered successfully", res)
 }
@@ -127,7 +149,7 @@ func (h *Handler) Login(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
-	setRefreshCookie(c, res.RefreshToken, 7*24*time.Hour, h.secureCookie)
+	h.setTokenCookies(c, res.AccessToken, res.RefreshToken)
 
 	return response.Success(c, fiber.StatusOK, "Login successful", res)
 }
@@ -151,9 +173,9 @@ func (h *Handler) Refresh(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
-	setRefreshCookie(c, res.RefreshToken, 7*24*time.Hour, h.secureCookie)
+	h.setTokenCookies(c, res.AccessToken, res.RefreshToken)
 
-	return response.Success(c, fiber.StatusOK, "Token refreshed successfully", res)
+	return response.Success(c, fiber.StatusOK, "Token refreshed successfully", map[string]int{"expires_in": res.ExpiresIn})
 }
 
 // Logout godoc
@@ -164,14 +186,6 @@ func (h *Handler) Refresh(c *fiber.Ctx) error {
 // @Success 200 {object} response.Envelope
 // @Router /auth/logout [post]
 func (h *Handler) Logout(c *fiber.Ctx) error {
-	c.Cookie(&fiber.Cookie{
-		Name:     "refresh_token",
-		Value:    "",
-		HTTPOnly: true,
-		Secure:   h.secureCookie,
-		SameSite: "Strict",
-		Path:     "/api/v1/auth/refresh",
-		MaxAge:   -1,
-	})
+	h.clearTokenCookies(c)
 	return response.Success(c, fiber.StatusOK, "Logged out successfully", nil)
 }

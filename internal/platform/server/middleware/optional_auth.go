@@ -12,14 +12,18 @@ import (
 // OptionalAuth allows access via Bearer token (authenticated user) OR X-Session-ID header (guest user).
 func OptionalAuth(jwtSecret string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		authHeader := c.Get("Authorization")
+		tokenString := c.Cookies("access_token")
+		if tokenString == "" {
+			authHeader := c.Get("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+			}
+		}
+
 		sessionID := c.Get("X-Session-ID")
 
 		// Case 1: Has Bearer Token
-		if authHeader != "" {
-			parts := strings.Split(authHeader, " ")
-			if len(parts) == 2 && parts[0] == "Bearer" {
-				tokenString := parts[1]
+		if tokenString != "" {
 
 				token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
 					if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -37,7 +41,6 @@ func OptionalAuth(jwtSecret string) fiber.Handler {
 				}
 				// If token is present but invalid, reject.
 				return response.Error(c, apierror.ErrUnauthorized)
-			}
 		}
 
 		// Case 2: Has Session ID
