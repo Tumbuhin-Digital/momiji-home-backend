@@ -93,7 +93,8 @@ func main() {
 	api := app.Group("/api/v1")
 
 	// Initialize Handlers & Routes
-	authHandler := auth.NewAuthHandler(authService, cfg.Auth.Secret)
+	secureCookie := cfg.App.Env == "production" || cfg.App.Env == "staging"
+	authHandler := auth.NewAuthHandler(authService, cfg.Auth.Secret, secureCookie)
 	authHandler.SetupRoutes(api)
 
 	cartHandler := cart.NewCartHandler(cartService, cfg.Auth.Secret)

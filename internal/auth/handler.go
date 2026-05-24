@@ -5,17 +5,31 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server/middleware"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/response"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/validator"
 )
 
 type Handler struct {
-	service   AuthService
-	jwtSecret string
+	service      AuthService
+	jwtSecret    string
+	secureCookie bool
 }
 
-func NewAuthHandler(service AuthService, jwtSecret string) *Handler {
-	return &Handler{service: service, jwtSecret: jwtSecret}
+func NewAuthHandler(service AuthService, jwtSecret string, secureCookie bool) *Handler {
+	return &Handler{service: service, jwtSecret: jwtSecret, secureCookie: secureCookie}
+}
+
+func setRefreshCookie(c *fiber.Ctx, token string, ttl time.Duration, secure bool) {
+	c.Cookie(&fiber.Cookie{
+		Name:     "refresh_token",
+		Value:    token,
+		HTTPOnly: true,
+		Secure:   secure,
+		SameSite: "Strict",
+		Path:     "/api/v1/auth/refresh",
+		MaxAge:   int(ttl.Seconds()),
+	})
 }
 
 func (h *Handler) SetupRoutes(router fiber.Router) {
@@ -61,6 +75,8 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 	if err != nil {
 		return response.Error(c, err)
 	}
+
+	setRefreshCookie(c, res.RefreshToken, 7*24*time.Hour, h.secureCookie)
 
 	return response.Success(c, fiber.StatusCreated, "User registered successfully", res)
 }
@@ -111,29 +127,31 @@ func (h *Handler) Login(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
+	setRefreshCookie(c, res.RefreshToken, 7*24*time.Hour, h.secureCookie)
+
 	return response.Success(c, fiber.StatusOK, "Login successful", res)
 }
 
 // Refresh godoc
 // @Summary Refresh token
-// @Description Get a new access token using a refresh token
+// @Description Get a new access token using a refresh token (no body required)
 // @Tags Auth
-// @Accept json
 // @Produce json
-// @Param request body RefreshRequest false "Refresh Request (if not in cookie)"
-// @Success 200 {object} response.Envelope{data=TokenResponse}
+// @Success 200 {object} response.Envelope{data=auth.TokenResponse}
 // @Failure 401 {object} response.Envelope{error=response.ErrorBlock}
 // @Router /auth/refresh [post]
 func (h *Handler) Refresh(c *fiber.Ctx) error {
-	var req RefreshRequest
-	if err := c.BodyParser(&req); err != nil {
-		return response.Error(c, err)
+	token := c.Cookies("refresh_token")
+	if token == "" {
+		return response.Error(c, apierror.ErrUnauthorized)
 	}
 
-	res, err := h.service.Refresh(c.Context(), req.RefreshToken)
+	res, err := h.service.Refresh(c.Context(), token)
 	if err != nil {
 		return response.Error(c, err)
 	}
+
+	setRefreshCookie(c, res.RefreshToken, 7*24*time.Hour, h.secureCookie)
 
 	return response.Success(c, fiber.StatusOK, "Token refreshed successfully", res)
 }
@@ -146,7 +164,14 @@ func (h *Handler) Refresh(c *fiber.Ctx) error {
 // @Success 200 {object} response.Envelope
 // @Router /auth/logout [post]
 func (h *Handler) Logout(c *fiber.Ctx) error {
-	// With tokens stored in the body/local storage, logout is primarily a client-side action.
-	// If a token blocklist is added, it would be checked/written here.
+	c.Cookie(&fiber.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		HTTPOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: "Strict",
+		Path:     "/api/v1/auth/refresh",
+		MaxAge:   -1,
+	})
 	return response.Success(c, fiber.StatusOK, "Logged out successfully", nil)
 }
