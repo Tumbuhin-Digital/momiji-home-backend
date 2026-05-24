@@ -50,13 +50,6 @@ definitions:
     - email
     - password
     type: object
-  internal_auth.RefreshRequest:
-    properties:
-      refresh_token:
-        type: string
-    required:
-    - refresh_token
-    type: object
   internal_auth.RegisterRequest:
     properties:
       email:
@@ -75,8 +68,6 @@ definitions:
       expires_in:
         description: seconds
         type: integer
-      refresh_token:
-        type: string
       user:
         $ref: '#/definitions/internal_auth.UserResponse'
     type: object
@@ -333,6 +324,23 @@ definitions:
       total_price:
         type: string
     type: object
+  internal_preorder.SettlementResponse:
+    properties:
+      amount:
+        type: number
+      created_at:
+        type: string
+      id:
+        type: string
+      invoiced_at:
+        type: string
+      order_id:
+        type: string
+      paid_at:
+        type: string
+      status:
+        type: string
+    type: object
   internal_product.FulfillmentType:
     enum:
     - ship_ready
@@ -453,15 +461,7 @@ paths:
       - Auth
   /auth/refresh:
     post:
-      consumes:
-      - application/json
-      description: Get a new access token using a refresh token
-      parameters:
-      - description: Refresh Request (if not in cookie)
-        in: body
-        name: request
-        schema:
-          $ref: '#/definitions/internal_auth.RefreshRequest'
+      description: Get a new access token using a refresh token (no body required)
       produces:
       - application/json
       responses:
@@ -768,6 +768,123 @@ paths:
       summary: Create an order from cart
       tags:
       - Order
+  /preorders:
+    get:
+      parameters:
+      - description: Filter by status (pending|invoiced|paid)
+        in: query
+        name: status
+        type: string
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 20)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/internal_preorder.SettlementResponse'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: List pre-order settlements
+      tags:
+      - Preorder
+  /preorders/settlements/{id}:
+    get:
+      parameters:
+      - description: Settlement ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_preorder.SettlementResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get a single settlement by ID
+      tags:
+      - Preorder
+  /preorders/settlements/{id}/invoice:
+    patch:
+      parameters:
+      - description: Settlement ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_preorder.SettlementResponse'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: 'Transition settlement: pending → invoiced'
+      tags:
+      - Preorder
+  /preorders/settlements/{id}/paid:
+    patch:
+      parameters:
+      - description: Settlement ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_preorder.SettlementResponse'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: 'Transition settlement: invoiced → paid'
+      tags:
+      - Preorder
   /products:
     get:
       produces:

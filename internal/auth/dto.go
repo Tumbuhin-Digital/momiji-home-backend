@@ -12,13 +12,9 @@ type LoginRequest struct {
 	Password string `json:"password" validate:"required"`
 }
 
-type RefreshRequest struct {
-	RefreshToken string `json:"refresh_token" validate:"required"`
-}
-
 type TokenResponse struct {
 	AccessToken  string       `json:"access_token"`
-	RefreshToken string       `json:"refresh_token"`
+	RefreshToken string       `json:"-"`
 	ExpiresIn    int          `json:"expires_in"` // seconds
 	User         UserResponse `json:"user"`
 }
