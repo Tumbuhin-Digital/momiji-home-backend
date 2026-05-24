@@ -1,9 +1,10 @@
 # 2026-05-24 — Auth Token Security Strategy
 
 > **Skill:** `scaffold/plan` (technical-constitution §Security)  
-> **Scope:** Secure token delivery for `POST /auth/login`, `POST /auth/register`, `POST /auth/refresh`  
+> **Scope:** Secure token delivery for `POST /auth/login`, `POST /auth/register`, `POST /auth/refresh`, `POST /auth/logout`  
 > **Authoritative contract:** `docs/api_contract_refined.md`  
-> **Status:** 📋 Plan ready — pending implementation in next session
+> **Status:** 📋 Plan ready — pending implementation in next session  
+> **Decision:** Pattern 1 — Full HttpOnly Cookie Auth (updated 2026-05-24)
 
 ---
 
@@ -22,105 +23,102 @@ The current `TokenResponse` returns **both** `access_token` and `refresh_token` 
 }
 ```
 
-**The question:** Is this safe? Should `refresh_token` be in the body at all?
+**Risk:** `refresh_token` has a 7-day TTL. Any XSS vulnerability can steal it from JS-accessible storage. Server-side logout is impossible — the current `Logout()` handler literally says so in a comment.
 
 ---
 
-## Security Analysis
+## Context: Why Pattern 1 is correct here
 
-### Why `refresh_token` in the JSON body is risky for browser clients
+| Factor | Value |
+|--------|-------|
+| Only users who can log in | Admins only (same project — storefront + admin panel) |
+| Client type | Browser-based SPA |
+| DB bloat from cookies? | **None** — JWTs are stateless; cookies live in the browser, not the DB |
+| Middleware refactor effort | Small — read cookie first, fallback to `Authorization` header |
 
-| Risk | Detail |
-|------|--------|
-| **XSS exposure** | Any JavaScript running on the page (including injected malicious scripts) can read `response.data.refresh_token` if stored in `localStorage` or `sessionStorage` |
-| **Long blast radius** | Access token TTL = 15 min (manageable). Refresh token TTL = 7 days. A stolen refresh token gives an attacker a 7-day silent session |
-| **Log leakage** | API gateways, proxies, browser network tab recordings, or frontend error tracking (Sentry) that log response bodies will capture the refresh token |
-| **Mobile/non-browser clients** | JSON body is **fine** for native mobile apps (iOS Keychain / Android Keystore) — these are isolated from XSS |
-
-### Why `access_token` in the JSON body is acceptable
-
-- TTL = 15 minutes: stolen token has a very small window
-- Needed directly by the client for every `Authorization: Bearer <token>` header
-- No practical way to deliver it via HttpOnly cookie while remaining usable by JS for API calls
-
-### Current logout is broken
-
-Looking at `handler.go` line 149–151:
-```go
-// With tokens stored in the body/local storage, logout is primarily a client-side action.
-```
-
-This comment reveals the issue: **server-side logout is impossible** when the refresh token lives only in the client's local storage. There is no server state to invalidate. A user who logs out still has a valid 7-day refresh token.
+Since only admins log in and the client is always a browser, **full HttpOnly cookie auth** is the cleanest approach. No JS ever touches either token. XSS cannot steal anything.
 
 ---
 
-## Decision: Hybrid Strategy
+## Decision: Pattern 1 — Full HttpOnly Cookie Auth
 
-**Access token** → JSON body (unchanged, required for Authorization header)  
-**Refresh token** → `HttpOnly` cookie only (removed from JSON body)
+**Both tokens → HttpOnly cookies. Zero tokens in response body.**
 
-This is the standard RFC 6749 / OAuth 2.0 best practice for browser-based clients.
-
-### Cookie configuration
 ```
-Set-Cookie: refresh_token=<token>; 
-  HttpOnly;           ← JS cannot read it (XSS-proof)
-  Secure;             ← HTTPS only (production)
-  SameSite=Strict;    ← CSRF protection (only sent to same origin)
-  Path=/api/v1/auth/refresh;  ← scoped only to refresh endpoint
-  Max-Age=604800      ← 7 days in seconds
-```
-
-### New `TokenResponse` (JSON body, no refresh_token field)
-```json
-{
-  "data": {
-    "access_token": "eyJ...",
-    "expires_in": 900,
-    "user": {
-      "id": "...",
-      "email": "...",
-      "role": "...",
-      "shopify_customer_id": "..."
-    }
-  }
+Login response body:          Set-Cookie headers:
+{                             access_token=eyJ...; HttpOnly; Secure; SameSite=Strict; Path=/api/v1; Max-Age=900
+  "expires_in": 900,          refresh_token=eyJ...; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth/refresh; Max-Age=604800
+  "user": { ... }
 }
 ```
 
-### New `POST /auth/refresh` request (no body required)
-The refresh token is automatically sent by the browser via cookie.  
-The `refresh_token` body field in `RefreshRequest` is **removed**.  
-The handler reads: `c.Cookies("refresh_token")`.
+### Why no DB bloat
+JWTs are **stateless** — the server validates them by checking the cryptographic signature with the JWT secret. No session table, no token table, no DB lookup on every request. The cookie is just a transport mechanism; the token itself is self-contained.
 
-### Logout becomes real
-With the cookie approach, `POST /auth/logout` can now **clear the cookie server-side**:
-```go
-c.Cookie(&fiber.Cookie{
-    Name:     "refresh_token",
-    Value:    "",
-    Expires:  time.Now().Add(-time.Hour),
-    HTTPOnly: true,
-    Secure:   true,
-    SameSite: "Strict",
-    Path:     "/api/v1/auth/refresh",
-})
+### Cookie configuration
 ```
+access_token cookie:
+  HttpOnly    ← JS cannot read (XSS-proof)
+  Secure      ← HTTPS only (false in development)
+  SameSite=Strict  ← CSRF protection
+  Path=/api/v1     ← sent on all API calls
+  Max-Age=900      ← 15 minutes
+
+refresh_token cookie:
+  HttpOnly    ← JS cannot read (XSS-proof)
+  Secure      ← HTTPS only (false in development)
+  SameSite=Strict  ← CSRF protection
+  Path=/api/v1/auth/refresh  ← ONLY sent to refresh endpoint
+  Max-Age=604800   ← 7 days
+```
+
+Scoping `refresh_token` to `Path=/api/v1/auth/refresh` means the browser **never sends** the long-lived token to any other endpoint — even if the access token path is compromised.
 
 ---
 
-## Trade-offs
+## New Response Shape
 
-| | JSON body (current) | HttpOnly Cookie (proposed) |
-|--|---------------------|---------------------------|
-| XSS protection | ❌ No | ✅ Yes |
-| CSRF protection | ✅ Not applicable | ✅ SameSite=Strict |
-| Mobile app support | ✅ Works natively | ⚠️ Needs custom header approach |
-| Server-side logout | ❌ Impossible | ✅ Clear cookie |
-| Postman/API testing | ✅ Easy | ⚠️ Cookie must be enabled in Postman |
-| Implementation complexity | Low | Medium |
+### `POST /auth/login` and `POST /auth/register`
+```json
+// Response body (no tokens)
+{
+  "status": "success",
+  "message": "Login successful",
+  "data": {
+    "expires_in": 900,
+    "user": {
+      "id": "uuid",
+      "email": "admin@momijihome.com",
+      "role": "admin",
+      "shopify_customer_id": null
+    }
+  },
+  "timestamp": "2026-05-24T..."
+}
+// Set-Cookie: access_token=eyJ...; HttpOnly; ...
+// Set-Cookie: refresh_token=eyJ...; HttpOnly; ...; Path=/api/v1/auth/refresh
+```
 
-### Mobile app note
-If a mobile app (React Native / Flutter) is added later, cookies work but require configuring the HTTP client to handle cookies (e.g., `CookieJar` in Go, `CookieStore` in Android). This is solvable. Mobile apps are not mentioned in the current PRD.
+### `POST /auth/refresh`
+```json
+// Request: no body, no Authorization header — browser sends refresh_token cookie automatically
+// Response body:
+{
+  "status": "success",
+  "message": "Token refreshed successfully",
+  "data": { "expires_in": 900 }
+}
+// Set-Cookie: access_token=eyJ...; (rotated)
+// Set-Cookie: refresh_token=eyJ...; (rotated)
+```
+
+### `POST /auth/logout`
+```json
+// Response body:
+{ "status": "success", "message": "Logged out successfully" }
+// Set-Cookie: access_token=; Max-Age=-1  (cleared)
+// Set-Cookie: refresh_token=; Max-Age=-1  (cleared)
+```
 
 ---
 
@@ -130,14 +128,16 @@ If a mobile app (React Native / Flutter) is added later, cookies work but requir
 
 | File | Change |
 |------|--------|
-| `internal/auth/dto.go` | Remove `RefreshToken` field from `TokenResponse`; remove `RefreshRequest` struct (no longer needed) |
-| `internal/auth/handler.go` | `Login()` + `Register()` → set HttpOnly cookie after calling service; `Refresh()` → read from `c.Cookies("refresh_token")` instead of request body; `Logout()` → clear the cookie |
-| `internal/auth/service.go` | `Refresh()` signature changes: accepts token string (unchanged); returns only `TokenResponse` without refresh_token field (unchanged internally) |
-| `internal/platform/server/middleware/cors.go` | Ensure `AllowCredentials: true` so browser sends cookies cross-origin (required for cookie-based auth) |
-| `docs/api_contract_refined.md` | Update `TokenResponse` schema; update `POST /auth/refresh` request to show no body needed |
+| `internal/auth/dto.go` | Remove `RefreshToken` from `TokenResponse`; remove `RefreshRequest` struct |
+| `internal/auth/handler.go` | Set both cookies on login/register/refresh; clear both on logout; read refresh from cookie; add `setTokenCookies()` + `clearTokenCookies()` helpers |
+| `internal/auth/service.go` | Add internal `tokenPair` struct (or use `json:"-"` tag) to carry refresh token to handler without serializing it |
+| `internal/platform/server/middleware/auth.go` | Read `access_token` cookie first; fall back to `Authorization: Bearer` header (for Postman/Swagger) |
+| `internal/platform/server/middleware/optional_auth.go` | Same fallback pattern as `auth.go` |
+| `internal/platform/server/middleware/cors.go` | Add `AllowCredentials: true` |
+| `docs/api_contract_refined.md` | Remove token fields from response schema; document cookie-based auth |
 
 ### Files NOT to change
-- `internal/auth/service.go` logic — token generation is unchanged
+- `internal/auth/service.go` — token generation logic unchanged
 - `internal/auth/store.go` — unchanged
 - `internal/auth/postgres.go` — unchanged
 - All other modules — unchanged
@@ -148,65 +148,77 @@ If a mobile app (React Native / Flutter) is added later, cookies work but requir
 
 ### Task 1: `internal/auth/dto.go`
 
-**Remove** `RefreshToken` from `TokenResponse`:
 ```go
 // BEFORE
 type TokenResponse struct {
     AccessToken  string       `json:"access_token"`
-    RefreshToken string       `json:"refresh_token"`   // ← REMOVE THIS
+    RefreshToken string       `json:"refresh_token"`
     ExpiresIn    int          `json:"expires_in"`
     User         UserResponse `json:"user"`
 }
 
-// AFTER
+// AFTER — both tokens stripped from JSON, carried via json:"-" for handler use only
 type TokenResponse struct {
-    AccessToken string       `json:"access_token"`
-    ExpiresIn   int          `json:"expires_in"`
-    User        UserResponse `json:"user"`
+    AccessToken  string       `json:"-"`           // set in cookie, never serialized
+    RefreshToken string       `json:"-"`           // set in cookie, never serialized
+    ExpiresIn    int          `json:"expires_in"`
+    User         UserResponse `json:"user"`
 }
-```
 
-**Remove** `RefreshRequest` struct (refresh token now comes from cookie, no body needed):
-```go
-// DELETE ENTIRE STRUCT:
-type RefreshRequest struct {
-    RefreshToken string `json:"refresh_token" validate:"required"`
-}
+// DELETE entire struct (refresh token comes from cookie now):
+// type RefreshRequest struct { ... }
 ```
 
 ---
 
 ### Task 2: `internal/auth/handler.go`
 
-**`setRefreshCookie()` — new private helper:**
+**Add `setTokenCookies()` helper:**
 ```go
-func setRefreshCookie(c *fiber.Ctx, token string, ttl time.Duration) {
+func (h *Handler) setTokenCookies(c *fiber.Ctx, accessToken, refreshToken string) {
+    c.Cookie(&fiber.Cookie{
+        Name:     "access_token",
+        Value:    accessToken,
+        HTTPOnly: true,
+        Secure:   h.secureCookie, // false in dev, true in prod/staging
+        SameSite: "Strict",
+        Path:     "/api/v1",
+        MaxAge:   900, // 15 minutes
+    })
     c.Cookie(&fiber.Cookie{
         Name:     "refresh_token",
-        Value:    token,
+        Value:    refreshToken,
         HTTPOnly: true,
-        Secure:   true,   // set false only in development
+        Secure:   h.secureCookie,
         SameSite: "Strict",
-        Path:     "/api/v1/auth/refresh",
-        MaxAge:   int(ttl.Seconds()),
+        Path:     "/api/v1/auth/refresh", // scoped — only sent to refresh endpoint
+        MaxAge:   604800, // 7 days
     })
 }
 ```
 
-> In development (`APP_ENV != "production"`), set `Secure: false` so it works over HTTP. Read from `cfg.App.Env`.
-
-**`Login()` — set cookie after service call:**
+**Add `clearTokenCookies()` helper:**
 ```go
-// After: res, err := h.service.Login(...)
-setRefreshCookie(c, res.RefreshToken, 7*24*time.Hour)
-// res.RefreshToken must be populated internally but stripped from the returned DTO
+func (h *Handler) clearTokenCookies(c *fiber.Ctx) {
+    for _, name := range []string{"access_token", "refresh_token"} {
+        c.Cookie(&fiber.Cookie{
+            Name:     name,
+            Value:    "",
+            HTTPOnly: true,
+            Secure:   h.secureCookie,
+            SameSite: "Strict",
+            MaxAge:   -1,
+        })
+    }
+}
 ```
 
-> The service still returns a full internal token struct. The handler sets the cookie and returns only `TokenResponse` (without refresh_token).
-
-**`Register()` — same as Login:**
+**`Login()` and `Register()` — set cookies after service call:**
 ```go
-setRefreshCookie(c, res.RefreshToken, 7*24*time.Hour)
+res, err := h.service.Login(c.Context(), req)
+// ...
+h.setTokenCookies(c, res.AccessToken, res.RefreshToken)
+return response.Success(c, fiber.StatusOK, "Login successful", res) // res serializes without tokens (json:"-")
 ```
 
 **`Refresh()` — read from cookie:**
@@ -216,97 +228,85 @@ func (h *Handler) Refresh(c *fiber.Ctx) error {
     if token == "" {
         return response.Error(c, apierror.ErrUnauthorized)
     }
-
     res, err := h.service.Refresh(c.Context(), token)
     if err != nil {
         return response.Error(c, err)
     }
-
-    setRefreshCookie(c, res.RefreshToken, 7*24*time.Hour) // rotate cookie
-    return response.Success(c, fiber.StatusOK, "Token refreshed successfully", res)
+    h.setTokenCookies(c, res.AccessToken, res.RefreshToken) // rotate both
+    return response.Success(c, fiber.StatusOK, "Token refreshed successfully", map[string]int{"expires_in": res.ExpiresIn})
 }
 ```
 
-**`Logout()` — clear cookie:**
+**`Logout()` — clear both cookies:**
 ```go
 func (h *Handler) Logout(c *fiber.Ctx) error {
-    c.Cookie(&fiber.Cookie{
-        Name:     "refresh_token",
-        Value:    "",
-        HTTPOnly: true,
-        Secure:   true,
-        SameSite: "Strict",
-        Path:     "/api/v1/auth/refresh",
-        MaxAge:   -1, // immediate expiry
-    })
+    h.clearTokenCookies(c)
     return response.Success(c, fiber.StatusOK, "Logged out successfully", nil)
 }
 ```
 
 ---
 
-### Task 3: Internal token struct refactor
+### Task 3: `internal/platform/server/middleware/auth.go`
 
-The service currently returns `TokenResponse` which will no longer have `RefreshToken`.  
-The handler needs the refresh token **to set the cookie** but the DTO no longer carries it.
-
-**Option A (recommended):** Add an internal-only struct the service returns:
+**Token extraction — cookie first, Authorization header fallback:**
 ```go
-// internal/auth/service.go — internal only, not exported as JSON
-type tokenPair struct {
-    AccessToken  string
-    RefreshToken string // used by handler for cookie, never serialized
-    ExpiresIn    int
-    User         UserResponse
+// Try cookie first (browser clients)
+token := c.Cookies("access_token")
+
+// Fall back to Authorization: Bearer header (Postman, Swagger, API clients)
+if token == "" {
+    auth := c.Get("Authorization")
+    if strings.HasPrefix(auth, "Bearer ") {
+        token = strings.TrimPrefix(auth, "Bearer ")
+    }
+}
+
+if token == "" {
+    return response.Error(c, apierror.ErrUnauthorized)
 }
 ```
 
-The handler uses `tokenPair.RefreshToken` to set the cookie, then constructs `TokenResponse` (without `RefreshToken`) for the JSON response.
-
-**Option B:** Keep `RefreshToken` in `TokenResponse` but add `json:"-"` tag:
-```go
-RefreshToken string `json:"-"` // never serialized; handler reads this for cookie
-```
-
-> Recommendation: **Option B** is simpler — fewer structs, the `-` tag ensures it never appears in JSON output, the handler can still access it via `res.RefreshToken`.
+Apply the same pattern to `optional_auth.go`.
 
 ---
 
 ### Task 4: `internal/platform/server/middleware/cors.go`
 
-Ensure credentials are allowed (required for cookie cross-origin requests):
 ```go
 AllowCredentials: true,
+// Required for browser to send cookies on cross-origin requests
 ```
 
-Without this, the browser will not send cookies on cross-origin requests (e.g., frontend on `localhost:3001` calling API on `localhost:3000`).
+> **Note:** `AllowOrigins` must be explicit (not `"*"`) when `AllowCredentials: true`. Example: `"http://localhost:3000,https://momijihome.com"`.
 
 ---
 
-### Task 5: `docs/api_contract_refined.md` (documentation update)
+## Middleware Compatibility
 
-Update the `TokenResponse` schema to remove `refresh_token`.  
-Update `POST /auth/refresh` to note: "No body required. Refresh token is read from `refresh_token` HttpOnly cookie."  
-Add a section: **Token Storage Guide**:
-- Browser clients: access_token stored in memory (React state/context) — NOT localStorage
-- Refresh token: stored automatically via HttpOnly cookie, managed by browser
+The fallback to `Authorization: Bearer` in the middleware means:
+- ✅ Browser (admin panel/storefront) → uses cookie automatically
+- ✅ Postman → pass `Authorization: Bearer <token>` manually (works unchanged)
+- ✅ Swagger UI → still works with BearerAuth scheme
+- ✅ No breaking change for any existing integration
 
 ---
 
 ## Verification Plan
 
-1. `POST /auth/login` → response body has NO `refresh_token` field; response headers have `Set-Cookie: refresh_token=...; HttpOnly`
-2. `POST /auth/refresh` with no body but cookie present → returns new `access_token`, rotates cookie
-3. `POST /auth/refresh` with no body and no cookie → returns `401`
-4. `POST /auth/logout` → response headers have `Set-Cookie: refresh_token=; Max-Age=-1` (cleared)
-5. Browser devtools: confirm `refresh_token` cookie is NOT readable via `document.cookie` (HttpOnly)
-6. Postman: enable "Send cookies" — verify refresh flow works end-to-end
+1. `POST /auth/login` → response body has NO token fields; response has `Set-Cookie` headers for both `access_token` and `refresh_token` with `HttpOnly` flag
+2. Browser devtools → `Application > Cookies` → both cookies present; `document.cookie` shows neither (HttpOnly confirmed)
+3. `GET /auth/me` with no `Authorization` header but cookie present → returns user profile ✅
+4. `POST /auth/refresh` with no body, no header, cookie present → returns new `expires_in`; cookies rotated
+5. `POST /auth/logout` → both cookies cleared (`Max-Age=-1` in response headers)
+6. After logout: `GET /auth/me` → `401 Unauthorized` ✅
+7. Postman: manually set `Authorization: Bearer <token>` → still works (fallback path)
 
 ---
 
 ## Note for Implementing Session
 
-> Read `internal/auth/handler.go` and `internal/auth/dto.go` first before making changes.  
-> The internal service does not need to change its logic — only the handler layer and DTO layer change.  
-> Use `json:"-"` tag on `RefreshToken` in `TokenResponse` (Option B above) — minimal diff, no new structs.  
-> The `Secure: true` flag on the cookie should respect `APP_ENV`: set `false` in development, `true` in production.
+> Read `internal/platform/server/middleware/auth.go` and `optional_auth.go` FIRST.  
+> The `Handler` struct in `internal/auth/handler.go` already has `secureCookie bool` field (wired in `main.go` line 96–97).  
+> Use `json:"-"` tags on `AccessToken` and `RefreshToken` in `TokenResponse` — simplest approach, no new structs.  
+> CORS `AllowOrigins` must list explicit origins (not `*`) when `AllowCredentials: true`.
