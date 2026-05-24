@@ -11,17 +11,20 @@ import (
 
 func Auth(secret string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		authHeader := c.Get("Authorization")
-		if authHeader == "" {
-			return response.Error(c, apierror.ErrUnauthorized)
+		// Try cookie first (browser clients)
+		tokenString := c.Cookies("access_token")
+
+		// Fall back to Authorization: Bearer header (Postman, Swagger, API clients)
+		if tokenString == "" {
+			authHeader := c.Get("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+			}
 		}
 
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
+		if tokenString == "" {
 			return response.Error(c, apierror.ErrUnauthorized)
 		}
-
-		tokenString := parts[1]
 
 		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {

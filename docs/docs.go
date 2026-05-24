@@ -1153,9 +1153,6 @@ const docTemplate = `{
         "internal_auth.TokenResponse": {
             "type": "object",
             "properties": {
-                "access_token": {
-                    "type": "string"
-                },
                 "expires_in": {
                     "description": "seconds",
                     "type": "integer"
