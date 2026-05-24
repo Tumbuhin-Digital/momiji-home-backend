@@ -20,11 +20,34 @@ type ErrorBlock struct {
 	Details interface{} `json:"details,omitempty"`
 }
 
+type Meta struct {
+	Total int64 `json:"total"`
+	Page  int   `json:"page"`
+	Limit int   `json:"limit"`
+}
+
 func Success(c *fiber.Ctx, status int, message string, data interface{}) error {
 	return c.Status(status).JSON(Envelope{
 		Status:    "success",
 		Message:   message,
 		Data:      data,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+func SuccessWithMeta(c *fiber.Ctx, status int, message string, data interface{}, meta Meta) error {
+	type envelopeWithMeta struct {
+		Status    string      `json:"status"`
+		Message   string      `json:"message,omitempty"`
+		Data      interface{} `json:"data,omitempty"`
+		Meta      Meta        `json:"meta"`
+		Timestamp string      `json:"timestamp"`
+	}
+	return c.Status(status).JSON(envelopeWithMeta{
+		Status:    "success",
+		Message:   message,
+		Data:      data,
+		Meta:      meta,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	})
 }
