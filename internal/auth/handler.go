@@ -26,7 +26,7 @@ func (h *Handler) setTokenCookies(c *fiber.Ctx, accessToken, refreshToken string
 		Value:    accessToken,
 		HTTPOnly: true,
 		Secure:   h.secureCookie,
-		SameSite: "Strict",
+		SameSite: "None",
 		Path:     "/api/v1",
 		MaxAge:   900, // 15 minutes
 	})
@@ -35,7 +35,7 @@ func (h *Handler) setTokenCookies(c *fiber.Ctx, accessToken, refreshToken string
 		Value:    refreshToken,
 		HTTPOnly: true,
 		Secure:   h.secureCookie,
-		SameSite: "Strict",
+		SameSite: "None",
 		Path:     "/api/v1/auth/refresh",
 		MaxAge:   604800, // 7 days
 	})
