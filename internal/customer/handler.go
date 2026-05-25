@@ -46,15 +46,10 @@ func (h *Handler) ListCustomers(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"success": true,
-		"message": "Customers retrieved",
-		"data":    customers,
-		"meta": fiber.Map{
-			"total": total,
-			"page":  query.Page,
-			"limit": query.Limit,
-		},
+	return response.SuccessWithMeta(c, fiber.StatusOK, "Customers retrieved", customers, response.Meta{
+		Total: total,
+		Page:  query.Page,
+		Limit: query.Limit,
 	})
 }
 

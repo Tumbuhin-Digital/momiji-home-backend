@@ -18,7 +18,7 @@ func (s *PostgresStore) ListCustomers(ctx context.Context, page, limit int, sear
 	var customers []Customer
 	var total int64
 
-	query := s.db.WithContext(ctx).Model(&Customer{}).Where("role = ?", "customer")
+	query := s.db.WithContext(ctx).Model(&Customer{})
 	
 	if search != "" {
 		searchPattern := "%" + search + "%"
@@ -47,7 +47,7 @@ func (s *PostgresStore) ListCustomers(ctx context.Context, page, limit int, sear
 
 func (s *PostgresStore) GetCustomerByID(ctx context.Context, id string) (*Customer, error) {
 	var customer Customer
-	err := s.db.WithContext(ctx).Preload("Addresses").Where("id = ? AND role = ?", id, "customer").First(&customer).Error
+	err := s.db.WithContext(ctx).Preload("Addresses").Where("id = ?", id).First(&customer).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil

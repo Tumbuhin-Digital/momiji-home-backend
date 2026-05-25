@@ -58,11 +58,15 @@ func (s *service) GetCustomer(ctx context.Context, id string) (*CustomerDetailRe
 	for _, a := range c.Addresses {
 		addresses = append(addresses, AddressResponse{
 			ID:        a.ID,
+			FirstName: a.FirstName,
+			LastName:  a.LastName,
 			Address1:  a.Address1,
+			Address2:  a.Address2,
 			City:      a.City,
 			Province:  a.Province,
 			Country:   a.Country,
 			Zip:       a.Zip,
+			Phone:     a.Phone,
 			IsDefault: a.IsDefault,
 		})
 	}
