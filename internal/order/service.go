@@ -80,6 +80,11 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 	var checkoutURL string
 	var draftInvoiceURL string
 
+	var totalShipReady float64
+	var totalDepositPaid float64
+	var totalBalanceDue float64
+	var totalChargedNow float64
+
 	// 3. Process ShipReady (Storefront Checkout)
 	if len(cartRes.ShipReady) > 0 {
 		var sfItems []shopify.CheckoutLineItem
@@ -89,14 +94,23 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 				Quantity:  item.Quantity,
 			})
 			price, _ := strconv.ParseFloat(item.Subtotal, 64)
+			unitPrice, _ := strconv.ParseFloat(item.UnitPrice, 64)
 			total += price
+			totalShipReady += price
+			totalChargedNow += price
+			
+			title := item.Title
 			
 			orderItems = append(orderItems, OrderItem{
 				ShopifyVariantID: item.VariantID,
 				Type:             "ship_ready",
 				Quantity:         item.Quantity,
 				ItemStatus:       "pending_payment",
+				FulfillmentStep:  1,
 				FinalAmount:      &price,
+				Title:            &title,
+				UnitPrice:        &unitPrice,
+				AmountCharged:    &price,
 			})
 		}
 
@@ -117,7 +131,6 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 	}
 
 	var hasPreOrder bool
-	var settlementAmount float64
 
 	// 4. Process PreOrder (Admin Draft Order)
 	if len(cartRes.PreOrder) > 0 {
@@ -130,16 +143,26 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 			})
 			dep, _ := strconv.ParseFloat(item.DepositAmount, 64)
 			total += dep
+			totalDepositPaid += dep
+			totalChargedNow += dep
 			
 			bal, _ := strconv.ParseFloat(item.BalanceDue, 64)
-			settlementAmount += bal
+			totalBalanceDue += bal
+			
+			unitPrice, _ := strconv.ParseFloat(item.UnitPrice, 64)
+			title := item.Title
 			
 			orderItems = append(orderItems, OrderItem{
 				ShopifyVariantID: item.VariantID,
 				Type:             "pre_order",
 				Quantity:         item.Quantity,
 				ItemStatus:       "pending_deposit",
+				FulfillmentStep:  1,
 				DpAmount:         &dep,
+				Title:            &title,
+				UnitPrice:        &unitPrice,
+				AmountCharged:    &dep,
+				BalanceDue:       &bal,
 			})
 		}
 		
@@ -158,11 +181,20 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 	}
 
 	// 5. Save Order
+	orderNumber := fmt.Sprintf("ORD-%s", uuid.NewString()[:8])
 	order := &Order{
-		CustomerID:      customerID,
-		TotalPrice:      total,
-		AggregateStatus: "pending_payment",
-		Items:           orderItems,
+		OrderNumber:       orderNumber,
+		CustomerID:        customerID,
+		TotalPrice:        total,
+		AggregateStatus:   "pending_payment",
+		FinancialStatus:   "pending",
+		FulfillmentStatus: "pending",
+		TotalShipReady:    totalShipReady,
+		TotalDepositPaid:  totalDepositPaid,
+		TotalBalanceDue:   totalBalanceDue,
+		TotalChargedNow:   totalChargedNow,
+		Currency:          "USD",
+		Items:             orderItems,
 	}
 
 	if err := s.store.CreateOrder(ctx, order); err != nil {
@@ -171,12 +203,16 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 
 	// Auto-create settlement for pre_order items
 	if hasPreOrder {
-		settlement := &preorder.Settlement{
-			OrderID: order.ID,
-			Amount:  settlementAmount,
-			Status:  "pending",
+		for _, item := range order.Items {
+			if item.Type == "pre_order" && item.BalanceDue != nil {
+				settlement := &preorder.Settlement{
+					OrderLineItemID: item.ID,
+					BalanceAmount:   *item.BalanceDue,
+					Status:          "pending",
+				}
+				_ = s.preorderStore.CreateSettlement(ctx, settlement)
+			}
 		}
-		_ = s.preorderStore.CreateSettlement(ctx, settlement)
 	}
 
 	// Clear cart after successful order creation
@@ -187,6 +223,13 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 	var preOrder []OrderItemDetail
 	
 	for _, it := range order.Items {
+		var itemTitle string
+		if it.Title != nil { itemTitle = *it.Title }
+		var unitPrice, amountCharged, balanceDue *string
+		if it.UnitPrice != nil { val := fmt.Sprintf("%.2f", *it.UnitPrice); unitPrice = &val }
+		if it.AmountCharged != nil { val := fmt.Sprintf("%.2f", *it.AmountCharged); amountCharged = &val }
+		if it.BalanceDue != nil { val := fmt.Sprintf("%.2f", *it.BalanceDue); balanceDue = &val }
+
 		detail := OrderItemDetail{
 			ID:              it.ID,
 			VariantID:       it.ShopifyVariantID,
@@ -195,6 +238,10 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 			ItemStatus:      it.ItemStatus,
 			FulfillmentStep: it.FulfillmentStep,
 			ItemsReceived:   it.ItemsReceived,
+			Title:           itemTitle,
+			UnitPrice:       unitPrice,
+			AmountCharged:   amountCharged,
+			BalanceDue:      balanceDue,
 		}
 		if it.DpAmount != nil {
 			val := fmt.Sprintf("%.2f", *it.DpAmount)
@@ -216,10 +263,18 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 
 	return &OrderResponse{
 		ID:                  order.ID,
+		OrderNumber:         order.OrderNumber,
 		ShopifyCheckoutURL:  checkoutURL,
 		ShopifyDraftInvoice: draftInvoiceURL,
 		TotalPrice:          fmt.Sprintf("%.2f", order.TotalPrice),
 		AggregateStatus:     order.AggregateStatus,
+		FinancialStatus:     order.FinancialStatus,
+		FulfillmentStatus:   order.FulfillmentStatus,
+		TotalShipReady:      fmt.Sprintf("%.2f", order.TotalShipReady),
+		TotalDepositPaid:    fmt.Sprintf("%.2f", order.TotalDepositPaid),
+		TotalBalanceDue:     fmt.Sprintf("%.2f", order.TotalBalanceDue),
+		TotalChargedNow:     fmt.Sprintf("%.2f", order.TotalChargedNow),
+		Currency:            order.Currency,
 		LineItems:           LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
 	}, nil
 }
@@ -235,6 +290,13 @@ func (s *service) GetOrders(ctx context.Context, userID string) ([]OrderResponse
 		var shipReady []OrderItemDetail
 		var preOrder []OrderItemDetail
 		for _, it := range o.Items {
+			var itemTitle string
+			if it.Title != nil { itemTitle = *it.Title }
+			var unitPrice, amountCharged, balanceDue *string
+			if it.UnitPrice != nil { val := fmt.Sprintf("%.2f", *it.UnitPrice); unitPrice = &val }
+			if it.AmountCharged != nil { val := fmt.Sprintf("%.2f", *it.AmountCharged); amountCharged = &val }
+			if it.BalanceDue != nil { val := fmt.Sprintf("%.2f", *it.BalanceDue); balanceDue = &val }
+			
 			detail := OrderItemDetail{
 				ID:              it.ID,
 				VariantID:       it.ShopifyVariantID,
@@ -243,6 +305,10 @@ func (s *service) GetOrders(ctx context.Context, userID string) ([]OrderResponse
 				ItemStatus:      it.ItemStatus,
 				FulfillmentStep: it.FulfillmentStep,
 				ItemsReceived:   it.ItemsReceived,
+				Title:           itemTitle,
+				UnitPrice:       unitPrice,
+				AmountCharged:   amountCharged,
+				BalanceDue:      balanceDue,
 			}
 			if it.DpAmount != nil { val := fmt.Sprintf("%.2f", *it.DpAmount); detail.DpAmount = &val }
 			if it.FinalAmount != nil { val := fmt.Sprintf("%.2f", *it.FinalAmount); detail.FinalAmount = &val }
@@ -257,10 +323,18 @@ func (s *service) GetOrders(ctx context.Context, userID string) ([]OrderResponse
 		if preOrder == nil { preOrder = []OrderItemDetail{} }
 
 		res = append(res, OrderResponse{
-			ID:              o.ID,
-			TotalPrice:      fmt.Sprintf("%.2f", o.TotalPrice),
-			AggregateStatus: o.AggregateStatus,
-			LineItems:       LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
+			ID:                o.ID,
+			OrderNumber:       o.OrderNumber,
+			TotalPrice:        fmt.Sprintf("%.2f", o.TotalPrice),
+			AggregateStatus:   o.AggregateStatus,
+			FinancialStatus:   o.FinancialStatus,
+			FulfillmentStatus: o.FulfillmentStatus,
+			TotalShipReady:    fmt.Sprintf("%.2f", o.TotalShipReady),
+			TotalDepositPaid:  fmt.Sprintf("%.2f", o.TotalDepositPaid),
+			TotalBalanceDue:   fmt.Sprintf("%.2f", o.TotalBalanceDue),
+			TotalChargedNow:   fmt.Sprintf("%.2f", o.TotalChargedNow),
+			Currency:          o.Currency,
+			LineItems:         LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
 		})
 	}
 	if res == nil { res = []OrderResponse{} }
@@ -279,6 +353,13 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 	var shipReady []OrderItemDetail
 	var preOrder []OrderItemDetail
 	for _, it := range o.Items {
+		var itemTitle string
+		if it.Title != nil { itemTitle = *it.Title }
+		var unitPrice, amountCharged, balanceDue *string
+		if it.UnitPrice != nil { val := fmt.Sprintf("%.2f", *it.UnitPrice); unitPrice = &val }
+		if it.AmountCharged != nil { val := fmt.Sprintf("%.2f", *it.AmountCharged); amountCharged = &val }
+		if it.BalanceDue != nil { val := fmt.Sprintf("%.2f", *it.BalanceDue); balanceDue = &val }
+
 		detail := OrderItemDetail{
 			ID:              it.ID,
 			VariantID:       it.ShopifyVariantID,
@@ -287,6 +368,10 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 			ItemStatus:      it.ItemStatus,
 			FulfillmentStep: it.FulfillmentStep,
 			ItemsReceived:   it.ItemsReceived,
+			Title:           itemTitle,
+			UnitPrice:       unitPrice,
+			AmountCharged:   amountCharged,
+			BalanceDue:      balanceDue,
 		}
 		if it.DpAmount != nil { val := fmt.Sprintf("%.2f", *it.DpAmount); detail.DpAmount = &val }
 		if it.FinalAmount != nil { val := fmt.Sprintf("%.2f", *it.FinalAmount); detail.FinalAmount = &val }
@@ -302,10 +387,18 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 
 	return &OrderResponse{
 		ID:                  o.ID,
+		OrderNumber:         o.OrderNumber,
 		ShopifyCheckoutURL:  "",
 		ShopifyDraftInvoice: "",
 		TotalPrice:          fmt.Sprintf("%.2f", o.TotalPrice),
 		AggregateStatus:     o.AggregateStatus,
+		FinancialStatus:     o.FinancialStatus,
+		FulfillmentStatus:   o.FulfillmentStatus,
+		TotalShipReady:      fmt.Sprintf("%.2f", o.TotalShipReady),
+		TotalDepositPaid:    fmt.Sprintf("%.2f", o.TotalDepositPaid),
+		TotalBalanceDue:     fmt.Sprintf("%.2f", o.TotalBalanceDue),
+		TotalChargedNow:     fmt.Sprintf("%.2f", o.TotalChargedNow),
+		Currency:            o.Currency,
 		LineItems:           LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
 	}, nil
 }
@@ -320,7 +413,7 @@ func (s *service) AcceptOrder(ctx context.Context, userID, orderID, fulfillmentT
 	}
 
 	// Update order status logic - simplified
-	if err := s.store.UpdateOrderStatus(ctx, orderID, "on_progress"); err != nil {
+	if err := s.store.UpdateOrderStatus(ctx, orderID, "on_progress", "in_progress"); err != nil {
 		return apierror.ErrInternal
 	}
 	return nil
@@ -332,7 +425,7 @@ func (s *service) CancelOrder(ctx context.Context, userID, orderID, fulfillmentT
 	if o == nil { return apierror.ErrNotFound }
 
 	// TODO: log refund note
-	if err := s.store.UpdateOrderStatus(ctx, orderID, "cancelled"); err != nil {
+	if err := s.store.UpdateOrderStatus(ctx, orderID, "refunded", "cancelled"); err != nil {
 		return apierror.ErrInternal
 	}
 	return nil

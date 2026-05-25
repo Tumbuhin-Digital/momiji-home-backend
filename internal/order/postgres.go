@@ -33,8 +33,11 @@ func (s *PostgresStore) GetOrdersByCustomer(ctx context.Context, customerID stri
 	return orders, err
 }
 
-func (s *PostgresStore) UpdateOrderStatus(ctx context.Context, orderID string, status string) error {
-	return s.db.WithContext(ctx).Model(&Order{}).Where("id = ?", orderID).Update("aggregate_status", status).Error
+func (s *PostgresStore) UpdateOrderStatus(ctx context.Context, orderID, financialStatus, fulfillmentStatus string) error {
+	return s.db.WithContext(ctx).Model(&Order{}).Where("id = ?", orderID).Updates(map[string]interface{}{
+		"financial_status": financialStatus,
+		"fulfillment_status": fulfillmentStatus,
+	}).Error
 }
 
 func (s *PostgresStore) UpdateOrderItemStep(ctx context.Context, itemID string, step int) error {
