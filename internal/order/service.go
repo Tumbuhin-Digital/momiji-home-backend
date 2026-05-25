@@ -17,6 +17,11 @@ import (
 type OrderService interface {
 	CreateOrder(ctx context.Context, userID, sessionID *string, req CreateOrderRequest) (*OrderResponse, error)
 	GetOrders(ctx context.Context, userID string) ([]OrderResponse, error)
+	GetOrder(ctx context.Context, userID, orderID string) (*OrderResponse, error)
+	AcceptOrder(ctx context.Context, userID, orderID, fulfillmentType string) error
+	CancelOrder(ctx context.Context, userID, orderID, fulfillmentType, reason string) error
+	UpdateFulfillmentStep(ctx context.Context, userID, orderID, itemID string, step int) error
+	UpdateItemsReceived(ctx context.Context, userID, orderID, itemID string, count int) error
 }
 
 type service struct {
@@ -178,24 +183,36 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 	_ = s.cartService.ClearCart(ctx, userID, sessionID)
 
 	// Map to response
-	resItems := make([]OrderItemDetail, len(order.Items))
-	for i, it := range order.Items {
-		resItems[i] = OrderItemDetail{
-			ID:         it.ID,
-			VariantID:  it.ShopifyVariantID,
-			Type:       it.Type,
-			Quantity:   it.Quantity,
-			ItemStatus: it.ItemStatus,
+	var shipReady []OrderItemDetail
+	var preOrder []OrderItemDetail
+	
+	for _, it := range order.Items {
+		detail := OrderItemDetail{
+			ID:              it.ID,
+			VariantID:       it.ShopifyVariantID,
+			Type:            it.Type,
+			Quantity:        it.Quantity,
+			ItemStatus:      it.ItemStatus,
+			FulfillmentStep: it.FulfillmentStep,
+			ItemsReceived:   it.ItemsReceived,
 		}
 		if it.DpAmount != nil {
 			val := fmt.Sprintf("%.2f", *it.DpAmount)
-			resItems[i].DpAmount = &val
+			detail.DpAmount = &val
 		}
 		if it.FinalAmount != nil {
 			val := fmt.Sprintf("%.2f", *it.FinalAmount)
-			resItems[i].FinalAmount = &val
+			detail.FinalAmount = &val
+		}
+		if it.Type == "ship_ready" {
+			shipReady = append(shipReady, detail)
+		} else {
+			preOrder = append(preOrder, detail)
 		}
 	}
+
+	if shipReady == nil { shipReady = []OrderItemDetail{} }
+	if preOrder == nil { preOrder = []OrderItemDetail{} }
 
 	return &OrderResponse{
 		ID:                  order.ID,
@@ -203,7 +220,7 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 		ShopifyDraftInvoice: draftInvoiceURL,
 		TotalPrice:          fmt.Sprintf("%.2f", order.TotalPrice),
 		AggregateStatus:     order.AggregateStatus,
-		Items:               resItems,
+		LineItems:           LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
 	}, nil
 }
 
@@ -215,22 +232,128 @@ func (s *service) GetOrders(ctx context.Context, userID string) ([]OrderResponse
 	
 	var res []OrderResponse
 	for _, o := range orders {
-		resItems := make([]OrderItemDetail, len(o.Items))
-		for i, it := range o.Items {
-			resItems[i] = OrderItemDetail{
-				ID:         it.ID,
-				VariantID:  it.ShopifyVariantID,
-				Type:       it.Type,
-				Quantity:   it.Quantity,
-				ItemStatus: it.ItemStatus,
+		var shipReady []OrderItemDetail
+		var preOrder []OrderItemDetail
+		for _, it := range o.Items {
+			detail := OrderItemDetail{
+				ID:              it.ID,
+				VariantID:       it.ShopifyVariantID,
+				Type:            it.Type,
+				Quantity:        it.Quantity,
+				ItemStatus:      it.ItemStatus,
+				FulfillmentStep: it.FulfillmentStep,
+				ItemsReceived:   it.ItemsReceived,
+			}
+			if it.DpAmount != nil { val := fmt.Sprintf("%.2f", *it.DpAmount); detail.DpAmount = &val }
+			if it.FinalAmount != nil { val := fmt.Sprintf("%.2f", *it.FinalAmount); detail.FinalAmount = &val }
+			
+			if it.Type == "ship_ready" {
+				shipReady = append(shipReady, detail)
+			} else {
+				preOrder = append(preOrder, detail)
 			}
 		}
+		if shipReady == nil { shipReady = []OrderItemDetail{} }
+		if preOrder == nil { preOrder = []OrderItemDetail{} }
+
 		res = append(res, OrderResponse{
 			ID:              o.ID,
 			TotalPrice:      fmt.Sprintf("%.2f", o.TotalPrice),
 			AggregateStatus: o.AggregateStatus,
-			Items:           resItems,
+			LineItems:       LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
 		})
 	}
+	if res == nil { res = []OrderResponse{} }
 	return res, nil
+}
+
+func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderResponse, error) {
+	o, err := s.store.GetOrder(ctx, orderID, userID)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	if o == nil {
+		return nil, apierror.ErrNotFound
+	}
+
+	var shipReady []OrderItemDetail
+	var preOrder []OrderItemDetail
+	for _, it := range o.Items {
+		detail := OrderItemDetail{
+			ID:              it.ID,
+			VariantID:       it.ShopifyVariantID,
+			Type:            it.Type,
+			Quantity:        it.Quantity,
+			ItemStatus:      it.ItemStatus,
+			FulfillmentStep: it.FulfillmentStep,
+			ItemsReceived:   it.ItemsReceived,
+		}
+		if it.DpAmount != nil { val := fmt.Sprintf("%.2f", *it.DpAmount); detail.DpAmount = &val }
+		if it.FinalAmount != nil { val := fmt.Sprintf("%.2f", *it.FinalAmount); detail.FinalAmount = &val }
+		
+		if it.Type == "ship_ready" {
+			shipReady = append(shipReady, detail)
+		} else {
+			preOrder = append(preOrder, detail)
+		}
+	}
+	if shipReady == nil { shipReady = []OrderItemDetail{} }
+	if preOrder == nil { preOrder = []OrderItemDetail{} }
+
+	return &OrderResponse{
+		ID:                  o.ID,
+		ShopifyCheckoutURL:  "",
+		ShopifyDraftInvoice: "",
+		TotalPrice:          fmt.Sprintf("%.2f", o.TotalPrice),
+		AggregateStatus:     o.AggregateStatus,
+		LineItems:           LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
+	}, nil
+}
+
+func (s *service) AcceptOrder(ctx context.Context, userID, orderID, fulfillmentType string) error {
+	o, err := s.store.GetOrder(ctx, orderID, userID)
+	if err != nil { return apierror.ErrInternal }
+	if o == nil { return apierror.ErrNotFound }
+
+	if o.AggregateStatus != "pending" && o.AggregateStatus != "pending_payment" {
+		return apierror.New(400, "invalid_transition", "Order is not pending")
+	}
+
+	// Update order status logic - simplified
+	if err := s.store.UpdateOrderStatus(ctx, orderID, "on_progress"); err != nil {
+		return apierror.ErrInternal
+	}
+	return nil
+}
+
+func (s *service) CancelOrder(ctx context.Context, userID, orderID, fulfillmentType, reason string) error {
+	o, err := s.store.GetOrder(ctx, orderID, userID)
+	if err != nil { return apierror.ErrInternal }
+	if o == nil { return apierror.ErrNotFound }
+
+	// TODO: log refund note
+	if err := s.store.UpdateOrderStatus(ctx, orderID, "cancelled"); err != nil {
+		return apierror.ErrInternal
+	}
+	return nil
+}
+
+func (s *service) UpdateFulfillmentStep(ctx context.Context, userID, orderID, itemID string, step int) error {
+	if step < 1 || step > 4 {
+		return apierror.New(400, "invalid_step", "Step must be between 1 and 4")
+	}
+	if err := s.store.UpdateOrderItemStep(ctx, itemID, step); err != nil {
+		return apierror.ErrInternal
+	}
+	return nil
+}
+
+func (s *service) UpdateItemsReceived(ctx context.Context, userID, orderID, itemID string, count int) error {
+	if count < 0 {
+		return apierror.New(400, "invalid_count", "Count cannot be negative")
+	}
+	if err := s.store.UpdateOrderItemReceived(ctx, itemID, count); err != nil {
+		return apierror.ErrInternal
+	}
+	return nil
 }
