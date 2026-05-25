@@ -28,6 +28,11 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	authGrp := group.Group("/")
 	authGrp.Use(middleware.Auth(h.jwtSecret))
 	authGrp.Get("/", h.GetOrders)
+	authGrp.Get("/:id", h.GetOrder)
+	authGrp.Patch("/:id/accept", h.AcceptOrder)
+	authGrp.Patch("/:id/cancel", h.CancelOrder)
+	authGrp.Patch("/:id/items/:itemId/step", h.UpdateFulfillmentStep)
+	authGrp.Patch("/:id/items/:itemId/received", h.UpdateItemsReceived)
 }
 
 // CreateOrder godoc
@@ -78,4 +83,111 @@ func (h *Handler) GetOrders(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Orders retrieved", res)
+}
+
+// GetOrder godoc
+// @Summary Get customer order
+// @Tags Order
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Success 200 {object} response.Envelope{data=OrderResponse}
+// @Router /orders/{id} [get]
+func (h *Handler) GetOrder(c *fiber.Ctx) error {
+	uid := c.Locals("user_id").(string)
+	res, err := h.service.GetOrder(c.Context(), uid, c.Params("id"))
+	if err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Order retrieved", res)
+}
+
+// AcceptOrder godoc
+// @Summary Accept an order
+// @Tags Order
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Param request body AcceptOrderRequest true "Accept Order Request"
+// @Success 200 {object} response.Envelope
+// @Router /orders/{id}/accept [patch]
+func (h *Handler) AcceptOrder(c *fiber.Ctx) error {
+	uid := c.Locals("user_id").(string)
+	var req AcceptOrderRequest
+	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
+	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
+
+	if err := h.service.AcceptOrder(c.Context(), uid, c.Params("id"), req.FulfillmentType); err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Order accepted", nil)
+}
+
+// CancelOrder godoc
+// @Summary Cancel an order
+// @Tags Order
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Param request body CancelOrderRequest true "Cancel Order Request"
+// @Success 200 {object} response.Envelope
+// @Router /orders/{id}/cancel [patch]
+func (h *Handler) CancelOrder(c *fiber.Ctx) error {
+	uid := c.Locals("user_id").(string)
+	var req CancelOrderRequest
+	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
+	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
+
+	if err := h.service.CancelOrder(c.Context(), uid, c.Params("id"), req.FulfillmentType, req.Reason); err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Order cancelled", nil)
+}
+
+// UpdateFulfillmentStep godoc
+// @Summary Update fulfillment step
+// @Tags Order
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Param itemId path string true "Item ID"
+// @Param request body UpdateStepRequest true "Update Step Request"
+// @Success 200 {object} response.Envelope
+// @Router /orders/{id}/items/{itemId}/step [patch]
+func (h *Handler) UpdateFulfillmentStep(c *fiber.Ctx) error {
+	uid := c.Locals("user_id").(string)
+	var req UpdateStepRequest
+	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
+	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
+
+	if err := h.service.UpdateFulfillmentStep(c.Context(), uid, c.Params("id"), c.Params("itemId"), req.FulfillmentStep); err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Fulfillment step updated", nil)
+}
+
+// UpdateItemsReceived godoc
+// @Summary Update items received count
+// @Tags Order
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Param itemId path string true "Item ID"
+// @Param request body UpdateReceivedRequest true "Update Received Request"
+// @Success 200 {object} response.Envelope
+// @Router /orders/{id}/items/{itemId}/received [patch]
+func (h *Handler) UpdateItemsReceived(c *fiber.Ctx) error {
+	uid := c.Locals("user_id").(string)
+	var req UpdateReceivedRequest
+	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
+	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
+
+	if err := h.service.UpdateItemsReceived(c.Context(), uid, c.Params("id"), c.Params("itemId"), req.ItemsReceived); err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Items received count updated", nil)
 }

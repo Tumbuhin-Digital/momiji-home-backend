@@ -266,6 +266,89 @@ definitions:
           $ref: '#/definitions/internal_checkout.ShippingMethod'
         type: array
     type: object
+  internal_customer.AddressResponse:
+    properties:
+      address1:
+        type: string
+      city:
+        type: string
+      country:
+        type: string
+      id:
+        type: string
+      is_default:
+        type: boolean
+      province:
+        type: string
+      zip:
+        type: string
+    type: object
+  internal_customer.CustomerDetailResponse:
+    properties:
+      addresses:
+        items:
+          $ref: '#/definitions/internal_customer.AddressResponse'
+        type: array
+      created_at:
+        type: string
+      email:
+        type: string
+      first_name:
+        type: string
+      id:
+        type: string
+      last_name:
+        type: string
+      orders_count:
+        type: integer
+      phone:
+        type: string
+    type: object
+  internal_customer.CustomerOrderResponse:
+    properties:
+      aggregate_status:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      total_price:
+        type: number
+    type: object
+  internal_customer.CustomerResponse:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      first_name:
+        type: string
+      id:
+        type: string
+      last_name:
+        type: string
+      orders_count:
+        type: integer
+      phone:
+        type: string
+    type: object
+  internal_order.AcceptOrderRequest:
+    properties:
+      fulfillment_type:
+        type: string
+    required:
+    - fulfillment_type
+    type: object
+  internal_order.CancelOrderRequest:
+    properties:
+      fulfillment_type:
+        type: string
+      reason:
+        type: string
+    required:
+    - fulfillment_type
+    - reason
+    type: object
   internal_order.CreateOrderRequest:
     properties:
       guest_info:
@@ -288,16 +371,31 @@ definitions:
     - first_name
     - last_name
     type: object
+  internal_order.LineItemsGroup:
+    properties:
+      pre_order:
+        items:
+          $ref: '#/definitions/internal_order.OrderItemDetail'
+        type: array
+      ship_ready:
+        items:
+          $ref: '#/definitions/internal_order.OrderItemDetail'
+        type: array
+    type: object
   internal_order.OrderItemDetail:
     properties:
       dp_amount:
         type: string
       final_amount:
         type: string
+      fulfillment_step:
+        type: integer
       id:
         type: string
       item_status:
         type: string
+      items_received:
+        type: integer
       quantity:
         type: integer
       type:
@@ -311,16 +409,31 @@ definitions:
         type: string
       id:
         type: string
-      items:
-        items:
-          $ref: '#/definitions/internal_order.OrderItemDetail'
-        type: array
+      line_items:
+        $ref: '#/definitions/internal_order.LineItemsGroup'
       shopify_checkout_url:
         type: string
       shopify_draft_invoice_url:
         type: string
       total_price:
         type: string
+    type: object
+  internal_order.UpdateReceivedRequest:
+    properties:
+      items_received:
+        minimum: 0
+        type: integer
+    required:
+    - items_received
+    type: object
+  internal_order.UpdateStepRequest:
+    properties:
+      fulfillment_step:
+        maximum: 4
+        minimum: 1
+        type: integer
+    required:
+    - fulfillment_step
     type: object
   internal_preorder.SettlementResponse:
     properties:
@@ -347,6 +460,19 @@ definitions:
     x-enum-varnames:
     - FulfillmentTypeShipReady
     - FulfillmentTypePreOrder
+  internal_product.ProductDetailDTO:
+    properties:
+      description:
+        type: string
+      id:
+        type: string
+      shopify_id:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+    type: object
   internal_product.VariantDTO:
     properties:
       fulfillment_type:
@@ -718,6 +844,92 @@ paths:
       summary: Get checkout summary
       tags:
       - Checkout
+  /customers:
+    get:
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Limit per page
+        in: query
+        name: limit
+        type: integer
+      - description: Search term
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/internal_customer.CustomerResponse'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: List customers
+      tags:
+      - Customer
+  /customers/{id}:
+    get:
+      parameters:
+      - description: Customer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_customer.CustomerDetailResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get customer details
+      tags:
+      - Customer
+  /customers/{id}/orders:
+    get:
+      parameters:
+      - description: Customer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/internal_customer.CustomerOrderResponse'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get customer orders
+      tags:
+      - Customer
   /orders:
     get:
       produces:
@@ -764,6 +976,153 @@ paths:
       security:
       - BearerAuth: []
       summary: Create an order from cart
+      tags:
+      - Order
+  /orders/{id}:
+    get:
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_order.OrderResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get customer order
+      tags:
+      - Order
+  /orders/{id}/accept:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Accept Order Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_order.AcceptOrderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Accept an order
+      tags:
+      - Order
+  /orders/{id}/cancel:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Cancel Order Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_order.CancelOrderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Cancel an order
+      tags:
+      - Order
+  /orders/{id}/items/{itemId}/received:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Item ID
+        in: path
+        name: itemId
+        required: true
+        type: string
+      - description: Update Received Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_order.UpdateReceivedRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Update items received count
+      tags:
+      - Order
+  /orders/{id}/items/{itemId}/step:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Item ID
+        in: path
+        name: itemId
+        required: true
+        type: string
+      - description: Update Step Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_order.UpdateStepRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Update fulfillment step
       tags:
       - Order
   /preorders:
@@ -902,6 +1261,112 @@ paths:
       summary: List products
       tags:
       - Product
+  /products/{id}:
+    get:
+      parameters:
+      - description: Product ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_product.ProductDetailDTO'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+            - properties:
+                error:
+                  $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.ErrorBlock'
+              type: object
+      summary: Get product by ID
+      tags:
+      - Product
+  /products/{id}/batch:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Product ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses: {}
+      security:
+      - BearerAuth: []
+      summary: Update preorder batch label for all variants of a product
+      tags:
+      - Product
+  /products/{id}/status:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Product ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+        "400":
+          description: Bad Request
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+            - properties:
+                error:
+                  $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.ErrorBlock'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Update product status
+      tags:
+      - Product
+  /products/{id}/variants:
+    get:
+      parameters:
+      - description: Product ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/internal_product.VariantDTO'
+                  type: array
+              type: object
+      summary: Get variants for a product
+      tags:
+      - Product
   /products/sync:
     post:
       produces:
@@ -914,6 +1379,24 @@ paths:
       security:
       - BearerAuth: []
       summary: Sync products from Shopify
+      tags:
+      - Product
+  /products/variant/{id}/price:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Variant ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses: {}
+      security:
+      - BearerAuth: []
+      summary: Override ws_price and/or retail_price for a variant
       tags:
       - Product
   /shipping/calculate:

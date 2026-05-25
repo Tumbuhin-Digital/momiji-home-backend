@@ -29,13 +29,17 @@ type OrderItem struct {
 	FinalAmount      *float64
 	ShopifyOrderID   *string
 	TrackingNumber   *string
+	FulfillmentStep  int
+	ItemsReceived    int
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
 
 type Store interface {
 	CreateOrder(ctx context.Context, order *Order) error
-	GetOrder(ctx context.Context, orderID string) (*Order, error)
+	GetOrder(ctx context.Context, orderID, customerID string) (*Order, error)
 	GetOrdersByCustomer(ctx context.Context, customerID string) ([]Order, error)
 	UpdateOrderStatus(ctx context.Context, orderID string, status string) error
+	UpdateOrderItemStep(ctx context.Context, itemID string, step int) error
+	UpdateOrderItemReceived(ctx context.Context, itemID string, count int) error
 }

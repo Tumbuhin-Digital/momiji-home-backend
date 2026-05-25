@@ -28,6 +28,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/customer"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/docs"
 )
 
@@ -73,6 +74,7 @@ func main() {
 	productStore := product.NewPostgresStore(db)
 	orderStore := order.NewPostgresStore(db)
 	preorderStore := preorder.NewPostgresPreorderStore(db)
+	customerStore := customer.NewPostgresStore(db)
 
 	// Initialize Services
 	authService := auth.NewAuthService(authStore, cfg.Auth)
@@ -87,6 +89,7 @@ func main() {
 	cartService := cart.NewCartService(cartStore, productService)
 	orderService := order.NewOrderService(orderStore, cartService, authStore, shopifyClient, preorderStore)
 	preorderService := preorder.NewPreorderService(preorderStore, orderStore)
+	customerService := customer.NewCustomerService(customerStore)
 
 	// Initialize Fiber App
 	app := server.NewFiberApp(log)
@@ -111,6 +114,9 @@ func main() {
 
 	preorderHandler := preorder.NewPreorderHandler(preorderService, cfg.Auth.Secret)
 	preorderHandler.SetupRoutes(api)
+
+	customerHandler := customer.NewCustomerHandler(customerService, cfg.Auth.Secret)
+	customerHandler.SetupRoutes(api)
 
 	// Start server in a separate goroutine
 	go func() {
