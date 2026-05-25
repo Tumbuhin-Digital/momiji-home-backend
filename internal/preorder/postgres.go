@@ -22,7 +22,11 @@ func (s *postgresStore) CreateSettlement(ctx context.Context, settlement *Settle
 
 func (s *postgresStore) GetSettlementByID(ctx context.Context, id string) (*Settlement, error) {
 	var settlement Settlement
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&settlement).Error; err != nil {
+	if err := s.db.WithContext(ctx).
+		Select("preorder_settlements.*, order_line_items.order_id").
+		Joins("LEFT JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
+		Where("preorder_settlements.id = ?", id).
+		First(&settlement).Error; err != nil {
 		return nil, err
 	}
 	return &settlement, nil
@@ -32,7 +36,9 @@ func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFi
 	var settlements []Settlement
 	var total int64
 
-	query := s.db.WithContext(ctx).Model(&Settlement{})
+	query := s.db.WithContext(ctx).Model(&Settlement{}).
+		Select("preorder_settlements.*, order_line_items.order_id").
+		Joins("LEFT JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id")
 
 	if filter.Status != "" {
 		query = query.Where("status = ?", filter.Status)
@@ -82,8 +88,9 @@ func (s *postgresStore) UpdateSettlementStatus(ctx context.Context, id, status s
 func (s *postgresStore) AllSettlementsPaid(ctx context.Context, orderID string) (bool, error) {
 	var unpaidCount int64
 	err := s.db.WithContext(ctx).
-		Model(&Settlement{}).
-		Where("order_id = ? AND status != ?", orderID, "paid").
+		Table("preorder_settlements").
+		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
+		Where("order_line_items.order_id = ? AND preorder_settlements.status != ?", orderID, "paid").
 		Count(&unpaidCount).Error
 	if err != nil {
 		return false, err
