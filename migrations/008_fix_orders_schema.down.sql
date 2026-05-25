@@ -1,0 +1,12 @@
+ALTER TABLE orders DROP COLUMN IF EXISTS order_number;
+ALTER TABLE orders DROP COLUMN IF EXISTS financial_status;
+ALTER TABLE orders DROP COLUMN IF EXISTS fulfillment_status;
+ALTER TABLE orders DROP COLUMN IF EXISTS shipping_address_id;
+ALTER TABLE orders DROP COLUMN IF EXISTS shipping_method;
+ALTER TABLE orders DROP COLUMN IF EXISTS shipping_cost;
+ALTER TABLE orders DROP COLUMN IF EXISTS total_ship_ready;
+ALTER TABLE orders DROP COLUMN IF EXISTS total_deposit_paid;
+ALTER TABLE orders DROP COLUMN IF EXISTS total_balance_due;
+ALTER TABLE orders DROP COLUMN IF EXISTS total_charged_now;
+ALTER TABLE orders DROP COLUMN IF EXISTS currency;
+ALTER TABLE orders DROP COLUMN IF EXISTS note;
