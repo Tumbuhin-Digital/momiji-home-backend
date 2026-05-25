@@ -6,31 +6,31 @@ import (
 )
 
 type Customer struct {
-	ID        string    `gorm:"primaryKey;type:uuid"` // Matches users.id
-	Email     string
-	FirstName *string
-	LastName  *string
-	Phone     *string
-	Role      string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID                string    `gorm:"primaryKey;type:uuid"`
+	Email             string
+	FirstName         *string
+	LastName          *string
+	Phone             *string
+	ShopifyCustomerID *string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 
 	Addresses   []Address `gorm:"foreignKey:CustomerID"`
 	OrdersCount int       `gorm:"-"`
 }
 
-func (Customer) TableName() string {
-	return "users"
-}
-
 type Address struct {
 	ID         string `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
 	CustomerID string
+	FirstName  *string
+	LastName   *string
 	Address1   string
+	Address2   *string
 	City       string
 	Province   string
 	Country    string
 	Zip        string
+	Phone      *string
 	IsDefault  bool
 	CreatedAt  time.Time
 	UpdatedAt  time.Time

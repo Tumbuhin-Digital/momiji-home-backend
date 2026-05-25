@@ -13,13 +13,17 @@ type CustomerResponse struct {
 }
 
 type AddressResponse struct {
-	ID        string `json:"id"`
-	Address1  string `json:"address1"`
-	City      string `json:"city"`
-	Province  string `json:"province"`
-	Country   string `json:"country"`
-	Zip       string `json:"zip"`
-	IsDefault bool   `json:"is_default"`
+	ID        string  `json:"id"`
+	FirstName *string `json:"first_name,omitempty"`
+	LastName  *string `json:"last_name,omitempty"`
+	Address1  string  `json:"address1"`
+	Address2  *string `json:"address2,omitempty"`
+	City      string  `json:"city"`
+	Province  string  `json:"province"`
+	Country   string  `json:"country"`
+	Zip       string  `json:"zip"`
+	Phone     *string `json:"phone,omitempty"`
+	IsDefault bool    `json:"is_default"`
 }
 
 type CustomerDetailResponse struct {

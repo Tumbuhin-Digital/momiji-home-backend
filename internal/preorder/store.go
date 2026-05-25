@@ -6,17 +6,19 @@ import (
 )
 
 // Settlement represents a pre-order payment settlement.
-// One settlement is created per order that contains pre_order items.
+// One settlement is created per order_line_item that is pre_order.
 // State machine: pending → invoiced → paid
 type Settlement struct {
-	ID         string     `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
-	OrderID    string     `gorm:"not null"`
-	Status     string     `gorm:"not null;default:'pending'"` // pending | invoiced | paid
-	Amount     float64    `gorm:"not null"`
-	InvoicedAt *time.Time
-	PaidAt     *time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID              string     `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	OrderLineItemID string     `gorm:"not null"`
+	OrderID         string     `gorm:"->"` // derived via join if needed
+	Status          string     `gorm:"not null;default:'pending'"` // pending | invoiced | paid
+	BalanceAmount   float64    `gorm:"not null"`
+	DueDate         *time.Time
+	InvoicedAt      *time.Time
+	PaidAt          *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 func (Settlement) TableName() string {

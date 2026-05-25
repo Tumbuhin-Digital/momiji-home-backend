@@ -10,7 +10,7 @@ import (
 
 // OrderUpdater allows preorder service to update order status without circular imports.
 type OrderUpdater interface {
-	UpdateOrderStatus(ctx context.Context, orderID string, status string) error
+	UpdateOrderStatus(ctx context.Context, orderID, financialStatus, fulfillmentStatus string) error
 }
 
 // PreorderService defines the settlement state machine operations.
@@ -128,20 +128,21 @@ func (s *service) checkAndUpdateOrderStatus(ctx context.Context, orderID string)
 		return err
 	}
 	if allPaid {
-		return s.orderStore.UpdateOrderStatus(ctx, orderID, "paid")
+		return s.orderStore.UpdateOrderStatus(ctx, orderID, "paid", "pending")
 	}
 	return nil
 }
 
-// toResponse maps a Settlement model to its API response shape.
 func toResponse(st Settlement) SettlementResponse {
 	return SettlementResponse{
-		ID:         st.ID,
-		OrderID:    st.OrderID,
-		Status:     st.Status,
-		Amount:     st.Amount,
-		InvoicedAt: st.InvoicedAt,
-		PaidAt:     st.PaidAt,
-		CreatedAt:  st.CreatedAt,
+		ID:              st.ID,
+		OrderLineItemID: st.OrderLineItemID,
+		OrderID:         st.OrderID,
+		Status:          st.Status,
+		BalanceAmount:   st.BalanceAmount,
+		DueDate:         st.DueDate,
+		InvoicedAt:      st.InvoicedAt,
+		PaidAt:          st.PaidAt,
+		CreatedAt:       st.CreatedAt,
 	}
 }
