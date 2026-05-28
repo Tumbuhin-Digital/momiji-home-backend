@@ -16,10 +16,40 @@ func NewPostgresStore(db *gorm.DB) Store {
 	return &PostgresStore{db: db}
 }
 
-func (s *PostgresStore) GetVariants(ctx context.Context) ([]ProductVariant, error) {
-	var variants []ProductVariant
-	err := s.db.WithContext(ctx).Find(&variants).Error
-	return variants, err
+func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Product, int64, error) {
+	var products []Product
+	var total int64
+
+	query := s.db.WithContext(ctx).Model(&Product{})
+
+	if q.Search != "" {
+		searchPattern := "%" + q.Search + "%"
+		query = query.Where("title ILIKE ? OR description ILIKE ?", searchPattern, searchPattern)
+	}
+	
+	if q.FulfillmentType != "" {
+		query = query.Joins("JOIN product_variants ON product_variants.product_id = products.id").
+			Where("product_variants.fulfillment_type = ?", q.FulfillmentType).
+			Group("products.id")
+	}
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	page := q.Page
+	if page < 1 { page = 1 }
+	limit := q.Limit
+	if limit < 1 { limit = 20 }
+	offset := (page - 1) * limit
+	
+	orderStr := "created_at DESC"
+	if q.Sort != "" {
+		orderStr = q.Sort
+	}
+
+	err := query.Preload("Variants").Order(orderStr).Offset(offset).Limit(limit).Find(&products).Error
+	return products, total, err
 }
 
 func (s *PostgresStore) GetVariantByShopifyID(ctx context.Context, shopifyVariantID string) (*ProductVariant, error) {

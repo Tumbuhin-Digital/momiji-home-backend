@@ -38,11 +38,11 @@ func NewMockProductStore() *MockProductStore {
 	}
 }
 
-func (m *MockProductStore) GetVariants(ctx context.Context) ([]ProductVariant, error) {
-	if m.GetVariantsErr != nil { return nil, m.GetVariantsErr }
-	out := make([]ProductVariant, 0, len(m.Variants))
-	for _, v := range m.Variants { out = append(out, *v) }
-	return out, nil
+func (m *MockProductStore) GetProducts(ctx context.Context, q ProductQuery) ([]Product, int64, error) {
+	if m.GetVariantsErr != nil { return nil, 0, m.GetVariantsErr }
+	out := make([]Product, 0, len(m.Products))
+	for _, p := range m.Products { out = append(out, *p) }
+	return out, int64(len(out)), nil
 }
 
 func (m *MockProductStore) GetVariantByShopifyID(ctx context.Context, id string) (*ProductVariant, error) {
