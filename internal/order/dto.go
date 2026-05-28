@@ -65,3 +65,10 @@ type UpdateStepRequest struct {
 type UpdateReceivedRequest struct {
 	ItemsReceived int `json:"items_received" validate:"required,min=0"`
 }
+
+type OrderQuery struct {
+	Page   int    `query:"page"`
+	Limit  int    `query:"limit"`
+	Search string `query:"search"`
+	Status string `query:"status"` // expected format could be financial/fulfillment depending on need, but the contract says 'status'
+}

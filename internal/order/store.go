@@ -58,7 +58,7 @@ func (OrderItem) TableName() string {
 type Store interface {
 	CreateOrder(ctx context.Context, order *Order) error
 	GetOrder(ctx context.Context, orderID, customerID string) (*Order, error)
-	GetOrdersByCustomer(ctx context.Context, customerID string) ([]Order, error)
+	GetOrdersByCustomer(ctx context.Context, customerID string, query OrderQuery) ([]Order, int64, error)
 	UpdateOrderStatus(ctx context.Context, orderID, financialStatus, fulfillmentStatus string) error
 	UpdateOrderItemStep(ctx context.Context, itemID string, step int) error
 	UpdateOrderItemReceived(ctx context.Context, itemID string, count int) error

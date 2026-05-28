@@ -3,6 +3,7 @@ package order
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server/middleware"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/response"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/validator"
 )
@@ -78,11 +79,33 @@ func (h *Handler) CreateOrder(c *fiber.Ctx) error {
 // @Router /orders [get]
 func (h *Handler) GetOrders(c *fiber.Ctx) error {
 	uid := c.Locals("user_id").(string)
-	res, err := h.service.GetOrders(c.Context(), uid)
+
+	var query OrderQuery
+	if err := c.QueryParser(&query); err != nil {
+		return response.Error(c, apierror.ErrBadRequest)
+	}
+
+	res, total, err := h.service.GetOrders(c.Context(), uid, query)
 	if err != nil {
 		return response.Error(c, err)
 	}
-	return response.Success(c, fiber.StatusOK, "Orders retrieved", res)
+
+	limit := query.Limit
+	if limit < 1 { limit = 20 }
+	page := query.Page
+	if page < 1 { page = 1 }
+	totalPages := int((total + int64(limit) - 1) / int64(limit))
+
+	paginatedData := response.PaginatedData{
+		Page:       page,
+		Limit:      limit,
+		Total:      total,
+		TotalPages: totalPages,
+		ItemsKey:   "orders",
+		Items:      res,
+	}
+
+	return response.Success(c, fiber.StatusOK, "Orders retrieved", paginatedData)
 }
 
 // GetOrder godoc
