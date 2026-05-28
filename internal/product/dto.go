@@ -17,10 +17,25 @@ type VariantDTO struct {
 	FulfillmentType FulfillmentType `json:"fulfillment_type"`
 }
 
-type ProductDetailDTO struct {
-	ID          string `json:"id"`
-	ShopifyID   string `json:"shopify_id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Status      string `json:"status"`
+type ProductImageDTO struct {
+	ID  string `json:"id"`
+	Src string `json:"src"`
+}
+
+type ProductDTO struct {
+	ID          string            `json:"id"`
+	ShopifyID   string            `json:"shopify_id"`
+	Title       string            `json:"title"`
+	Description string            `json:"description"`
+	Status      string            `json:"status"`
+	Variants    []VariantDTO      `json:"variants"`
+	Images      []ProductImageDTO `json:"images"`
+}
+
+type ProductQuery struct {
+	Page            int    `query:"page"`
+	Limit           int    `query:"limit"`
+	Search          string `query:"search"`
+	Sort            string `query:"sort"`
+	FulfillmentType string `query:"fulfillment_type"`
 }

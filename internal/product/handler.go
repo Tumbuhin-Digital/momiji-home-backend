@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server/middleware"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/response"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/validator"
 )
@@ -43,11 +44,32 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 // @Success 200 {object} response.Envelope{data=[]VariantDTO}
 // @Router /products [get]
 func (h *Handler) GetProducts(c *fiber.Ctx) error {
-	variants, err := h.service.GetVariants(c.Context())
+	var query ProductQuery
+	if err := c.QueryParser(&query); err != nil {
+		return response.Error(c, apierror.ErrBadRequest)
+	}
+
+	products, total, err := h.service.GetProducts(c.Context(), query)
 	if err != nil {
 		return response.Error(c, err)
 	}
-	return response.Success(c, fiber.StatusOK, "Products retrieved", variants)
+
+	limit := query.Limit
+	if limit < 1 { limit = 20 }
+	page := query.Page
+	if page < 1 { page = 1 }
+	totalPages := int((total + int64(limit) - 1) / int64(limit))
+
+	paginatedData := response.PaginatedData{
+		Page:       page,
+		Limit:      limit,
+		Total:      total,
+		TotalPages: totalPages,
+		ItemsKey:   "products",
+		Items:      products,
+	}
+
+	return response.Success(c, fiber.StatusOK, "Products retrieved", paginatedData)
 }
 
 // SyncProducts godoc

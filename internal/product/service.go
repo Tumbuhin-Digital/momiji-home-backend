@@ -14,9 +14,9 @@ import (
 
 type ProductService interface {
 	GetVariantByID(ctx context.Context, variantID string) (*VariantDTO, error)
-	GetVariants(ctx context.Context) ([]VariantDTO, error)
+	GetProducts(ctx context.Context, query ProductQuery) ([]ProductDTO, int64, error)
 	SyncFromShopify(ctx context.Context) error
-	GetProductByID(ctx context.Context, id string) (*ProductDetailDTO, error)
+	GetProductByID(ctx context.Context, id string) (*ProductDTO, error)
 	GetVariantsByProductID(ctx context.Context, productID string) ([]VariantDTO, error)
 	UpdateProductStatus(ctx context.Context, productID string, status string) error
 	UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string) error
@@ -43,17 +43,37 @@ func (s *service) GetVariantByID(ctx context.Context, variantID string) (*Varian
 	return mapVariantToDTO(variant), nil
 }
 
-func (s *service) GetVariants(ctx context.Context) ([]VariantDTO, error) {
-	variants, err := s.store.GetVariants(ctx)
+func (s *service) GetProducts(ctx context.Context, query ProductQuery) ([]ProductDTO, int64, error) {
+	products, total, err := s.store.GetProducts(ctx, query)
 	if err != nil {
-		return nil, apierror.ErrInternal
+		return nil, 0, apierror.ErrInternal
 	}
 	
-	dtos := make([]VariantDTO, len(variants))
-	for i, v := range variants {
-		dtos[i] = *mapVariantToDTO(&v)
+	dtos := make([]ProductDTO, len(products))
+	for i, p := range products {
+		dtos[i] = mapProductToDTO(&p)
 	}
-	return dtos, nil
+	return dtos, total, nil
+}
+
+func mapProductToDTO(p *Product) ProductDTO {
+	variants := make([]VariantDTO, len(p.Variants))
+	for i, v := range p.Variants {
+		variants[i] = *mapVariantToDTO(&v)
+	}
+	
+	// Ensure Images is not nil (as per contract it's an array)
+	images := []ProductImageDTO{}
+	
+	return ProductDTO{
+		ID:          p.ID,
+		ShopifyID:   p.ShopifyID,
+		Title:       p.Title,
+		Description: p.Description,
+		Status:      p.Status,
+		Variants:    variants,
+		Images:      images,
+	}
 }
 
 func mapVariantToDTO(variant *ProductVariant) *VariantDTO {
@@ -202,11 +222,12 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 
 var validProductStatuses = map[string]bool{"active": true, "draft": true, "archived": true}
 
-func (s *service) GetProductByID(ctx context.Context, id string) (*ProductDetailDTO, error) {
+func (s *service) GetProductByID(ctx context.Context, id string) (*ProductDTO, error) {
 	p, err := s.store.GetProductByID(ctx, id)
 	if err != nil { return nil, apierror.ErrInternal }
 	if p == nil { return nil, apierror.ErrNotFound }
-	return &ProductDetailDTO{ID: p.ID, ShopifyID: p.ShopifyID, Title: p.Title, Description: p.Description, Status: p.Status}, nil
+	dto := mapProductToDTO(p)
+	return &dto, nil
 }
 
 func (s *service) GetVariantsByProductID(ctx context.Context, productID string) ([]VariantDTO, error) {

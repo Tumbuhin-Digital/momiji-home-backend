@@ -16,7 +16,7 @@ import (
 
 type OrderService interface {
 	CreateOrder(ctx context.Context, userID, sessionID *string, req CreateOrderRequest) (*OrderResponse, error)
-	GetOrders(ctx context.Context, userID string) ([]OrderResponse, error)
+	GetOrders(ctx context.Context, userID string, query OrderQuery) ([]OrderResponse, int64, error)
 	GetOrder(ctx context.Context, userID, orderID string) (*OrderResponse, error)
 	AcceptOrder(ctx context.Context, userID, orderID, fulfillmentType string) error
 	CancelOrder(ctx context.Context, userID, orderID, fulfillmentType, reason string) error
@@ -279,10 +279,10 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 	}, nil
 }
 
-func (s *service) GetOrders(ctx context.Context, userID string) ([]OrderResponse, error) {
-	orders, err := s.store.GetOrdersByCustomer(ctx, userID)
+func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery) ([]OrderResponse, int64, error) {
+	orders, total, err := s.store.GetOrdersByCustomer(ctx, userID, query)
 	if err != nil {
-		return nil, apierror.ErrInternal
+		return nil, 0, apierror.ErrInternal
 	}
 	
 	var res []OrderResponse
@@ -338,7 +338,7 @@ func (s *service) GetOrders(ctx context.Context, userID string) ([]OrderResponse
 		})
 	}
 	if res == nil { res = []OrderResponse{} }
-	return res, nil
+	return res, total, nil
 }
 
 func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderResponse, error) {

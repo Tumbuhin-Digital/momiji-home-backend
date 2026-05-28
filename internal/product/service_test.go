@@ -65,15 +65,7 @@ func TestGetVariantByID_NotFound(t *testing.T) {
 	if err != apierror.ErrNotFound { t.Fatalf("expected ErrNotFound, got %v", err) }
 }
 
-func TestGetVariants_Empty(t *testing.T) {
-	store := product.NewMockProductStore()
-	svc := product.NewProductService(store, &product.MockShopifyClient{})
 
-	variants, err := svc.GetVariants(context.Background())
-	if err != nil { t.Fatalf("unexpected error: %v", err) }
-	if variants == nil { t.Fatal("expected empty slice, got nil") }
-	if len(variants) != 0 { t.Fatalf("expected 0 variants, got %d", len(variants)) }
-}
 
 func TestSyncFromShopify_Success(t *testing.T) {
 	store := product.NewMockProductStore()
