@@ -1337,10 +1337,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/definitions/internal_product.VariantDTO"
-                                            }
+                                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.PaginatedData"
                                         }
                                     }
                                 }
@@ -1433,7 +1430,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/internal_product.ProductDetailDTO"
+                                            "$ref": "#/definitions/internal_product.ProductDTO"
                                         }
                                     }
                                 }
@@ -1721,6 +1718,23 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "details": {}
+            }
+        },
+        "github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.PaginatedData": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "totalPages": {
+                    "type": "integer"
+                }
             }
         },
         "internal_auth.LoginRequest": {
@@ -2074,10 +2088,16 @@ const docTemplate = `{
                 "address1": {
                     "type": "string"
                 },
+                "address2": {
+                    "type": "string"
+                },
                 "city": {
                     "type": "string"
                 },
                 "country": {
+                    "type": "string"
+                },
+                "first_name": {
                     "type": "string"
                 },
                 "id": {
@@ -2085,6 +2105,12 @@ const docTemplate = `{
                 },
                 "is_default": {
                     "type": "boolean"
+                },
+                "last_name": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
                 },
                 "province": {
                     "type": "string"
@@ -2248,6 +2274,12 @@ const docTemplate = `{
         "internal_order.OrderItemDetail": {
             "type": "object",
             "properties": {
+                "amount_charged": {
+                    "type": "string"
+                },
+                "balance_due": {
+                    "type": "string"
+                },
                 "dp_amount": {
                     "type": "string"
                 },
@@ -2269,7 +2301,13 @@ const docTemplate = `{
                 "quantity": {
                     "type": "integer"
                 },
+                "title": {
+                    "type": "string"
+                },
                 "type": {
+                    "type": "string"
+                },
+                "unit_price": {
                     "type": "string"
                 },
                 "variant_id": {
@@ -2281,6 +2319,16 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "aggregate_status": {
+                    "description": "deprecated",
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "financial_status": {
+                    "type": "string"
+                },
+                "fulfillment_status": {
                     "type": "string"
                 },
                 "id": {
@@ -2289,13 +2337,28 @@ const docTemplate = `{
                 "line_items": {
                     "$ref": "#/definitions/internal_order.LineItemsGroup"
                 },
+                "order_number": {
+                    "type": "string"
+                },
                 "shopify_checkout_url": {
                     "type": "string"
                 },
                 "shopify_draft_invoice_url": {
                     "type": "string"
                 },
+                "total_balance_due": {
+                    "type": "string"
+                },
+                "total_charged_now": {
+                    "type": "string"
+                },
+                "total_deposit_paid": {
+                    "type": "string"
+                },
                 "total_price": {
+                    "type": "string"
+                },
+                "total_ship_ready": {
                     "type": "string"
                 }
             }
@@ -2328,10 +2391,13 @@ const docTemplate = `{
         "internal_preorder.SettlementResponse": {
             "type": "object",
             "properties": {
-                "amount": {
+                "balance_amount": {
                     "type": "number"
                 },
                 "created_at": {
+                    "type": "string"
+                },
+                "due_date": {
                     "type": "string"
                 },
                 "id": {
@@ -2341,6 +2407,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "order_id": {
+                    "type": "string"
+                },
+                "order_line_item_id": {
                     "type": "string"
                 },
                 "paid_at": {
@@ -2362,7 +2431,7 @@ const docTemplate = `{
                 "FulfillmentTypePreOrder"
             ]
         },
-        "internal_product.ProductDetailDTO": {
+        "internal_product.ProductDTO": {
             "type": "object",
             "properties": {
                 "description": {
@@ -2371,6 +2440,12 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "images": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_product.ProductImageDTO"
+                    }
+                },
                 "shopify_id": {
                     "type": "string"
                 },
@@ -2378,6 +2453,23 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "title": {
+                    "type": "string"
+                },
+                "variants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_product.VariantDTO"
+                    }
+                }
+            }
+        },
+        "internal_product.ProductImageDTO": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "src": {
                     "type": "string"
                 }
             }

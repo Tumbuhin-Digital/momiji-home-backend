@@ -40,6 +40,17 @@ definitions:
         type: string
       details: {}
     type: object
+  github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.PaginatedData:
+    properties:
+      limit:
+        type: integer
+      page:
+        type: integer
+      total:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
   internal_auth.LoginRequest:
     properties:
       email:
@@ -270,14 +281,22 @@ definitions:
     properties:
       address1:
         type: string
+      address2:
+        type: string
       city:
         type: string
       country:
+        type: string
+      first_name:
         type: string
       id:
         type: string
       is_default:
         type: boolean
+      last_name:
+        type: string
+      phone:
+        type: string
       province:
         type: string
       zip:
@@ -384,6 +403,10 @@ definitions:
     type: object
   internal_order.OrderItemDetail:
     properties:
+      amount_charged:
+        type: string
+      balance_due:
+        type: string
       dp_amount:
         type: string
       final_amount:
@@ -398,7 +421,11 @@ definitions:
         type: integer
       quantity:
         type: integer
+      title:
+        type: string
       type:
+        type: string
+      unit_price:
         type: string
       variant_id:
         type: string
@@ -406,16 +433,33 @@ definitions:
   internal_order.OrderResponse:
     properties:
       aggregate_status:
+        description: deprecated
+        type: string
+      currency:
+        type: string
+      financial_status:
+        type: string
+      fulfillment_status:
         type: string
       id:
         type: string
       line_items:
         $ref: '#/definitions/internal_order.LineItemsGroup'
+      order_number:
+        type: string
       shopify_checkout_url:
         type: string
       shopify_draft_invoice_url:
         type: string
+      total_balance_due:
+        type: string
+      total_charged_now:
+        type: string
+      total_deposit_paid:
+        type: string
       total_price:
+        type: string
+      total_ship_ready:
         type: string
     type: object
   internal_order.UpdateReceivedRequest:
@@ -437,15 +481,19 @@ definitions:
     type: object
   internal_preorder.SettlementResponse:
     properties:
-      amount:
+      balance_amount:
         type: number
       created_at:
+        type: string
+      due_date:
         type: string
       id:
         type: string
       invoiced_at:
         type: string
       order_id:
+        type: string
+      order_line_item_id:
         type: string
       paid_at:
         type: string
@@ -460,17 +508,32 @@ definitions:
     x-enum-varnames:
     - FulfillmentTypeShipReady
     - FulfillmentTypePreOrder
-  internal_product.ProductDetailDTO:
+  internal_product.ProductDTO:
     properties:
       description:
         type: string
       id:
         type: string
+      images:
+        items:
+          $ref: '#/definitions/internal_product.ProductImageDTO'
+        type: array
       shopify_id:
         type: string
       status:
         type: string
       title:
+        type: string
+      variants:
+        items:
+          $ref: '#/definitions/internal_product.VariantDTO'
+        type: array
+    type: object
+  internal_product.ProductImageDTO:
+    properties:
+      id:
+        type: string
+      src:
         type: string
     type: object
   internal_product.VariantDTO:
@@ -1254,9 +1317,7 @@ paths:
             - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
             - properties:
                 data:
-                  items:
-                    $ref: '#/definitions/internal_product.VariantDTO'
-                  type: array
+                  $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.PaginatedData'
               type: object
       summary: List products
       tags:
@@ -1279,7 +1340,7 @@ paths:
             - $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
             - properties:
                 data:
-                  $ref: '#/definitions/internal_product.ProductDetailDTO'
+                  $ref: '#/definitions/internal_product.ProductDTO'
               type: object
         "404":
           description: Not Found
