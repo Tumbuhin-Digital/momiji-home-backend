@@ -34,7 +34,7 @@ type ProductVariant struct {
 }
 
 type Store interface {
-	GetVariants(ctx context.Context) ([]ProductVariant, error)
+	GetProducts(ctx context.Context, query ProductQuery) ([]Product, int64, error)
 	GetVariantByShopifyID(ctx context.Context, shopifyVariantID string) (*ProductVariant, error)
 	GetProductByShopifyID(ctx context.Context, shopifyID string) (*Product, error)
 	UpsertProduct(ctx context.Context, product *Product) error

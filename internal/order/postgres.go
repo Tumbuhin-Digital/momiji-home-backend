@@ -27,10 +27,34 @@ func (s *PostgresStore) GetOrder(ctx context.Context, orderID, customerID string
 	return &order, nil
 }
 
-func (s *PostgresStore) GetOrdersByCustomer(ctx context.Context, customerID string) ([]Order, error) {
+func (s *PostgresStore) GetOrdersByCustomer(ctx context.Context, customerID string, q OrderQuery) ([]Order, int64, error) {
 	var orders []Order
-	err := s.db.WithContext(ctx).Preload("Items").Where("customer_id = ?", customerID).Find(&orders).Error
-	return orders, err
+	var total int64
+
+	query := s.db.WithContext(ctx).Model(&Order{}).Where("customer_id = ?", customerID)
+
+	if q.Status != "" {
+		// we match against aggregate_status since that's what might be passed as 'status', or financial_status.
+		query = query.Where("aggregate_status = ? OR financial_status = ? OR fulfillment_status = ?", q.Status, q.Status, q.Status)
+	}
+
+	if q.Search != "" {
+		searchPattern := "%" + q.Search + "%"
+		query = query.Where("order_number ILIKE ?", searchPattern)
+	}
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	page := q.Page
+	if page < 1 { page = 1 }
+	limit := q.Limit
+	if limit < 1 { limit = 20 }
+	offset := (page - 1) * limit
+
+	err := query.Preload("Items").Order("created_at DESC").Offset(offset).Limit(limit).Find(&orders).Error
+	return orders, total, err
 }
 
 func (s *PostgresStore) UpdateOrderStatus(ctx context.Context, orderID, financialStatus, fulfillmentStatus string) error {

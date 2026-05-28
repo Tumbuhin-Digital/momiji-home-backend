@@ -1,6 +1,7 @@
 package response
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -21,9 +22,31 @@ type ErrorBlock struct {
 }
 
 type Meta struct {
-	Total int64 `json:"total"`
-	Page  int   `json:"page"`
-	Limit int   `json:"limit"`
+	Total      int64 `json:"total"`
+	Page       int   `json:"page"`
+	Limit      int   `json:"limit"`
+	TotalPages int   `json:"totalPages"`
+}
+
+// PaginatedData helper construct to dynamically marshal a data collection under a specific key.
+type PaginatedData struct {
+	Page       int         `json:"page"`
+	Limit      int         `json:"limit"`
+	Total      int64       `json:"total"`
+	TotalPages int         `json:"totalPages"`
+	ItemsKey   string      `json:"-"`
+	Items      interface{} `json:"-"`
+}
+
+func (p PaginatedData) MarshalJSON() ([]byte, error) {
+	m := map[string]interface{}{
+		"page":       p.Page,
+		"limit":      p.Limit,
+		"total":      p.Total,
+		"totalPages": p.TotalPages,
+	}
+	m[p.ItemsKey] = p.Items
+	return json.Marshal(m)
 }
 
 func Success(c *fiber.Ctx, status int, message string, data interface{}) error {

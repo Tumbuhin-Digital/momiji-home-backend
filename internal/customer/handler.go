@@ -46,11 +46,22 @@ func (h *Handler) ListCustomers(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
-	return response.SuccessWithMeta(c, fiber.StatusOK, "Customers retrieved", customers, response.Meta{
-		Total: total,
-		Page:  query.Page,
-		Limit: query.Limit,
-	})
+	limit := query.Limit
+	if limit < 1 { limit = 20 }
+	page := query.Page
+	if page < 1 { page = 1 }
+	totalPages := int((total + int64(limit) - 1) / int64(limit))
+
+	paginatedData := response.PaginatedData{
+		Page:       page,
+		Limit:      limit,
+		Total:      total,
+		TotalPages: totalPages,
+		ItemsKey:   "customers",
+		Items:      customers,
+	}
+
+	return response.Success(c, fiber.StatusOK, "Customers retrieved", paginatedData)
 }
 
 // GetCustomer godoc
