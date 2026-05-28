@@ -19,8 +19,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/server/main.go
 # Run stage
 FROM alpine:latest
 
-# Install tzdata for timezone support
-RUN apk add --no-cache tzdata
+# Install tzdata + curl
+RUN apk add --no-cache tzdata curl
+
+# Download migrate binary
+RUN curl -L https://github.com/golang-migrate/migrate/releases/download/v4.18.1/migrate.linux-amd64.tar.gz \
+    | tar xvz -C /usr/local/bin
 
 WORKDIR /app
 
@@ -29,9 +33,9 @@ COPY --from=builder /app/main .
 COPY --from=builder /app/migrations ./migrations
 COPY --from=builder /app/config ./config
 COPY --from=builder /app/.env .
+COPY entrypoint.sh .
+RUN chmod +x /app/entrypoint.sh 
 
-# Expose the port the app runs on
 EXPOSE 3000
 
-# Command to run the application
-CMD ["./main"]
+CMD ["./entrypoint.sh"]
