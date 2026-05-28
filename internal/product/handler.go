@@ -41,7 +41,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 // @Summary List products
 // @Tags Product
 // @Produce json
-// @Success 200 {object} response.Envelope{data=[]VariantDTO}
+// @Success 200 {object} response.Envelope{data=response.PaginatedData}
 // @Router /products [get]
 func (h *Handler) GetProducts(c *fiber.Ctx) error {
 	var query ProductQuery
@@ -91,7 +91,7 @@ func (h *Handler) SyncProducts(c *fiber.Ctx) error {
 // @Tags Product
 // @Produce json
 // @Param id path string true "Product ID"
-// @Success 200 {object} response.Envelope{data=ProductDetailDTO}
+// @Success 200 {object} response.Envelope{data=ProductDTO}
 // @Failure 404 {object} response.Envelope{error=response.ErrorBlock}
 // @Router /products/{id} [get]
 func (h *Handler) GetProductByID(c *fiber.Ctx) error {
