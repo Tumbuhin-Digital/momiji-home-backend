@@ -95,9 +95,10 @@ func mapVariantToDTO(variant *ProductVariant) *VariantDTO {
 		ID:              variant.ShopifyVariantID,
 		Title:           variant.Title,
 		ImageSrc:        variant.ImageSrc,
-		RetailPrice:     retailPrice,
-		WSPrice:         wsPrice,
-		FulfillmentType: FulfillmentType(variant.FulfillmentType),
+		RetailPrice:       retailPrice,
+		WSPrice:           wsPrice,
+		FulfillmentType:   FulfillmentType(variant.FulfillmentType),
+		InventoryQuantity: variant.InventoryQuantity,
 	}
 }
 
@@ -113,7 +114,7 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 				id title descriptionHtml status
 				variants(first: 10) {
 				  edges {
-					node { id title sku price image { url } }
+					node { id title sku price inventoryQuantity image { url } }
 				  }
 				}
 			  }
@@ -147,11 +148,12 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 							Variants        struct {
 								Edges []struct {
 									Node struct {
-										ID    string `json:"id"`
-										Title string `json:"title"`
-										Sku   string `json:"sku"`
-										Price string `json:"price"`
-										Image struct{ Url string `json:"url"` } `json:"image"`
+										ID                string `json:"id"`
+										Title             string `json:"title"`
+										Sku               string `json:"sku"`
+										Price             string `json:"price"`
+										InventoryQuantity int    `json:"inventoryQuantity"`
+										Image             struct{ Url string `json:"url"` } `json:"image"`
 									} `json:"node"`
 								} `json:"edges"`
 							} `json:"variants"`
@@ -194,10 +196,11 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 					ProductID:        p.ID,
 					ShopifyVariantID: vNode.ID,
 					Title:            vNode.Title,
-					SKU:              vNode.Sku,
-					Price:            price,
-					ImageSrc:         vNode.Image.Url,
-					FulfillmentType:  string(FulfillmentTypeShipReady),
+					SKU:               vNode.Sku,
+					Price:             price,
+					ImageSrc:          vNode.Image.Url,
+					FulfillmentType:   string(FulfillmentTypeShipReady),
+					InventoryQuantity: vNode.InventoryQuantity,
 				}
 				if err := s.store.UpsertVariant(ctx, variant); err != nil {
 					return fmt.Errorf("failed to upsert variant %s: %w", variant.ShopifyVariantID, err)

@@ -3,5 +3,5 @@ jwt:
   refresh_token_ttl: 168h
   bcrypt_cost: 12
 rate_limit:
-  max_attempts: 5
-  window: 15m
+  max_attempts: 10
+  window: 10m

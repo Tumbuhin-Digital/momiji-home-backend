@@ -2486,6 +2486,9 @@ const docTemplate = `{
                 "image_src": {
                     "type": "string"
                 },
+                "inventory_quantity": {
+                    "type": "integer"
+                },
                 "retail_price": {
                     "type": "string"
                 },

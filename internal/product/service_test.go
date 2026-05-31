@@ -28,6 +28,7 @@ func buildShopifyProductResponseWithPageInfo(shopifyProductID, shopifyVariantID 
 									{"node": map[string]interface{}{
 										"id": shopifyVariantID, "title": "Test Variant Title",
 										"sku": "SKU-001", "price": "10.00",
+										"inventoryQuantity": 50,
 										"image": map[string]string{"url": ""},
 									}},
 								},
