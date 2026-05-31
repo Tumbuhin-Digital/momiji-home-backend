@@ -2,6 +2,7 @@ package response
 
 import (
 	"encoding/json"
+	"log/slog"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -78,6 +79,12 @@ func SuccessWithMeta(c *fiber.Ctx, status int, message string, data interface{},
 func Error(c *fiber.Ctx, err error) error {
 	appErr, ok := err.(*apierror.AppError)
 	if !ok {
+		// Log the unhandled internal error here with details
+		slog.Error("Internal server error", 
+			slog.Any("error", err),
+			slog.String("path", c.Path()),
+			slog.String("method", c.Method()),
+		)
 		appErr = apierror.ErrInternal
 	}
 
