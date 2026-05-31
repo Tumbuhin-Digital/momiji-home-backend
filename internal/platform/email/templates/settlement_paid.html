@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #f4f4f4; padding: 15px; text-align: center; }
+        .content { padding: 20px 0; }
+        .footer { font-size: 0.8em; color: #777; text-align: center; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>Payment Received!</h2>
+        </div>
+        <div class="content">
+            <p>Hi {{.CustomerName}},</p>
+            <p>Thank you! We've received your final payment of <strong>{{.BalanceAmount}}</strong> for <strong>{{.ItemTitle}}</strong>.</p>
+            <p>Your order is now fully paid. We are preparing your items for shipment and will send you a tracking number as soon as they dispatch.</p>
+        </div>
+        <div class="footer">
+            <p>&copy; 2026 Momiji Home. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

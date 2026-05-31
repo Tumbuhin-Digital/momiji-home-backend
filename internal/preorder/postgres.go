@@ -111,3 +111,39 @@ func (s *postgresStore) AllSettlementsPaid(ctx context.Context, orderID string) 
 	}
 	return unpaidCount == 0, nil
 }
+
+func (s *postgresStore) GetSettlementsForReminder(ctx context.Context, daysSinceInvoiced int) ([]PreorderRow, error) {
+	var rows []PreorderRow
+	
+	// Compute the date exactly 'daysSinceInvoiced' days ago
+	// We want to match records where invoiced_at was on that exact day.
+	targetDate := time.Now().AddDate(0, 0, -daysSinceInvoiced)
+	startOfDay := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, targetDate.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
+	query := s.db.WithContext(ctx).Table("preorder_settlements").
+		Select(`
+			preorder_settlements.id,
+			orders.id as order_id,
+			orders.order_number,
+			users.email as customer_email,
+			order_line_items.id as order_line_item_id,
+			order_line_items.title,
+			order_line_items.quantity,
+			preorder_settlements.balance_amount,
+			product_variants.preorder_batch_label as batch_label,
+			preorder_settlements.status as settlement_status,
+			preorder_settlements.due_date
+		`).
+		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
+		Joins("JOIN orders ON orders.id = order_line_items.order_id").
+		Joins("JOIN users ON users.id = orders.customer_id").
+		Joins("LEFT JOIN product_variants ON product_variants.shopify_variant_id = order_line_items.shopify_variant_id").
+		Where("preorder_settlements.status = ?", "invoiced").
+		Where("preorder_settlements.invoiced_at >= ? AND preorder_settlements.invoiced_at < ?", startOfDay, endOfDay)
+
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}

@@ -14,6 +14,7 @@ type Config struct {
 	Database DatabaseConfig
 	Auth     AuthConfig
 	Shopify  ShopifyConfig
+	Email    EmailConfig
 }
 
 type AppConfig struct {
@@ -53,6 +54,14 @@ type ShopifyConfig struct {
 	AdminAPIToken   string
 	StorefrontToken string
 	WebhookSecret   string
+}
+
+type EmailConfig struct {
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUser     string
+	SMTPPassword string
+	From         string
 }
 
 func Load() (*Config, error) {
@@ -102,6 +111,17 @@ func Load() (*Config, error) {
 	cfg.Shopify.AdminAPIToken = os.Getenv("SHOPIFY_ADMIN_API_TOKEN")
 	cfg.Shopify.StorefrontToken = os.Getenv("SHOPIFY_STOREFRONT_TOKEN")
 	cfg.Shopify.WebhookSecret = os.Getenv("SHOPIFY_WEBHOOK_SECRET")
+
+	cfg.Email.SMTPHost = os.Getenv("SMTP_HOST")
+	var port int
+	fmt.Sscanf(os.Getenv("SMTP_PORT"), "%d", &port)
+	if port == 0 {
+		port = 587
+	}
+	cfg.Email.SMTPPort = port
+	cfg.Email.SMTPUser = os.Getenv("SMTP_USER")
+	cfg.Email.SMTPPassword = os.Getenv("SMTP_PASSWORD")
+	cfg.Email.From = os.Getenv("EMAIL_FROM")
 
 	return cfg, nil
 }

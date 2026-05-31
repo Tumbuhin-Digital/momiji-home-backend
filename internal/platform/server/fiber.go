@@ -18,6 +18,16 @@ func NewFiberApp(log *slog.Logger) *fiber.App {
 			if e, ok := err.(*fiber.Error); ok {
 				return response.Error(c, apierror.New(e.Code, "HTTP_ERROR", e.Message))
 			}
+			
+			// Log unhandled errors or internal errors
+			if _, isAppErr := err.(*apierror.AppError); !isAppErr {
+				log.Error("Internal server error occurred", 
+					slog.Any("error", err),
+					slog.String("path", c.Path()),
+					slog.String("method", c.Method()),
+				)
+			}
+			
 			return response.Error(c, err)
 		},
 	})

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #d4edda; color: #155724; padding: 15px; text-align: center; }
+        .content { padding: 20px 0; }
+        .footer { font-size: 0.8em; color: #777; text-align: center; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>Your Order is on the Way!</h2>
+        </div>
+        <div class="content">
+            <p>Hi {{.CustomerName}},</p>
+            <p>Good news! Your order <strong>{{.OrderNumber}}</strong> has been dispatched.</p>
+            
+            <p><strong>Carrier:</strong> {{.Carrier}}</p>
+            <p><strong>Tracking Number:</strong> {{.TrackingNumber}}</p>
+            
+            <p>Thank you for shopping with Momiji Home!</p>
+        </div>
+        <div class="footer">
+            <p>&copy; 2026 Momiji Home. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
