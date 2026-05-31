@@ -74,7 +74,7 @@ func (s *PostgresStore) UpsertProduct(ctx context.Context, product *Product) err
 func (s *PostgresStore) UpsertVariant(ctx context.Context, variant *ProductVariant) error {
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "shopify_variant_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"title", "sku", "price", "image_src", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"title", "sku", "price", "image_src", "inventory_quantity", "updated_at"}),
 	}).Create(variant).Error
 }
 

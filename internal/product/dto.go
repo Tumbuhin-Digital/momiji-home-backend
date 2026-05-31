@@ -14,7 +14,8 @@ type VariantDTO struct {
 	ImageSrc        string          `json:"image_src"`
 	RetailPrice     string          `json:"retail_price"`
 	WSPrice         string          `json:"ws_price"`
-	FulfillmentType FulfillmentType `json:"fulfillment_type"`
+	FulfillmentType   FulfillmentType `json:"fulfillment_type"`
+	InventoryQuantity int             `json:"inventory_quantity"`
 }
 
 type ProductImageDTO struct {

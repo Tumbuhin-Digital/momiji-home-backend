@@ -544,6 +544,8 @@ definitions:
         type: string
       image_src:
         type: string
+      inventory_quantity:
+        type: integer
       retail_price:
         type: string
       title:

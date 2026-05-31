@@ -29,6 +29,7 @@ type ProductVariant struct {
 	WSPrice            *float64
 	FulfillmentType    string
 	PreorderBatchLabel *string
+	InventoryQuantity  int
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
