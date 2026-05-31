@@ -15,9 +15,24 @@ type SettlementResponse struct {
 	CreatedAt       time.Time  `json:"created_at"`
 }
 
+// PreorderListItemResponse represents a rich row matching the API contract.
+type PreorderListItemResponse struct {
+	OrderID          string  `json:"order_id"`
+	OrderNumber      string  `json:"order_number"`
+	CustomerEmail    string  `json:"customer_email"`
+	ItemID           string  `json:"item_id"`
+	Title            string  `json:"title"`
+	Quantity         int     `json:"quantity"`
+	BalanceDue       string  `json:"balance_due"`
+	BatchLabel       string  `json:"batch_label"`
+	SettlementStatus string  `json:"settlement_status"`
+	DueDate          string  `json:"due_date,omitempty"`
+}
+
 // ListSettlementsQuery holds query parameters for the list endpoint.
 type ListSettlementsQuery struct {
-	Status string `query:"status"`
-	Page   int    `query:"page"`
-	Limit  int    `query:"limit"`
+	Status     string `query:"status"`
+	BatchLabel string `query:"batch_label"`
+	Page       int    `query:"page"`
+	Limit      int    `query:"limit"`
 }

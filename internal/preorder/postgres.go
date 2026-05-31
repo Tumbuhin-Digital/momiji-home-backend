@@ -32,16 +32,34 @@ func (s *postgresStore) GetSettlementByID(ctx context.Context, id string) (*Sett
 	return &settlement, nil
 }
 
-func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFilter) ([]Settlement, int64, error) {
-	var settlements []Settlement
+func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderRow, int64, error) {
+	var rows []PreorderRow
 	var total int64
 
-	query := s.db.WithContext(ctx).Model(&Settlement{}).
-		Select("preorder_settlements.*, order_line_items.order_id").
-		Joins("LEFT JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id")
+	query := s.db.WithContext(ctx).Table("preorder_settlements").
+		Select(`
+			preorder_settlements.id,
+			orders.id as order_id,
+			orders.order_number,
+			users.email as customer_email,
+			order_line_items.id as order_line_item_id,
+			order_line_items.title,
+			order_line_items.quantity,
+			preorder_settlements.balance_amount,
+			product_variants.preorder_batch_label as batch_label,
+			preorder_settlements.status as settlement_status,
+			preorder_settlements.due_date
+		`).
+		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
+		Joins("JOIN orders ON orders.id = order_line_items.order_id").
+		Joins("JOIN users ON users.id = orders.customer_id").
+		Joins("LEFT JOIN product_variants ON product_variants.shopify_variant_id = order_line_items.shopify_variant_id")
 
 	if filter.Status != "" {
-		query = query.Where("status = ?", filter.Status)
+		query = query.Where("preorder_settlements.status = ?", filter.Status)
+	}
+	if filter.BatchLabel != "" {
+		query = query.Where("product_variants.preorder_batch_label = ?", filter.BatchLabel)
 	}
 
 	if err := query.Count(&total).Error; err != nil {
@@ -49,20 +67,16 @@ func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFi
 	}
 
 	page := filter.Page
-	if page < 1 {
-		page = 1
-	}
+	if page < 1 { page = 1 }
 	limit := filter.Limit
-	if limit < 1 {
-		limit = 20
-	}
+	if limit < 1 { limit = 20 }
 	offset := (page - 1) * limit
 
-	if err := query.Order("created_at DESC").Limit(limit).Offset(offset).Find(&settlements).Error; err != nil {
+	if err := query.Order("preorder_settlements.created_at DESC").Limit(limit).Offset(offset).Find(&rows).Error; err != nil {
 		return nil, 0, err
 	}
 
-	return settlements, total, nil
+	return rows, total, nil
 }
 
 func (s *postgresStore) UpdateSettlementStatus(ctx context.Context, id, status string, ts *time.Time) error {

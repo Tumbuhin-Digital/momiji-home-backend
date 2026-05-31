@@ -46,9 +46,10 @@ func (h *Handler) ListSettlements(c *fiber.Ctx) error {
 	}
 
 	filter := SettlementFilter{
-		Status: q.Status,
-		Page:   q.Page,
-		Limit:  q.Limit,
+		Status:     q.Status,
+		BatchLabel: q.BatchLabel,
+		Page:       q.Page,
+		Limit:      q.Limit,
 	}
 
 	settlements, total, err := h.service.ListSettlements(c.Context(), filter)
@@ -56,11 +57,22 @@ func (h *Handler) ListSettlements(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
-	return response.SuccessWithMeta(c, fiber.StatusOK, "Settlements retrieved", settlements, response.Meta{
-		Total: total,
-		Page:  filter.Page,
-		Limit: filter.Limit,
-	})
+	limit := filter.Limit
+	if limit < 1 { limit = 20 }
+	page := filter.Page
+	if page < 1 { page = 1 }
+	totalPages := int((total + int64(limit) - 1) / int64(limit))
+
+	paginatedData := response.PaginatedData{
+		Page:       page,
+		Limit:      limit,
+		Total:      total,
+		TotalPages: totalPages,
+		ItemsKey:   "preorders",
+		Items:      settlements,
+	}
+
+	return response.Success(c, fiber.StatusOK, "Settlements retrieved", paginatedData)
 }
 
 // GetSettlement godoc

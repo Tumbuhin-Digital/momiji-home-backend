@@ -25,18 +25,34 @@ func (Settlement) TableName() string {
 	return "preorder_settlements"
 }
 
+// PreorderRow represents the joined data for the list endpoint.
+type PreorderRow struct {
+	ID               string
+	OrderID          string
+	OrderNumber      string
+	CustomerEmail    string
+	OrderLineItemID  string
+	Title            string
+	Quantity         int
+	BalanceAmount    float64
+	BatchLabel       string
+	SettlementStatus string
+	DueDate          *time.Time
+}
+
 // SettlementFilter is used for listing settlements with optional filters.
 type SettlementFilter struct {
-	Status string
-	Page   int
-	Limit  int
+	Status     string
+	BatchLabel string
+	Page       int
+	Limit      int
 }
 
 // PreorderStore defines the data-access contract for settlements.
 type PreorderStore interface {
 	CreateSettlement(ctx context.Context, s *Settlement) error
 	GetSettlementByID(ctx context.Context, id string) (*Settlement, error)
-	ListSettlements(ctx context.Context, filter SettlementFilter) ([]Settlement, int64, error)
+	ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderRow, int64, error)
 	UpdateSettlementStatus(ctx context.Context, id, status string, ts *time.Time) error
 	AllSettlementsPaid(ctx context.Context, orderID string) (bool, error)
 }

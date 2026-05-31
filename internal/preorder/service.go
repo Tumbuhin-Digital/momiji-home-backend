@@ -2,6 +2,7 @@ package preorder
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -15,7 +16,7 @@ type OrderUpdater interface {
 
 // PreorderService defines the settlement state machine operations.
 type PreorderService interface {
-	ListSettlements(ctx context.Context, filter SettlementFilter) ([]SettlementResponse, int64, error)
+	ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderListItemResponse, int64, error)
 	GetSettlement(ctx context.Context, id string) (*SettlementResponse, error)
 	InvoiceSettlement(ctx context.Context, id string) (*SettlementResponse, error)
 	MarkSettlementPaid(ctx context.Context, id string) (*SettlementResponse, error)
@@ -35,15 +36,30 @@ func NewPreorderService(store PreorderStore, orderStore OrderUpdater) PreorderSe
 	}
 }
 
-func (s *service) ListSettlements(ctx context.Context, filter SettlementFilter) ([]SettlementResponse, int64, error) {
-	settlements, total, err := s.store.ListSettlements(ctx, filter)
+func (s *service) ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderListItemResponse, int64, error) {
+	rows, total, err := s.store.ListSettlements(ctx, filter)
 	if err != nil {
 		return nil, 0, apierror.ErrInternal
 	}
 
-	res := make([]SettlementResponse, len(settlements))
-	for i, st := range settlements {
-		res[i] = toResponse(st)
+	res := make([]PreorderListItemResponse, len(rows))
+	for i, r := range rows {
+		var dueDateStr string
+		if r.DueDate != nil {
+			dueDateStr = r.DueDate.Format("2006-01-02")
+		}
+		res[i] = PreorderListItemResponse{
+			OrderID:          r.OrderID,
+			OrderNumber:      r.OrderNumber,
+			CustomerEmail:    r.CustomerEmail,
+			ItemID:           r.OrderLineItemID,
+			Title:            r.Title,
+			Quantity:         r.Quantity,
+			BalanceDue:       fmt.Sprintf("%.2f", r.BalanceAmount),
+			BatchLabel:       r.BatchLabel,
+			SettlementStatus: r.SettlementStatus,
+			DueDate:          dueDateStr,
+		}
 	}
 	return res, total, nil
 }
