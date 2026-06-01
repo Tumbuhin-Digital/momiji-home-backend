@@ -2,6 +2,7 @@ package response
 
 import (
 	"encoding/json"
+	"log/slog"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -30,12 +31,13 @@ type Meta struct {
 
 // PaginatedData helper construct to dynamically marshal a data collection under a specific key.
 type PaginatedData struct {
-	Page       int         `json:"page"`
-	Limit      int         `json:"limit"`
-	Total      int64       `json:"total"`
-	TotalPages int         `json:"totalPages"`
-	ItemsKey   string      `json:"-"`
-	Items      interface{} `json:"-"`
+	Page       int                    `json:"page"`
+	Limit      int                    `json:"limit"`
+	Total      int64                  `json:"total"`
+	TotalPages int                    `json:"totalPages"`
+	ItemsKey   string                 `json:"-"`
+	Items      interface{}            `json:"-"`
+	Extra      map[string]interface{} `json:"-"`
 }
 
 func (p PaginatedData) MarshalJSON() ([]byte, error) {
@@ -44,6 +46,9 @@ func (p PaginatedData) MarshalJSON() ([]byte, error) {
 		"limit":      p.Limit,
 		"total":      p.Total,
 		"totalPages": p.TotalPages,
+	}
+	for k, v := range p.Extra {
+		m[k] = v
 	}
 	m[p.ItemsKey] = p.Items
 	return json.Marshal(m)
@@ -78,6 +83,12 @@ func SuccessWithMeta(c *fiber.Ctx, status int, message string, data interface{},
 func Error(c *fiber.Ctx, err error) error {
 	appErr, ok := err.(*apierror.AppError)
 	if !ok {
+		// Log the unhandled internal error here with details
+		slog.Error("Internal server error", 
+			slog.Any("error", err),
+			slog.String("path", c.Path()),
+			slog.String("method", c.Method()),
+		)
 		appErr = apierror.ErrInternal
 	}
 

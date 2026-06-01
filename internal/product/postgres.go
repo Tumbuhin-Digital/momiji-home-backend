@@ -3,6 +3,7 @@ package product
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -41,11 +42,26 @@ func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Prod
 	if page < 1 { page = 1 }
 	limit := q.Limit
 	if limit < 1 { limit = 20 }
+	if limit > 100 { limit = 100 } // Fix 2D: Cap limit to 100
 	offset := (page - 1) * limit
 	
-	orderStr := "created_at DESC"
-	if q.Sort != "" {
-		orderStr = q.Sort
+	orderStr := "products.created_at DESC" // Fix 1C: Default sorting
+	switch q.Sort {
+	case "price_asc":
+		// Ensure join is present if not already added by fulfillment_type filter
+		if q.FulfillmentType == "" {
+			query = query.Joins("JOIN product_variants ON product_variants.product_id = products.id").Group("products.id")
+		}
+		orderStr = "MIN(COALESCE(product_variants.ws_price, product_variants.price)) ASC"
+	case "price_desc":
+		if q.FulfillmentType == "" {
+			query = query.Joins("JOIN product_variants ON product_variants.product_id = products.id").Group("products.id")
+		}
+		orderStr = "MAX(COALESCE(product_variants.ws_price, product_variants.price)) DESC"
+	case "name_asc":
+		orderStr = "products.title ASC"
+	case "created_at":
+		orderStr = "products.created_at DESC"
 	}
 
 	err := query.Preload("Variants").Order(orderStr).Offset(offset).Limit(limit).Find(&products).Error
@@ -120,14 +136,27 @@ func (s *PostgresStore) GetVariantsByProductID(ctx context.Context, productID st
 	return variants, err
 }
 
-func (s *PostgresStore) UpdateProductStatus(ctx context.Context, productID string, status string) error {
-	return s.db.WithContext(ctx).Model(&Product{}).
-		Where("id = ?", productID).
-		Updates(map[string]interface{}{"status": status, "updated_at": gorm.Expr("now()")}).Error
-}
-
-func (s *PostgresStore) UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string) error {
+func (s *PostgresStore) UpdateProductStatus(ctx context.Context, productID string, fulfillmentType string) error {
 	return s.db.WithContext(ctx).Model(&ProductVariant{}).
 		Where("product_id = ?", productID).
-		Updates(map[string]interface{}{"preorder_batch_label": batchLabel, "updated_at": gorm.Expr("now()")}).Error
+		Updates(map[string]interface{}{"fulfillment_type": fulfillmentType, "updated_at": gorm.Expr("now()")}).Error
+}
+
+func (s *PostgresStore) UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) error {
+	updates := map[string]interface{}{
+		"preorder_batch_label": batchLabel,
+		"updated_at":           gorm.Expr("now()"),
+	}
+	if expectedShipDate != nil && *expectedShipDate != "" {
+		if t, err := time.Parse(time.RFC3339, *expectedShipDate); err == nil {
+			updates["expected_ship_date"] = t
+		} else if t, err := time.Parse("2006-01-02", *expectedShipDate); err == nil {
+			updates["expected_ship_date"] = t
+		} else {
+			updates["expected_ship_date"] = *expectedShipDate // fallback
+		}
+	}
+	return s.db.WithContext(ctx).Model(&ProductVariant{}).
+		Where("product_id = ?", productID).
+		Updates(updates).Error
 }

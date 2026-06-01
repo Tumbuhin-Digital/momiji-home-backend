@@ -8,13 +8,28 @@ import (
 type Product struct {
 	ID          string `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
 	ShopifyID   string `gorm:"uniqueIndex"`
+	Handle      string
 	Title       string
 	Description string
+	Vendor      string
+	ProductType string
+	Tags        string
 	Status      string
+	BodyHTML    string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 
 	Variants []ProductVariant `gorm:"foreignKey:ProductID"`
+	Images   []ProductImage   `gorm:"foreignKey:ProductID"`
+}
+
+type ProductImage struct {
+	ID        string `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	ProductID string
+	ShopifyID string `gorm:"uniqueIndex"`
+	Src       string
+	Alt       string
+	Position  int
 }
 
 type ProductVariant struct {
@@ -29,6 +44,7 @@ type ProductVariant struct {
 	WSPrice            *float64
 	FulfillmentType    string
 	PreorderBatchLabel *string
+	ExpectedShipDate   *time.Time
 	InventoryQuantity  int
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
@@ -43,6 +59,6 @@ type Store interface {
 	UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64, retailPrice *float64) error
 	GetProductByID(ctx context.Context, productID string) (*Product, error)
 	GetVariantsByProductID(ctx context.Context, productID string) ([]ProductVariant, error)
-	UpdateProductStatus(ctx context.Context, productID string, status string) error
-	UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string) error
+	UpdateProductStatus(ctx context.Context, productID string, fulfillmentType string) error
+	UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) error
 }

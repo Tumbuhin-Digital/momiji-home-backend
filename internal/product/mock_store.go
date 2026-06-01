@@ -16,6 +16,8 @@ type MockProductStore struct {
 	GetProductByShopifyIDCalls int
 	UpsertProductCalls         int
 	UpsertVariantCalls         int
+	UpdateProductStatusCalls   int
+	UpdateVariantBatchLabelCalls int
 
 	// Injectable errors
 	GetVariantsErr             error
@@ -103,19 +105,13 @@ func (m *MockProductStore) GetVariantsByProductID(ctx context.Context, productID
 	return out, nil
 }
 
-func (m *MockProductStore) UpdateProductStatus(ctx context.Context, productID string, status string) error {
-	if m.UpdateProductStatusErr != nil { return m.UpdateProductStatusErr }
-	for _, p := range m.Products {
-		if p.ID == productID { p.Status = status; return nil }
-	}
-	return errors.New("product not found")
+func (m *MockProductStore) UpdateProductStatus(ctx context.Context, productID string, fulfillmentType string) error {
+	m.UpdateProductStatusCalls++
+	return nil
 }
 
-func (m *MockProductStore) UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string) error {
-	if m.UpdateVariantBatchLabelErr != nil { return m.UpdateVariantBatchLabelErr }
-	for _, v := range m.Variants {
-		if v.ProductID == productID { v.PreorderBatchLabel = &batchLabel }
-	}
+func (m *MockProductStore) UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) error {
+	m.UpdateVariantBatchLabelCalls++
 	return nil
 }
 

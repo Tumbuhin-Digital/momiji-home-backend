@@ -9,28 +9,38 @@ const (
 )
 
 type VariantDTO struct {
-	ID              string          `json:"id"`
-	Title           string          `json:"title"`
-	ImageSrc        string          `json:"image_src"`
-	RetailPrice     string          `json:"retail_price"`
-	WSPrice         string          `json:"ws_price"`
+	ID                string          `json:"id"`
+	Title             string          `json:"title"`
+	SKU               *string         `json:"sku"`
+	ImageSrc          string          `json:"image_src"`
+	RetailPrice       string          `json:"retail_price"`
+	WSPrice           string          `json:"ws_price"`
 	FulfillmentType   FulfillmentType `json:"fulfillment_type"`
 	InventoryQuantity int             `json:"inventory_quantity"`
 }
 
 type ProductImageDTO struct {
-	ID  string `json:"id"`
-	Src string `json:"src"`
+	ID       string `json:"id"`
+	Src      string `json:"src"`
+	Alt      string `json:"alt"`
+	Position int    `json:"position"`
 }
 
 type ProductDTO struct {
-	ID          string            `json:"id"`
-	ShopifyID   string            `json:"shopify_id"`
-	Title       string            `json:"title"`
-	Description string            `json:"description"`
-	Status      string            `json:"status"`
-	Variants    []VariantDTO      `json:"variants"`
-	Images      []ProductImageDTO `json:"images"`
+	ID                 string            `json:"id"`
+	ShopifyID          string            `json:"shopify_id"`
+	Handle             string            `json:"handle"`
+	Title              string            `json:"title"`
+	Description        string            `json:"description"`
+	Vendor             string            `json:"vendor"`
+	ProductType        string            `json:"product_type"`
+	Tags               string            `json:"tags"`
+	Status             string            `json:"status"`
+	PreorderBatchLabel *string           `json:"preorder_batch_label"`
+	ExpectedShipDate   *string           `json:"expected_ship_date"`
+	BodyHTML           string            `json:"body_html"`
+	Variants           []VariantDTO      `json:"variants"`
+	Images             []ProductImageDTO `json:"images"`
 }
 
 type ProductQuery struct {

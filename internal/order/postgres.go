@@ -31,7 +31,11 @@ func (s *PostgresStore) GetOrdersByCustomer(ctx context.Context, customerID stri
 	var orders []Order
 	var total int64
 
-	query := s.db.WithContext(ctx).Model(&Order{}).Where("customer_id = ?", customerID)
+	query := s.db.WithContext(ctx).Model(&Order{})
+	
+	if customerID != "" {
+		query = query.Where("customer_id = ?", customerID)
+	}
 
 	if q.Status != "" {
 		// we match against aggregate_status since that's what might be passed as 'status', or financial_status.
@@ -40,7 +44,8 @@ func (s *PostgresStore) GetOrdersByCustomer(ctx context.Context, customerID stri
 
 	if q.Search != "" {
 		searchPattern := "%" + q.Search + "%"
-		query = query.Where("order_number ILIKE ?", searchPattern)
+		query = query.Joins("JOIN users ON users.id = orders.customer_id").
+			Where("orders.order_number ILIKE ? OR users.email ILIKE ?", searchPattern, searchPattern)
 	}
 
 	if err := query.Count(&total).Error; err != nil {

@@ -10,9 +10,9 @@ import (
 func Logger(log *slog.Logger) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
-		
+
 		err := c.Next()
-		
+
 		duration := time.Since(start)
 		correlationID := c.Locals("correlation_id")
 

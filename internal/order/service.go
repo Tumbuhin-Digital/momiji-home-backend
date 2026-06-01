@@ -7,6 +7,7 @@ import (
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/auth"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/email"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
@@ -30,15 +31,17 @@ type service struct {
 	authStore     auth.AuthStore
 	shopClient    shopify.Client
 	preorderStore preorder.PreorderStore
+	emailService  email.NotificationService
 }
 
-func NewOrderService(store Store, cartService cart.CartService, authStore auth.AuthStore, shopClient shopify.Client, preorderStore preorder.PreorderStore) OrderService {
+func NewOrderService(store Store, cartService cart.CartService, authStore auth.AuthStore, shopClient shopify.Client, preorderStore preorder.PreorderStore, emailService email.NotificationService) OrderService {
 	return &service{
 		store:         store,
 		cartService:   cartService,
 		authStore:     authStore,
 		shopClient:    shopClient,
 		preorderStore: preorderStore,
+		emailService:  emailService,
 	}
 }
 
@@ -261,7 +264,7 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 	if shipReady == nil { shipReady = []OrderItemDetail{} }
 	if preOrder == nil { preOrder = []OrderItemDetail{} }
 
-	return &OrderResponse{
+	response := &OrderResponse{
 		ID:                  order.ID,
 		OrderNumber:         order.OrderNumber,
 		ShopifyCheckoutURL:  checkoutURL,
@@ -276,7 +279,53 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 		TotalChargedNow:     fmt.Sprintf("%.2f", order.TotalChargedNow),
 		Currency:            order.Currency,
 		LineItems:           LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
-	}, nil
+	}
+
+	// Trigger email notification
+	go func() {
+		// Use a background context so it isn't cancelled when the request ends
+		bgCtx := context.Background()
+		var customerName string
+		customerEmail := ""
+		if req.GuestInfo != nil {
+			customerName = req.GuestInfo.FirstName
+			customerEmail = req.GuestInfo.Email
+		} else {
+			// Find user details if needed, or simply pass email if available.
+			user, _ := s.authStore.GetUserByID(bgCtx, customerID)
+			if user != nil {
+				customerEmail = user.Email
+				customerName = "Customer"
+			}
+		}
+
+		if customerEmail != "" {
+			var emailItems []email.OrderItemData
+			for _, it := range order.Items {
+				title := ""
+				if it.Title != nil { title = *it.Title }
+				amt := 0.0
+				if it.AmountCharged != nil { amt = *it.AmountCharged }
+				emailItems = append(emailItems, email.OrderItemData{
+					Title:    title,
+					Type:     it.Type,
+					Quantity: it.Quantity,
+					Amount:   fmt.Sprintf("$%.2f", amt),
+				})
+			}
+			emailData := email.OrderEmailData{
+				CustomerName:    customerName,
+				OrderNumber:     order.OrderNumber,
+				Items:           emailItems,
+				TotalPaid:       fmt.Sprintf("$%.2f", order.TotalChargedNow),
+				HasBalanceDue:   hasPreOrder,
+				TotalBalanceDue: fmt.Sprintf("$%.2f", order.TotalBalanceDue),
+			}
+			_ = s.emailService.SendOrderConfirmation(bgCtx, customerEmail, emailData)
+		}
+	}()
+
+	return response, nil
 }
 
 func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery) ([]OrderResponse, int64, error) {

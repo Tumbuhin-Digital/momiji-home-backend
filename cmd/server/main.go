@@ -18,18 +18,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/config"
-	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/database"
-	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/docs"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/auth"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/checkout"
-	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/order"
-	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
-	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
-	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/config"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/customer"
-	"github.com/tumbuhindigi-sys/momiji-home-backend/docs"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/order"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/database"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/email"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/scheduler"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 )
 
 func main() {
@@ -78,17 +80,31 @@ func main() {
 
 	// Initialize Services
 	authService := auth.NewAuthService(authStore, cfg.Auth)
-	
+
 	shopifyClient := shopify.NewClient(
 		cfg.Shopify.StoreDomain,
 		cfg.Shopify.AdminAPIToken,
 		cfg.Shopify.StorefrontToken,
 	)
 
+	var emailClient email.EmailClient
+	if cfg.App.Env == "test" {
+		emailClient = email.NewMockEmailClient()
+	} else {
+		emailClient = email.NewSMTPClient(
+			cfg.Email.SMTPHost,
+			cfg.Email.SMTPPort,
+			cfg.Email.SMTPUser,
+			cfg.Email.SMTPPassword,
+			cfg.Email.From,
+		)
+	}
+	notificationService := email.NewNotificationService(emailClient, "internal/platform/email/templates")
+
 	productService := product.NewProductService(productStore, shopifyClient)
 	cartService := cart.NewCartService(cartStore, productService)
-	orderService := order.NewOrderService(orderStore, cartService, authStore, shopifyClient, preorderStore)
-	preorderService := preorder.NewPreorderService(preorderStore, orderStore)
+	orderService := order.NewOrderService(orderStore, cartService, authStore, shopifyClient, preorderStore, notificationService)
+	preorderService := preorder.NewPreorderService(preorderStore, orderStore, notificationService)
 	customerService := customer.NewCustomerService(customerStore)
 
 	// Initialize Fiber App
@@ -117,6 +133,12 @@ func main() {
 
 	customerHandler := customer.NewCustomerHandler(customerService, cfg.Auth.Secret)
 	customerHandler.SetupRoutes(api)
+
+	// Start scheduled jobs
+	scheduler.StartDailyJob(context.Background(), func(ctx context.Context) {
+		log.Info("Running daily preorder reminders")
+		_ = preorderService.ProcessReminders(ctx)
+	})
 
 	// Start server in a separate goroutine
 	go func() {

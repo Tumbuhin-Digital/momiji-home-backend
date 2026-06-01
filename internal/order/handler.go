@@ -79,13 +79,19 @@ func (h *Handler) CreateOrder(c *fiber.Ctx) error {
 // @Router /orders [get]
 func (h *Handler) GetOrders(c *fiber.Ctx) error {
 	uid := c.Locals("user_id").(string)
+	role := c.Locals("role").(string)
 
 	var query OrderQuery
 	if err := c.QueryParser(&query); err != nil {
 		return response.Error(c, apierror.ErrBadRequest)
 	}
 
-	res, total, err := h.service.GetOrders(c.Context(), uid, query)
+	customerID := uid
+	if role == "admin" {
+		customerID = ""
+	}
+
+	res, total, err := h.service.GetOrders(c.Context(), customerID, query)
 	if err != nil {
 		return response.Error(c, err)
 	}
