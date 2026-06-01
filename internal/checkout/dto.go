@@ -55,3 +55,13 @@ type CheckoutSummaryResponse struct {
 	} `json:"due_august"`
 	Currency string `json:"currency"`
 }
+
+type InitiateCheckoutRequest struct {
+	ShippingMethod string `json:"shipping_method" validate:"required"`
+	AddressID      int    `json:"address_id,omitempty"`
+	Email          string `json:"email,omitempty"`
+}
+
+type InitiateCheckoutResponse struct {
+	CheckoutUrl string `json:"checkout_url"`
+}

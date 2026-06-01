@@ -36,7 +36,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/auth.LoginRequest"
+                            "$ref": "#/definitions/internal_auth.LoginRequest"
                         }
                     }
                 ],
@@ -46,13 +46,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/auth.TokenResponse"
+                                            "$ref": "#/definitions/internal_auth.TokenResponse"
                                         }
                                     }
                                 }
@@ -64,13 +64,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "error": {
-                                            "$ref": "#/definitions/response.ErrorBlock"
+                                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.ErrorBlock"
                                         }
                                     }
                                 }
@@ -82,13 +82,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "error": {
-                                            "$ref": "#/definitions/response.ErrorBlock"
+                                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.ErrorBlock"
                                         }
                                     }
                                 }
@@ -112,7 +112,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/response.Envelope"
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                         }
                     }
                 }
@@ -139,13 +139,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/auth.UserResponse"
+                                            "$ref": "#/definitions/internal_auth.UserResponse"
                                         }
                                     }
                                 }
@@ -157,13 +157,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "error": {
-                                            "$ref": "#/definitions/response.ErrorBlock"
+                                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.ErrorBlock"
                                         }
                                     }
                                 }
@@ -189,13 +189,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/auth.TokenResponse"
+                                            "$ref": "#/definitions/internal_auth.TokenResponse"
                                         }
                                     }
                                 }
@@ -207,13 +207,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "error": {
-                                            "$ref": "#/definitions/response.ErrorBlock"
+                                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.ErrorBlock"
                                         }
                                     }
                                 }
@@ -243,7 +243,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/auth.RegisterRequest"
+                            "$ref": "#/definitions/internal_auth.RegisterRequest"
                         }
                     }
                 ],
@@ -253,13 +253,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/auth.TokenResponse"
+                                            "$ref": "#/definitions/internal_auth.TokenResponse"
                                         }
                                     }
                                 }
@@ -271,13 +271,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "error": {
-                                            "$ref": "#/definitions/response.ErrorBlock"
+                                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.ErrorBlock"
                                         }
                                     }
                                 }
@@ -289,13 +289,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "error": {
-                                            "$ref": "#/definitions/response.ErrorBlock"
+                                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.ErrorBlock"
                                         }
                                     }
                                 }
@@ -325,13 +325,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/cart.CartResponse"
+                                            "$ref": "#/definitions/internal_cart.CartResponse"
                                         }
                                     }
                                 }
@@ -357,7 +357,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/response.Envelope"
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                         }
                     }
                 }
@@ -387,7 +387,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/cart.CartItemRequest"
+                            "$ref": "#/definitions/internal_cart.CartItemRequest"
                         }
                     }
                 ],
@@ -395,7 +395,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/response.Envelope"
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                         }
                     }
                 }
@@ -428,7 +428,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/response.Envelope"
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                         }
                     }
                 }
@@ -463,7 +463,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/cart.UpdateCartItemRequest"
+                            "$ref": "#/definitions/internal_cart.UpdateCartItemRequest"
                         }
                     }
                 ],
@@ -471,7 +471,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/response.Envelope"
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                         }
                     }
                 }
@@ -501,7 +501,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/cart.MergeCartRequest"
+                            "$ref": "#/definitions/internal_cart.MergeCartRequest"
                         }
                     }
                 ],
@@ -509,7 +509,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/response.Envelope"
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                         }
                     }
                 }
@@ -530,13 +530,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/cart.GuestSessionResponse"
+                                            "$ref": "#/definitions/internal_cart.GuestSessionResponse"
                                         }
                                     }
                                 }
@@ -566,17 +566,119 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/cart.CartSummaryDTO"
+                                            "$ref": "#/definitions/internal_cart.CartSummaryDTO"
                                         }
                                     }
                                 }
                             ]
+                        }
+                    }
+                }
+            }
+        },
+        "/checkout": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Checkout"
+                ],
+                "summary": "Initiate Shopify checkout",
+                "parameters": [
+                    {
+                        "description": "Initiate Checkout Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_checkout.InitiateCheckoutRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/internal_checkout.InitiateCheckoutResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/checkout/confirm": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Checkout"
+                ],
+                "summary": "Get checkout confirmation status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Shopify Order ID",
+                        "name": "shopify_order_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                         }
                     }
                 }
@@ -606,7 +708,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/checkout.CheckoutSummaryRequest"
+                            "$ref": "#/definitions/internal_checkout.CheckoutSummaryRequest"
                         }
                     }
                 ],
@@ -616,13 +718,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/checkout.CheckoutSummaryResponse"
+                                            "$ref": "#/definitions/internal_checkout.CheckoutSummaryResponse"
                                         }
                                     }
                                 }
@@ -672,7 +774,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
@@ -680,7 +782,7 @@ const docTemplate = `{
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/customer.CustomerResponse"
+                                                "$ref": "#/definitions/internal_customer.CustomerResponse"
                                             }
                                         }
                                     }
@@ -720,13 +822,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/customer.CustomerDetailResponse"
+                                            "$ref": "#/definitions/internal_customer.CustomerDetailResponse"
                                         }
                                     }
                                 }
@@ -765,7 +867,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
@@ -773,7 +875,7 @@ const docTemplate = `{
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/customer.CustomerOrderResponse"
+                                                "$ref": "#/definitions/internal_customer.CustomerOrderResponse"
                                             }
                                         }
                                     }
@@ -804,7 +906,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
@@ -812,7 +914,7 @@ const docTemplate = `{
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/order.OrderResponse"
+                                                "$ref": "#/definitions/internal_order.OrderResponse"
                                             }
                                         }
                                     }
@@ -845,7 +947,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/order.CreateOrderRequest"
+                            "$ref": "#/definitions/internal_order.CreateOrderRequest"
                         }
                     }
                 ],
@@ -855,13 +957,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/order.OrderResponse"
+                                            "$ref": "#/definitions/internal_order.OrderResponse"
                                         }
                                     }
                                 }
@@ -900,13 +1002,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/order.OrderResponse"
+                                            "$ref": "#/definitions/internal_order.OrderResponse"
                                         }
                                     }
                                 }
@@ -947,7 +1049,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/order.AcceptOrderRequest"
+                            "$ref": "#/definitions/internal_order.AcceptOrderRequest"
                         }
                     }
                 ],
@@ -955,7 +1057,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/response.Envelope"
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                         }
                     }
                 }
@@ -992,7 +1094,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/order.CancelOrderRequest"
+                            "$ref": "#/definitions/internal_order.CancelOrderRequest"
                         }
                     }
                 ],
@@ -1000,7 +1102,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/response.Envelope"
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                         }
                     }
                 }
@@ -1044,7 +1146,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/order.UpdateReceivedRequest"
+                            "$ref": "#/definitions/internal_order.UpdateReceivedRequest"
                         }
                     }
                 ],
@@ -1052,7 +1154,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/response.Envelope"
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                         }
                     }
                 }
@@ -1096,7 +1198,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/order.UpdateStepRequest"
+                            "$ref": "#/definitions/internal_order.UpdateStepRequest"
                         }
                     }
                 ],
@@ -1104,7 +1206,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/response.Envelope"
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                         }
                     }
                 }
@@ -1150,7 +1252,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
@@ -1158,7 +1260,7 @@ const docTemplate = `{
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/preorder.SettlementResponse"
+                                                "$ref": "#/definitions/internal_preorder.SettlementResponse"
                                             }
                                         }
                                     }
@@ -1198,13 +1300,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/preorder.SettlementResponse"
+                                            "$ref": "#/definitions/internal_preorder.SettlementResponse"
                                         }
                                     }
                                 }
@@ -1243,13 +1345,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/preorder.SettlementResponse"
+                                            "$ref": "#/definitions/internal_preorder.SettlementResponse"
                                         }
                                     }
                                 }
@@ -1259,7 +1361,7 @@ const docTemplate = `{
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/response.Envelope"
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                         }
                     }
                 }
@@ -1294,13 +1396,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/preorder.SettlementResponse"
+                                            "$ref": "#/definitions/internal_preorder.SettlementResponse"
                                         }
                                     }
                                 }
@@ -1310,7 +1412,7 @@ const docTemplate = `{
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/response.Envelope"
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                         }
                     }
                 }
@@ -1363,13 +1465,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/response.PaginatedData"
+                                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.PaginatedData"
                                         }
                                     }
                                 }
@@ -1397,7 +1499,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/response.Envelope"
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                         }
                     }
                 }
@@ -1434,7 +1536,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/product.UpdateVariantPriceRequest"
+                            "$ref": "#/definitions/internal_product.UpdateVariantPriceRequest"
                         }
                     }
                 ],
@@ -1465,13 +1567,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/product.ProductDTO"
+                                            "$ref": "#/definitions/internal_product.ProductDTO"
                                         }
                                     }
                                 }
@@ -1483,13 +1585,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "error": {
-                                            "$ref": "#/definitions/response.ErrorBlock"
+                                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.ErrorBlock"
                                         }
                                     }
                                 }
@@ -1530,7 +1632,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/product.UpdateVariantBatchLabelRequest"
+                            "$ref": "#/definitions/internal_product.UpdateVariantBatchLabelRequest"
                         }
                     }
                 ],
@@ -1540,7 +1642,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
@@ -1588,7 +1690,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/product.UpdateProductStatusRequest"
+                            "$ref": "#/definitions/internal_product.UpdateProductStatusRequest"
                         }
                     }
                 ],
@@ -1598,7 +1700,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
@@ -1617,13 +1719,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "error": {
-                                            "$ref": "#/definitions/response.ErrorBlock"
+                                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.ErrorBlock"
                                         }
                                     }
                                 }
@@ -1657,7 +1759,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
@@ -1665,7 +1767,7 @@ const docTemplate = `{
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/product.VariantDTO"
+                                                "$ref": "#/definitions/internal_product.VariantDTO"
                                             }
                                         }
                                     }
@@ -1700,7 +1802,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/checkout.CalculateShippingRequest"
+                            "$ref": "#/definitions/internal_checkout.CalculateShippingRequest"
                         }
                     }
                 ],
@@ -1708,7 +1810,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/response.Envelope"
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                         }
                     }
                 }
@@ -1734,13 +1836,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/response.Envelope"
+                                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/checkout.ShippingMethodsResponse"
+                                            "$ref": "#/definitions/internal_checkout.ShippingMethodsResponse"
                                         }
                                     }
                                 }
@@ -1749,70 +1851,70 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/webhooks/shopify/inventory_levels/update": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Shopify Inventory Update Webhook",
+                "parameters": [
+                    {
+                        "description": "Webhook Payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_webhook.ShopifyInventoryLevelWebhook"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/webhooks/shopify/orders/paid": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Shopify Order Paid Webhook",
+                "parameters": [
+                    {
+                        "description": "Webhook Payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_webhook.ShopifyOrderWebhook"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
         }
     },
     "definitions": {
-        "auth.LoginRequest": {
-            "type": "object",
-            "required": [
-                "email",
-                "password"
-            ],
-            "properties": {
-                "email": {
-                    "type": "string"
-                },
-                "password": {
-                    "type": "string"
-                }
-            }
-        },
-        "auth.RegisterRequest": {
-            "type": "object",
-            "required": [
-                "email",
-                "password"
-            ],
-            "properties": {
-                "email": {
-                    "type": "string"
-                },
-                "password": {
-                    "type": "string",
-                    "minLength": 8
-                }
-            }
-        },
-        "auth.TokenResponse": {
-            "type": "object",
-            "properties": {
-                "expires_in": {
-                    "description": "seconds",
-                    "type": "integer"
-                },
-                "user": {
-                    "$ref": "#/definitions/auth.UserResponse"
-                }
-            }
-        },
-        "auth.UserResponse": {
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "role": {
-                    "type": "string"
-                },
-                "shopify_customer_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "cart.CartItem": {
+        "github_com_tumbuhindigi-sys_momiji-home-backend_internal_cart.CartItem": {
             "type": "object",
             "properties": {
                 "balance_due": {
@@ -1844,7 +1946,144 @@ const docTemplate = `{
                 }
             }
         },
-        "cart.CartItemRequest": {
+        "github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "error": {
+                    "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.ErrorBlock"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "\"success\" or \"error\"",
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.ErrorBlock": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "details": {}
+            }
+        },
+        "github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.PaginatedData": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "totalPages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_auth.LoginRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_auth.RegisterRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string",
+                    "minLength": 8
+                }
+            }
+        },
+        "internal_auth.TokenResponse": {
+            "type": "object",
+            "properties": {
+                "expires_in": {
+                    "description": "seconds",
+                    "type": "integer"
+                },
+                "user": {
+                    "$ref": "#/definitions/internal_auth.UserResponse"
+                }
+            }
+        },
+        "internal_auth.UserResponse": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "shopify_customer_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_cart.CartItem": {
+            "type": "object",
+            "properties": {
+                "balance_due": {
+                    "type": "string"
+                },
+                "deposit_amount": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "image_src": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "integer"
+                },
+                "subtotal": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "unit_price": {
+                    "type": "string"
+                },
+                "variant_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_cart.CartItemRequest": {
             "type": "object",
             "required": [
                 "fulfillment_type",
@@ -1868,13 +2107,13 @@ const docTemplate = `{
                 }
             }
         },
-        "cart.CartResponse": {
+        "internal_cart.CartResponse": {
             "type": "object",
             "properties": {
                 "pre_order": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/cart.CartItem"
+                        "$ref": "#/definitions/internal_cart.CartItem"
                     }
                 },
                 "session_id": {
@@ -1883,15 +2122,15 @@ const docTemplate = `{
                 "ship_ready": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/cart.CartItem"
+                        "$ref": "#/definitions/internal_cart.CartItem"
                     }
                 },
                 "summary": {
-                    "$ref": "#/definitions/cart.CartSummaryDTO"
+                    "$ref": "#/definitions/internal_cart.CartSummaryDTO"
                 }
             }
         },
-        "cart.CartSummaryDTO": {
+        "internal_cart.CartSummaryDTO": {
             "type": "object",
             "properties": {
                 "currency": {
@@ -1914,7 +2153,7 @@ const docTemplate = `{
                 }
             }
         },
-        "cart.GuestSessionResponse": {
+        "internal_cart.GuestSessionResponse": {
             "type": "object",
             "properties": {
                 "expires_at": {
@@ -1925,7 +2164,7 @@ const docTemplate = `{
                 }
             }
         },
-        "cart.MergeCartRequest": {
+        "internal_cart.MergeCartRequest": {
             "type": "object",
             "required": [
                 "guest_session_id"
@@ -1936,7 +2175,7 @@ const docTemplate = `{
                 }
             }
         },
-        "cart.UpdateCartItemRequest": {
+        "internal_cart.UpdateCartItemRequest": {
             "type": "object",
             "properties": {
                 "quantity": {
@@ -1945,7 +2184,7 @@ const docTemplate = `{
                 }
             }
         },
-        "checkout.CalculateShippingRequest": {
+        "internal_checkout.CalculateShippingRequest": {
             "type": "object",
             "required": [
                 "shipping_method"
@@ -1968,7 +2207,7 @@ const docTemplate = `{
                 }
             }
         },
-        "checkout.CheckoutSummaryRequest": {
+        "internal_checkout.CheckoutSummaryRequest": {
             "type": "object",
             "required": [
                 "shipping_method"
@@ -1982,7 +2221,7 @@ const docTemplate = `{
                 }
             }
         },
-        "checkout.CheckoutSummaryResponse": {
+        "internal_checkout.CheckoutSummaryResponse": {
             "type": "object",
             "properties": {
                 "currency": {
@@ -2031,7 +2270,7 @@ const docTemplate = `{
                         "items": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/cart.CartItem"
+                                "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_cart.CartItem"
                             }
                         }
                     }
@@ -2042,7 +2281,7 @@ const docTemplate = `{
                         "items": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/cart.CartItem"
+                                "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_cart.CartItem"
                             }
                         },
                         "subtotal": {
@@ -2066,7 +2305,32 @@ const docTemplate = `{
                 }
             }
         },
-        "checkout.ShippingMethod": {
+        "internal_checkout.InitiateCheckoutRequest": {
+            "type": "object",
+            "required": [
+                "shipping_method"
+            ],
+            "properties": {
+                "address_id": {
+                    "type": "integer"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "shipping_method": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_checkout.InitiateCheckoutResponse": {
+            "type": "object",
+            "properties": {
+                "checkout_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_checkout.ShippingMethod": {
             "type": "object",
             "properties": {
                 "cost": {
@@ -2083,7 +2347,7 @@ const docTemplate = `{
                 }
             }
         },
-        "checkout.ShippingMethodsResponse": {
+        "internal_checkout.ShippingMethodsResponse": {
             "type": "object",
             "properties": {
                 "currency": {
@@ -2092,12 +2356,12 @@ const docTemplate = `{
                 "methods": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/checkout.ShippingMethod"
+                        "$ref": "#/definitions/internal_checkout.ShippingMethod"
                     }
                 }
             }
         },
-        "customer.AddressResponse": {
+        "internal_customer.AddressResponse": {
             "type": "object",
             "properties": {
                 "address1": {
@@ -2135,13 +2399,13 @@ const docTemplate = `{
                 }
             }
         },
-        "customer.CustomerDetailResponse": {
+        "internal_customer.CustomerDetailResponse": {
             "type": "object",
             "properties": {
                 "addresses": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/customer.AddressResponse"
+                        "$ref": "#/definitions/internal_customer.AddressResponse"
                     }
                 },
                 "created_at": {
@@ -2167,7 +2431,7 @@ const docTemplate = `{
                 }
             }
         },
-        "customer.CustomerOrderResponse": {
+        "internal_customer.CustomerOrderResponse": {
             "type": "object",
             "properties": {
                 "aggregate_status": {
@@ -2184,7 +2448,7 @@ const docTemplate = `{
                 }
             }
         },
-        "customer.CustomerResponse": {
+        "internal_customer.CustomerResponse": {
             "type": "object",
             "properties": {
                 "created_at": {
@@ -2210,7 +2474,7 @@ const docTemplate = `{
                 }
             }
         },
-        "order.AcceptOrderRequest": {
+        "internal_order.AcceptOrderRequest": {
             "type": "object",
             "required": [
                 "fulfillment_type"
@@ -2221,7 +2485,7 @@ const docTemplate = `{
                 }
             }
         },
-        "order.CancelOrderRequest": {
+        "internal_order.CancelOrderRequest": {
             "type": "object",
             "required": [
                 "fulfillment_type",
@@ -2236,21 +2500,21 @@ const docTemplate = `{
                 }
             }
         },
-        "order.CreateOrderRequest": {
+        "internal_order.CreateOrderRequest": {
             "type": "object",
             "required": [
                 "shipping_method"
             ],
             "properties": {
                 "guest_info": {
-                    "$ref": "#/definitions/order.GuestInfo"
+                    "$ref": "#/definitions/internal_order.GuestInfo"
                 },
                 "shipping_method": {
                     "type": "string"
                 }
             }
         },
-        "order.GuestInfo": {
+        "internal_order.GuestInfo": {
             "type": "object",
             "required": [
                 "email",
@@ -2269,24 +2533,24 @@ const docTemplate = `{
                 }
             }
         },
-        "order.LineItemsGroup": {
+        "internal_order.LineItemsGroup": {
             "type": "object",
             "properties": {
                 "pre_order": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/order.OrderItemDetail"
+                        "$ref": "#/definitions/internal_order.OrderItemDetail"
                     }
                 },
                 "ship_ready": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/order.OrderItemDetail"
+                        "$ref": "#/definitions/internal_order.OrderItemDetail"
                     }
                 }
             }
         },
-        "order.OrderItemDetail": {
+        "internal_order.OrderItemDetail": {
             "type": "object",
             "properties": {
                 "amount_charged": {
@@ -2330,7 +2594,7 @@ const docTemplate = `{
                 }
             }
         },
-        "order.OrderResponse": {
+        "internal_order.OrderResponse": {
             "type": "object",
             "properties": {
                 "aggregate_status": {
@@ -2350,7 +2614,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "line_items": {
-                    "$ref": "#/definitions/order.LineItemsGroup"
+                    "$ref": "#/definitions/internal_order.LineItemsGroup"
                 },
                 "order_number": {
                     "type": "string"
@@ -2378,7 +2642,7 @@ const docTemplate = `{
                 }
             }
         },
-        "order.UpdateReceivedRequest": {
+        "internal_order.UpdateReceivedRequest": {
             "type": "object",
             "required": [
                 "items_received"
@@ -2390,7 +2654,7 @@ const docTemplate = `{
                 }
             }
         },
-        "order.UpdateStepRequest": {
+        "internal_order.UpdateStepRequest": {
             "type": "object",
             "required": [
                 "fulfillment_step"
@@ -2403,7 +2667,7 @@ const docTemplate = `{
                 }
             }
         },
-        "preorder.SettlementResponse": {
+        "internal_preorder.SettlementResponse": {
             "type": "object",
             "properties": {
                 "balance_amount": {
@@ -2435,7 +2699,7 @@ const docTemplate = `{
                 }
             }
         },
-        "product.FulfillmentType": {
+        "internal_product.FulfillmentType": {
             "type": "string",
             "enum": [
                 "ship_ready",
@@ -2446,7 +2710,7 @@ const docTemplate = `{
                 "FulfillmentTypePreOrder"
             ]
         },
-        "product.ProductDTO": {
+        "internal_product.ProductDTO": {
             "type": "object",
             "properties": {
                 "body_html": {
@@ -2467,7 +2731,7 @@ const docTemplate = `{
                 "images": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/product.ProductImageDTO"
+                        "$ref": "#/definitions/internal_product.ProductImageDTO"
                     }
                 },
                 "preorder_batch_label": {
@@ -2491,7 +2755,7 @@ const docTemplate = `{
                 "variants": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/product.VariantDTO"
+                        "$ref": "#/definitions/internal_product.VariantDTO"
                     }
                 },
                 "vendor": {
@@ -2499,7 +2763,7 @@ const docTemplate = `{
                 }
             }
         },
-        "product.ProductImageDTO": {
+        "internal_product.ProductImageDTO": {
             "type": "object",
             "properties": {
                 "alt": {
@@ -2516,7 +2780,7 @@ const docTemplate = `{
                 }
             }
         },
-        "product.UpdateProductStatusRequest": {
+        "internal_product.UpdateProductStatusRequest": {
             "type": "object",
             "required": [
                 "fulfillment_type"
@@ -2527,7 +2791,7 @@ const docTemplate = `{
                 }
             }
         },
-        "product.UpdateVariantBatchLabelRequest": {
+        "internal_product.UpdateVariantBatchLabelRequest": {
             "type": "object",
             "required": [
                 "preorder_batch_label"
@@ -2541,7 +2805,7 @@ const docTemplate = `{
                 }
             }
         },
-        "product.UpdateVariantPriceRequest": {
+        "internal_product.UpdateVariantPriceRequest": {
             "type": "object",
             "properties": {
                 "retail_price": {
@@ -2552,11 +2816,11 @@ const docTemplate = `{
                 }
             }
         },
-        "product.VariantDTO": {
+        "internal_product.VariantDTO": {
             "type": "object",
             "properties": {
                 "fulfillment_type": {
-                    "$ref": "#/definitions/product.FulfillmentType"
+                    "$ref": "#/definitions/internal_product.FulfillmentType"
                 },
                 "id": {
                     "type": "string"
@@ -2581,48 +2845,86 @@ const docTemplate = `{
                 }
             }
         },
-        "response.Envelope": {
+        "internal_webhook.ShopifyCustomer": {
             "type": "object",
             "properties": {
-                "data": {},
-                "error": {
-                    "$ref": "#/definitions/response.ErrorBlock"
-                },
-                "message": {
+                "email": {
                     "type": "string"
                 },
-                "status": {
-                    "description": "\"success\" or \"error\"",
+                "first_name": {
                     "type": "string"
                 },
-                "timestamp": {
+                "id": {
+                    "type": "integer"
+                },
+                "last_name": {
                     "type": "string"
                 }
             }
         },
-        "response.ErrorBlock": {
+        "internal_webhook.ShopifyInventoryLevelWebhook": {
             "type": "object",
             "properties": {
-                "code": {
-                    "type": "string"
+                "available": {
+                    "type": "integer"
                 },
-                "details": {}
+                "inventory_item_id": {
+                    "type": "integer"
+                }
             }
         },
-        "response.PaginatedData": {
+        "internal_webhook.ShopifyOrderLineItem": {
             "type": "object",
             "properties": {
-                "limit": {
+                "id": {
                     "type": "integer"
                 },
-                "page": {
+                "price": {
+                    "type": "string"
+                },
+                "quantity": {
                     "type": "integer"
                 },
-                "total": {
+                "sku": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "variant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_webhook.ShopifyOrderWebhook": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string"
+                },
+                "customer": {
+                    "$ref": "#/definitions/internal_webhook.ShopifyCustomer"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "financial_status": {
+                    "type": "string"
+                },
+                "id": {
                     "type": "integer"
                 },
-                "totalPages": {
+                "line_items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_webhook.ShopifyOrderLineItem"
+                    }
+                },
+                "order_number": {
                     "type": "integer"
+                },
+                "total_price": {
+                    "type": "string"
                 }
             }
         }

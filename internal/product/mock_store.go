@@ -54,6 +54,16 @@ func (m *MockProductStore) GetVariantByShopifyID(ctx context.Context, id string)
 	return v, nil
 }
 
+func (m *MockProductStore) GetVariantByInventoryItemID(ctx context.Context, id string) (*ProductVariant, error) {
+	if m.GetVariantByShopifyIDErr != nil { return nil, m.GetVariantByShopifyIDErr } // reuse err for simplicity
+	for _, v := range m.Variants {
+		if v.ShopifyInventoryItemID == id {
+			return v, nil
+		}
+	}
+	return nil, nil
+}
+
 func (m *MockProductStore) GetProductByShopifyID(ctx context.Context, shopifyID string) (*Product, error) {
 	m.GetProductByShopifyIDCalls++
 	if m.GetProductByShopifyIDErr != nil { return nil, m.GetProductByShopifyIDErr }
@@ -121,8 +131,8 @@ type MockShopifyClient struct {
 	AdminGraphQLErr      error
 	DraftOrderResponse   *shopify.DraftOrderResponse
 	DraftOrderErr        error
-	CheckoutResponse     *shopify.CheckoutResponse
-	CheckoutErr          error
+	CartResponse     *shopify.CartCreateResponse
+	CartErr          error
 }
 
 func (m *MockShopifyClient) QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error) {
@@ -133,14 +143,14 @@ func (m *MockShopifyClient) CreateDraftOrder(ctx context.Context, input shopify.
 	return m.DraftOrderResponse, m.DraftOrderErr
 }
 
-func (m *MockShopifyClient) CreateStorefrontCheckout(ctx context.Context, input shopify.CheckoutCreateInput) (*shopify.CheckoutResponse, error) {
-	return m.CheckoutResponse, m.CheckoutErr
+func (m *MockShopifyClient) CreateStorefrontCart(ctx context.Context, input shopify.CartCreateInput) (*shopify.CartCreateResponse, error) {
+	return m.CartResponse, m.CartErr
 }
 
 type MockShopifyClientFunc struct {
 	QueryAdminGraphQLFn        func(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error)
 	CreateDraftOrderFn         func(ctx context.Context, input shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error)
-	CreateStorefrontCheckoutFn func(ctx context.Context, input shopify.CheckoutCreateInput) (*shopify.CheckoutResponse, error)
+	CreateStorefrontCartFn     func(ctx context.Context, input shopify.CartCreateInput) (*shopify.CartCreateResponse, error)
 }
 
 func (m *MockShopifyClientFunc) QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error) {
@@ -151,6 +161,6 @@ func (m *MockShopifyClientFunc) CreateDraftOrder(ctx context.Context, input shop
 	return m.CreateDraftOrderFn(ctx, input)
 }
 
-func (m *MockShopifyClientFunc) CreateStorefrontCheckout(ctx context.Context, input shopify.CheckoutCreateInput) (*shopify.CheckoutResponse, error) {
-	return m.CreateStorefrontCheckoutFn(ctx, input)
+func (m *MockShopifyClientFunc) CreateStorefrontCart(ctx context.Context, input shopify.CartCreateInput) (*shopify.CartCreateResponse, error) {
+	return m.CreateStorefrontCartFn(ctx, input)
 }

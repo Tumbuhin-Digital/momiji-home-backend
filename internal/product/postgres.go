@@ -80,6 +80,17 @@ func (s *PostgresStore) GetVariantByShopifyID(ctx context.Context, shopifyVarian
 	return &variant, nil
 }
 
+func (s *PostgresStore) GetVariantByInventoryItemID(ctx context.Context, itemID string) (*ProductVariant, error) {
+	var variant ProductVariant
+	if err := s.db.WithContext(ctx).Where("shopify_inventory_item_id = ?", itemID).First(&variant).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &variant, nil
+}
+
 func (s *PostgresStore) UpsertProduct(ctx context.Context, product *Product) error {
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "shopify_id"}},
