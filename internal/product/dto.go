@@ -50,3 +50,17 @@ type ProductQuery struct {
 	Sort            string `query:"sort"`
 	FulfillmentType string `query:"fulfillment_type"`
 }
+
+type UpdateProductStatusRequest struct {
+	FulfillmentType string `json:"fulfillment_type" validate:"required"`
+}
+
+type UpdateVariantBatchLabelRequest struct {
+	PreorderBatchLabel string  `json:"preorder_batch_label" validate:"required"`
+	ExpectedShipDate   *string `json:"expected_ship_date"`
+}
+
+type UpdateVariantPriceRequest struct {
+	WSPrice     *float64 `json:"ws_price"`
+	RetailPrice *float64 `json:"retail_price"`
+}

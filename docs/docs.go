@@ -1325,6 +1325,38 @@ const docTemplate = `{
                     "Product"
                 ],
                 "summary": "List products",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit per page",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search by title or description",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order (e.g. price_asc, price_desc, name_asc, created_at)",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by fulfillment type (ship_ready, pre_order)",
+                        "name": "fulfillment_type",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1395,6 +1427,15 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Price override payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/product.UpdateVariantPriceRequest"
+                        }
                     }
                 ],
                 "responses": {}
@@ -1482,6 +1523,15 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Batch label and ship date update payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/product.UpdateVariantBatchLabelRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -1531,6 +1581,15 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Fulfillment type update payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/product.UpdateProductStatusRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -2454,6 +2513,42 @@ const docTemplate = `{
                 },
                 "src": {
                     "type": "string"
+                }
+            }
+        },
+        "product.UpdateProductStatusRequest": {
+            "type": "object",
+            "required": [
+                "fulfillment_type"
+            ],
+            "properties": {
+                "fulfillment_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "product.UpdateVariantBatchLabelRequest": {
+            "type": "object",
+            "required": [
+                "preorder_batch_label"
+            ],
+            "properties": {
+                "expected_ship_date": {
+                    "type": "string"
+                },
+                "preorder_batch_label": {
+                    "type": "string"
+                }
+            }
+        },
+        "product.UpdateVariantPriceRequest": {
+            "type": "object",
+            "properties": {
+                "retail_price": {
+                    "type": "number"
+                },
+                "ws_price": {
+                    "type": "number"
                 }
             }
         },
