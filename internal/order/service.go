@@ -176,7 +176,7 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 			LineItems: draftItems,
 		}
 		if req.GuestInfo != nil {
-			draftInput.Customer = &shopify.DraftOrderCustomer{Email: req.GuestInfo.Email}
+			draftInput.Email = req.GuestInfo.Email
 		}
 
 		draftRes, draftErr := s.shopClient.CreateDraftOrder(ctx, draftInput)
