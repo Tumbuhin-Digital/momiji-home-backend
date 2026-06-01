@@ -503,6 +503,29 @@ definitions:
       src:
         type: string
     type: object
+  product.UpdateProductStatusRequest:
+    properties:
+      fulfillment_type:
+        type: string
+    required:
+    - fulfillment_type
+    type: object
+  product.UpdateVariantBatchLabelRequest:
+    properties:
+      expected_ship_date:
+        type: string
+      preorder_batch_label:
+        type: string
+    required:
+    - preorder_batch_label
+    type: object
+  product.UpdateVariantPriceRequest:
+    properties:
+      retail_price:
+        type: number
+      ws_price:
+        type: number
+    type: object
   product.VariantDTO:
     properties:
       fulfillment_type:
@@ -1308,6 +1331,27 @@ paths:
       - Preorder
   /products:
     get:
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Limit per page
+        in: query
+        name: limit
+        type: integer
+      - description: Search by title or description
+        in: query
+        name: search
+        type: string
+      - description: Sort order (e.g. price_asc, price_desc, name_asc, created_at)
+        in: query
+        name: sort
+        type: string
+      - description: Filter by fulfillment type (ship_ready, pre_order)
+        in: query
+        name: fulfillment_type
+        type: string
       produces:
       - application/json
       responses:
@@ -1365,6 +1409,12 @@ paths:
         name: id
         required: true
         type: string
+      - description: Batch label and ship date update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/product.UpdateVariantBatchLabelRequest'
       produces:
       - application/json
       responses:
@@ -1393,6 +1443,12 @@ paths:
         name: id
         required: true
         type: string
+      - description: Fulfillment type update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/product.UpdateProductStatusRequest'
       produces:
       - application/json
       responses:
@@ -1469,6 +1525,12 @@ paths:
         name: id
         required: true
         type: string
+      - description: Price override payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/product.UpdateVariantPriceRequest'
       produces:
       - application/json
       responses: {}

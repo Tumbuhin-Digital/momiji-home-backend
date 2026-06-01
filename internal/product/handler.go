@@ -41,6 +41,11 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 // @Summary List products
 // @Tags Product
 // @Produce json
+// @Param page query int false "Page number"
+// @Param limit query int false "Limit per page"
+// @Param search query string false "Search by title or description"
+// @Param sort query string false "Sort order (e.g. price_asc, price_desc, name_asc, created_at)"
+// @Param fulfillment_type query string false "Filter by fulfillment type (ship_ready, pre_order)"
 // @Success 200 {object} response.Envelope{data=response.PaginatedData}
 // @Router /products [get]
 func (h *Handler) GetProducts(c *fiber.Ctx) error {
@@ -132,14 +137,13 @@ func (h *Handler) GetProductVariants(c *fiber.Ctx) error {
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Product ID"
+// @Param body body UpdateProductStatusRequest true "Fulfillment type update payload"
 // @Success 200 {object} response.Envelope{data=map[string]interface{}}
 // @Failure 400 {object} response.Envelope{error=response.ErrorBlock}
 // @Router /products/{id}/status [patch]
 func (h *Handler) UpdateProductStatus(c *fiber.Ctx) error {
 	slog.InfoContext(c.Context(), "UpdateProductStatus", slog.String("product_id", c.Params("id")))
-	var req struct {
-		FulfillmentType string `json:"fulfillment_type" validate:"required"`
-	}
+	var req UpdateProductStatusRequest
 	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
 	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
 	
@@ -174,14 +178,12 @@ func (h *Handler) UpdateProductStatus(c *fiber.Ctx) error {
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Product ID"
+// @Param body body UpdateVariantBatchLabelRequest true "Batch label and ship date update payload"
 // @Success 200 {object} response.Envelope{data=map[string]interface{}}
 // @Router /products/{id}/batch [patch]
 func (h *Handler) UpdateVariantBatchLabel(c *fiber.Ctx) error {
 	slog.InfoContext(c.Context(), "UpdateVariantBatchLabel", slog.String("product_id", c.Params("id")))
-	var req struct {
-		PreorderBatchLabel string  `json:"preorder_batch_label" validate:"required"`
-		ExpectedShipDate   *string `json:"expected_ship_date"`
-	}
+	var req UpdateVariantBatchLabelRequest
 	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
 	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
 	
@@ -215,13 +217,11 @@ func (h *Handler) UpdateVariantBatchLabel(c *fiber.Ctx) error {
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Variant ID"
+// @Param body body UpdateVariantPriceRequest true "Price override payload"
 // @Router /products/variant/{id}/price [patch]
 func (h *Handler) UpdateVariantPrice(c *fiber.Ctx) error {
 	slog.InfoContext(c.Context(), "UpdateVariantPrice", slog.String("variant_id", c.Params("id")))
-	var req struct {
-		WSPrice     *float64 `json:"ws_price"`
-		RetailPrice *float64 `json:"retail_price"`
-	}
+	var req UpdateVariantPriceRequest
 	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
 	if err := h.service.UpdateVariantPrice(c.Context(), c.Params("id"), req.WSPrice, req.RetailPrice); err != nil {
 		return response.Error(c, err)
