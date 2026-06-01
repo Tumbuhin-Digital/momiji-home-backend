@@ -12,7 +12,7 @@ import (
 type Client interface {
 	QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error)
 	CreateDraftOrder(ctx context.Context, input DraftOrderInput) (*DraftOrderResponse, error)
-	CreateStorefrontCheckout(ctx context.Context, input CheckoutCreateInput) (*CheckoutResponse, error)
+	CreateStorefrontCart(ctx context.Context, input CartCreateInput) (*CartCreateResponse, error)
 }
 
 type clientImpl struct {
@@ -126,19 +126,29 @@ func (c *clientImpl) CreateDraftOrder(ctx context.Context, input DraftOrderInput
 	return res.Data.DraftOrderCreate.DraftOrder, nil
 }
 
-type CheckoutCreateInput struct {
-	Email     string             `json:"email"`
-	LineItems []CheckoutLineItem `json:"lineItems"`
+type CartCreateInput struct {
+	Lines []CartLineInput `json:"lines"`
+	BuyerIdentity *CartBuyerIdentityInput `json:"buyerIdentity,omitempty"`
 }
 
-type CheckoutLineItem struct {
-	VariantID string `json:"variantId"`
-	Quantity  int    `json:"quantity"`
+type CartLineInput struct {
+	MerchandiseId string `json:"merchandiseId"`
+	Quantity      int    `json:"quantity"`
+	Attributes    []AttributeInput `json:"attributes,omitempty"`
 }
 
-type CheckoutResponse struct {
-	ID     string `json:"id"`
-	WebUrl string `json:"webUrl"`
+type AttributeInput struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type CartBuyerIdentityInput struct {
+	Email string `json:"email,omitempty"`
+}
+
+type CartCreateResponse struct {
+	ID          string `json:"id"`
+	CheckoutUrl string `json:"checkoutUrl"`
 }
 
 func (c *clientImpl) QueryStorefrontGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error) {
@@ -171,15 +181,15 @@ func (c *clientImpl) QueryStorefrontGraphQL(ctx context.Context, query string, v
 	return io.ReadAll(resp.Body)
 }
 
-func (c *clientImpl) CreateStorefrontCheckout(ctx context.Context, input CheckoutCreateInput) (*CheckoutResponse, error) {
+func (c *clientImpl) CreateStorefrontCart(ctx context.Context, input CartCreateInput) (*CartCreateResponse, error) {
 	query := `
-		mutation checkoutCreate($input: CheckoutCreateInput!) {
-		  checkoutCreate(input: $input) {
-			checkout {
+		mutation cartCreate($input: CartInput!) {
+		  cartCreate(input: $input) {
+			cart {
 			  id
-			  webUrl
+			  checkoutUrl
 			}
-			checkoutUserErrors {
+			userErrors {
 			  message
 			}
 		  }
@@ -194,24 +204,24 @@ func (c *clientImpl) CreateStorefrontCheckout(ctx context.Context, input Checkou
 
 	var res struct {
 		Data struct {
-			CheckoutCreate struct {
-				Checkout           *CheckoutResponse `json:"checkout"`
-				CheckoutUserErrors []struct {
+			CartCreate struct {
+				Cart       *CartCreateResponse `json:"cart"`
+				UserErrors []struct {
 					Message string `json:"message"`
-				} `json:"checkoutUserErrors"`
-			} `json:"checkoutCreate"`
+				} `json:"userErrors"`
+			} `json:"cartCreate"`
 		} `json:"data"`
 	}
 
 	if err := json.Unmarshal(resBytes, &res); err != nil {
 		return nil, err
 	}
-	if len(res.Data.CheckoutCreate.CheckoutUserErrors) > 0 {
-		return nil, fmt.Errorf("shopify checkout error: %s", res.Data.CheckoutCreate.CheckoutUserErrors[0].Message)
+	if len(res.Data.CartCreate.UserErrors) > 0 {
+		return nil, fmt.Errorf("shopify cart error: %s", res.Data.CartCreate.UserErrors[0].Message)
 	}
-	if res.Data.CheckoutCreate.Checkout == nil {
-		return nil, fmt.Errorf("failed to create checkout")
+	if res.Data.CartCreate.Cart == nil {
+		return nil, fmt.Errorf("failed to create cart")
 	}
 
-	return res.Data.CheckoutCreate.Checkout, nil
+	return res.Data.CartCreate.Cart, nil
 }

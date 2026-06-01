@@ -90,11 +90,11 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 
 	// 3. Process ShipReady (Storefront Checkout)
 	if len(cartRes.ShipReady) > 0 {
-		var sfItems []shopify.CheckoutLineItem
+		var sfItems []shopify.CartLineInput
 		for _, item := range cartRes.ShipReady {
-			sfItems = append(sfItems, shopify.CheckoutLineItem{
-				VariantID: item.VariantID,
-				Quantity:  item.Quantity,
+			sfItems = append(sfItems, shopify.CartLineInput{
+				MerchandiseId: item.VariantID,
+				Quantity:      item.Quantity,
 			})
 			price, _ := strconv.ParseFloat(item.Subtotal, 64)
 			unitPrice, _ := strconv.ParseFloat(item.UnitPrice, 64)
@@ -121,16 +121,19 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 		if req.GuestInfo != nil {
 			email = req.GuestInfo.Email
 		}
-		checkoutInput := shopify.CheckoutCreateInput{
-			Email:     email,
-			LineItems: sfItems,
+		
+		cartInput := shopify.CartCreateInput{
+			Lines: sfItems,
+		}
+		if email != "" {
+			cartInput.BuyerIdentity = &shopify.CartBuyerIdentityInput{Email: email}
 		}
 		
-		chkRes, chkErr := s.shopClient.CreateStorefrontCheckout(ctx, checkoutInput)
+		chkRes, chkErr := s.shopClient.CreateStorefrontCart(ctx, cartInput)
 		if chkErr != nil {
-			return nil, fmt.Errorf("failed to create checkout: %w", chkErr)
+			return nil, fmt.Errorf("failed to create cart: %w", chkErr)
 		}
-		checkoutURL = chkRes.WebUrl
+		checkoutURL = chkRes.CheckoutUrl
 	}
 
 	var hasPreOrder bool

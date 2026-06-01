@@ -124,6 +124,11 @@ func mapVariantToDTO(variant *ProductVariant) *VariantDTO {
 		sku = &skuStr
 	}
 
+	ft := string(FulfillmentTypePreOrder)
+	if variant.InventoryQuantity > 0 {
+		ft = string(FulfillmentTypeShipReady)
+	}
+
 	return &VariantDTO{
 		ID:                variant.ShopifyVariantID,
 		Title:             variant.Title,
@@ -131,7 +136,7 @@ func mapVariantToDTO(variant *ProductVariant) *VariantDTO {
 		ImageSrc:          variant.ImageSrc,
 		RetailPrice:       retailPrice,
 		WSPrice:           wsPrice,
-		FulfillmentType:   FulfillmentType(variant.FulfillmentType),
+		FulfillmentType:   FulfillmentType(ft),
 		InventoryQuantity: variant.InventoryQuantity,
 	}
 }
@@ -148,7 +153,7 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 				id title descriptionHtml status
 				variants(first: 10) {
 				  edges {
-					node { id title sku price inventoryQuantity image { url } }
+					node { id title sku price inventoryQuantity image { url } inventoryItem { id } }
 				  }
 				}
 			  }
@@ -188,6 +193,7 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 										Price             string `json:"price"`
 										InventoryQuantity int    `json:"inventoryQuantity"`
 										Image             struct{ Url string `json:"url"` } `json:"image"`
+										InventoryItem     struct{ ID  string `json:"id"` }  `json:"inventoryItem"`
 									} `json:"node"`
 								} `json:"edges"`
 							} `json:"variants"`
@@ -235,6 +241,7 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 					ImageSrc:          vNode.Image.Url,
 					FulfillmentType:   string(FulfillmentTypeShipReady),
 					InventoryQuantity: vNode.InventoryQuantity,
+					ShopifyInventoryItemID: vNode.InventoryItem.ID,
 				}
 				if err := s.store.UpsertVariant(ctx, variant); err != nil {
 					return fmt.Errorf("failed to upsert variant %s: %w", variant.ShopifyVariantID, err)

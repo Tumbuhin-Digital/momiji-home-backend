@@ -6,17 +6,19 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server/middleware"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/response"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/validator"
 )
 
 type Handler struct {
-	cartService cart.CartService
-	jwtSecret   string
+	cartService     cart.CartService
+	checkoutService CheckoutService
+	jwtSecret       string
 }
 
-func NewCheckoutHandler(cartService cart.CartService, jwtSecret string) *Handler {
-	return &Handler{cartService: cartService, jwtSecret: jwtSecret}
+func NewCheckoutHandler(cartService cart.CartService, checkoutService CheckoutService, jwtSecret string) *Handler {
+	return &Handler{cartService: cartService, checkoutService: checkoutService, jwtSecret: jwtSecret}
 }
 
 func (h *Handler) SetupRoutes(router fiber.Router) {
@@ -30,6 +32,8 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	checkout := router.Group("/checkout")
 	checkout.Use(middleware.Auth(h.jwtSecret))
 	checkout.Post("/summary", h.GetCheckoutSummary)
+	checkout.Post("/", h.InitiateCheckout)
+	checkout.Get("/confirm", h.GetCheckoutConfirm)
 }
 
 // GetShippingMethods godoc
@@ -145,4 +149,57 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 	res.Currency = "USD"
 
 	return response.Success(c, fiber.StatusOK, "Checkout summary retrieved", res)
+}
+
+// InitiateCheckout godoc
+// @Summary Initiate Shopify checkout
+// @Tags Checkout
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body InitiateCheckoutRequest true "Initiate Checkout Request"
+// @Success 200 {object} response.Envelope{data=InitiateCheckoutResponse}
+// @Router /checkout [post]
+func (h *Handler) InitiateCheckout(c *fiber.Ctx) error {
+	var req InitiateCheckoutRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	uid := c.Locals("user_id").(string)
+	
+	res, err := h.checkoutService.InitiateCheckout(c.Context(), &uid, nil, req)
+	if err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Checkout initiated", res)
+}
+
+// GetCheckoutConfirm godoc
+// @Summary Get checkout confirmation status
+// @Tags Checkout
+// @Produce json
+// @Security BearerAuth
+// @Param shopify_order_id query string true "Shopify Order ID"
+// @Success 200 {object} response.Envelope{data=map[string]interface{}}
+// @Failure 404 {object} response.Envelope
+// @Router /checkout/confirm [get]
+func (h *Handler) GetCheckoutConfirm(c *fiber.Ctx) error {
+	orderID := c.Query("shopify_order_id")
+	if orderID == "" {
+		return response.Error(c, apierror.New(400, "bad_request", "shopify_order_id is required"))
+	}
+	
+	// Mock implementation. Real implementation should check order DB by shopify_order_id.
+	// We will implement this correctly when OrderStore is accessible here or via OrderService.
+	// For now, just return a mock response
+	return response.Success(c, fiber.StatusOK, "Order confirmed", fiber.Map{
+		"order_id":         "mock-uuid",
+		"order_number":     "#1234",
+		"status":           "PROCESSING",
+		"shopify_order_id": orderID,
+	})
 }

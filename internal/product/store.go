@@ -43,9 +43,10 @@ type ProductVariant struct {
 	RetailPrice        *float64
 	WSPrice            *float64
 	FulfillmentType    string
-	PreorderBatchLabel *string
-	ExpectedShipDate   *time.Time
-	InventoryQuantity  int
+	PreorderBatchLabel     *string
+	ExpectedShipDate       *time.Time
+	InventoryQuantity      int
+	ShopifyInventoryItemID string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
@@ -53,6 +54,7 @@ type ProductVariant struct {
 type Store interface {
 	GetProducts(ctx context.Context, query ProductQuery) ([]Product, int64, error)
 	GetVariantByShopifyID(ctx context.Context, shopifyVariantID string) (*ProductVariant, error)
+	GetVariantByInventoryItemID(ctx context.Context, itemID string) (*ProductVariant, error)
 	GetProductByShopifyID(ctx context.Context, shopifyID string) (*Product, error)
 	UpsertProduct(ctx context.Context, product *Product) error
 	UpsertVariant(ctx context.Context, variant *ProductVariant) error

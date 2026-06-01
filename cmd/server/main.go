@@ -32,6 +32,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/webhook"
 )
 
 func main() {
@@ -106,6 +107,7 @@ func main() {
 	orderService := order.NewOrderService(orderStore, cartService, authStore, shopifyClient, preorderStore, notificationService)
 	preorderService := preorder.NewPreorderService(preorderStore, orderStore, notificationService)
 	customerService := customer.NewCustomerService(customerStore)
+	webhookService := webhook.NewWebhookService(orderStore, authStore, productStore, shopifyClient, preorderStore, notificationService)
 
 	// Initialize Fiber App
 	app := server.NewFiberApp(log)
@@ -119,7 +121,8 @@ func main() {
 	cartHandler := cart.NewCartHandler(cartService, cfg.Auth.Secret)
 	cartHandler.SetupRoutes(api)
 
-	checkoutHandler := checkout.NewCheckoutHandler(cartService, cfg.Auth.Secret)
+	checkoutService := checkout.NewCheckoutService(cartService, shopifyClient)
+	checkoutHandler := checkout.NewCheckoutHandler(cartService, checkoutService, cfg.Auth.Secret)
 	checkoutHandler.SetupRoutes(api)
 
 	productHandler := product.NewProductHandler(productService, cfg.Auth.Secret)
@@ -134,10 +137,16 @@ func main() {
 	customerHandler := customer.NewCustomerHandler(customerService, cfg.Auth.Secret)
 	customerHandler.SetupRoutes(api)
 
+	webhookHandler := webhook.NewWebhookHandler(webhookService, cfg.Shopify.WebhookSecret)
+	webhookHandler.SetupRoutes(app) // Root level for webhooks (no /api/v1 prefix)
+
 	// Start scheduled jobs
 	scheduler.StartDailyJob(context.Background(), func(ctx context.Context) {
 		log.Info("Running daily preorder reminders")
 		_ = preorderService.ProcessReminders(ctx)
+		
+		log.Info("Running nightly Shopify product sync")
+		_ = productService.SyncFromShopify(ctx)
 	})
 
 	// Start server in a separate goroutine
