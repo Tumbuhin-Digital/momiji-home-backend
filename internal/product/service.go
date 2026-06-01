@@ -18,8 +18,8 @@ type ProductService interface {
 	SyncFromShopify(ctx context.Context) error
 	GetProductByID(ctx context.Context, id string) (*ProductDTO, error)
 	GetVariantsByProductID(ctx context.Context, productID string) ([]VariantDTO, error)
-	UpdateProductStatus(ctx context.Context, productID string, status string) error
-	UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string) error
+	UpdateProductStatus(ctx context.Context, productID string, fulfillmentType string) (*ProductDTO, error)
+	UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) (*ProductDTO, error)
 	UpdateVariantPrice(ctx context.Context, variantID string, wsPrice *float64, retailPrice *float64) error
 }
 
@@ -62,17 +62,44 @@ func mapProductToDTO(p *Product) ProductDTO {
 		variants[i] = *mapVariantToDTO(&v)
 	}
 	
-	// Ensure Images is not nil (as per contract it's an array)
-	images := []ProductImageDTO{}
+	images := make([]ProductImageDTO, len(p.Images))
+	for i, img := range p.Images {
+		images[i] = ProductImageDTO{
+			ID:       img.ShopifyID,
+			Src:      img.Src,
+			Alt:      img.Alt,
+			Position: img.Position,
+		}
+	}
+	if images == nil { images = []ProductImageDTO{} }
+
+	// Determine product-level preorder_batch_label and expected_ship_date from first variant
+	var batchLabel, shipDate *string
+	if len(p.Variants) > 0 {
+		if p.Variants[0].PreorderBatchLabel != nil {
+			batchLabel = p.Variants[0].PreorderBatchLabel
+		}
+		if p.Variants[0].ExpectedShipDate != nil {
+			dt := p.Variants[0].ExpectedShipDate.Format("2006-01-02T15:04:05Z07:00")
+			shipDate = &dt
+		}
+	}
 	
 	return ProductDTO{
-		ID:          p.ID,
-		ShopifyID:   p.ShopifyID,
-		Title:       p.Title,
-		Description: p.Description,
-		Status:      p.Status,
-		Variants:    variants,
-		Images:      images,
+		ID:                 p.ID,
+		ShopifyID:          p.ShopifyID,
+		Handle:             p.Handle,
+		Title:              p.Title,
+		Description:        p.Description,
+		Vendor:             p.Vendor,
+		ProductType:        p.ProductType,
+		Tags:               p.Tags,
+		Status:             p.Status,
+		PreorderBatchLabel: batchLabel,
+		ExpectedShipDate:   shipDate,
+		BodyHTML:           p.BodyHTML,
+		Variants:           variants,
+		Images:             images,
 	}
 }
 
@@ -91,10 +118,17 @@ func mapVariantToDTO(variant *ProductVariant) *VariantDTO {
 		retailPrice = fmt.Sprintf("%.2f", variant.Price)
 	}
 
+	var sku *string
+	if variant.SKU != "" {
+		skuStr := variant.SKU
+		sku = &skuStr
+	}
+
 	return &VariantDTO{
-		ID:              variant.ShopifyVariantID,
-		Title:           variant.Title,
-		ImageSrc:        variant.ImageSrc,
+		ID:                variant.ShopifyVariantID,
+		Title:             variant.Title,
+		SKU:               sku,
+		ImageSrc:          variant.ImageSrc,
 		RetailPrice:       retailPrice,
 		WSPrice:           wsPrice,
 		FulfillmentType:   FulfillmentType(variant.FulfillmentType),
@@ -241,21 +275,21 @@ func (s *service) GetVariantsByProductID(ctx context.Context, productID string) 
 	return dtos, nil
 }
 
-func (s *service) UpdateProductStatus(ctx context.Context, productID string, status string) error {
-	if !validProductStatuses[status] {
-		return apierror.New(400, "validation_error", "status must be one of: active, draft, archived")
+func (s *service) UpdateProductStatus(ctx context.Context, productID string, fulfillmentType string) (*ProductDTO, error) {
+	if fulfillmentType != "ship_ready" && fulfillmentType != "pre_order" {
+		return nil, apierror.New(400, "validation_error", "fulfillment_type must be ship_ready or pre_order")
 	}
-	if err := s.store.UpdateProductStatus(ctx, productID, status); err != nil {
-		return apierror.ErrInternal
+	if err := s.store.UpdateProductStatus(ctx, productID, fulfillmentType); err != nil {
+		return nil, apierror.ErrInternal
 	}
-	return nil
+	return s.GetProductByID(ctx, productID)
 }
 
-func (s *service) UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string) error {
-	if err := s.store.UpdateVariantBatchLabel(ctx, productID, batchLabel); err != nil {
-		return apierror.ErrInternal
+func (s *service) UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) (*ProductDTO, error) {
+	if err := s.store.UpdateVariantBatchLabel(ctx, productID, batchLabel, expectedShipDate); err != nil {
+		return nil, apierror.ErrInternal
 	}
-	return nil
+	return s.GetProductByID(ctx, productID)
 }
 
 func (s *service) UpdateVariantPrice(ctx context.Context, variantID string, wsPrice *float64, retailPrice *float64) error {

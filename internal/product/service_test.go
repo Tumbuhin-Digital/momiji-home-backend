@@ -29,7 +29,7 @@ func buildShopifyProductResponseWithPageInfo(shopifyProductID, shopifyVariantID 
 										"id": shopifyVariantID, "title": "Test Variant Title",
 										"sku": "SKU-001", "price": "10.00",
 										"inventoryQuantity": 50,
-										"image": map[string]string{"url": ""},
+										"image":             map[string]string{"url": ""},
 									}},
 								},
 							},
@@ -54,8 +54,12 @@ func TestGetVariantByID_Found(t *testing.T) {
 	}
 
 	dto, err := svc.GetVariantByID(context.Background(), "gid://shopify/ProductVariant/1")
-	if err != nil { t.Fatalf("unexpected error: %v", err) }
-	if dto.Title != "Test Variant" { t.Fatalf("expected 'Test Variant', got '%s'", dto.Title) }
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dto.Title != "Test Variant" {
+		t.Fatalf("expected 'Test Variant', got '%s'", dto.Title)
+	}
 }
 
 func TestGetVariantByID_NotFound(t *testing.T) {
@@ -63,10 +67,10 @@ func TestGetVariantByID_NotFound(t *testing.T) {
 	svc := product.NewProductService(store, &product.MockShopifyClient{})
 
 	_, err := svc.GetVariantByID(context.Background(), "nonexistent")
-	if err != apierror.ErrNotFound { t.Fatalf("expected ErrNotFound, got %v", err) }
+	if err != apierror.ErrNotFound {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
 }
-
-
 
 func TestSyncFromShopify_Success(t *testing.T) {
 	store := product.NewMockProductStore()
@@ -78,9 +82,15 @@ func TestSyncFromShopify_Success(t *testing.T) {
 	svc := product.NewProductService(store, mockClient)
 
 	err := svc.SyncFromShopify(context.Background())
-	if err != nil { t.Fatalf("unexpected error: %v", err) }
-	if store.UpsertProductCalls != 1 { t.Fatalf("expected 1 UpsertProduct call, got %d", store.UpsertProductCalls) }
-	if store.UpsertVariantCalls != 1 { t.Fatalf("expected 1 UpsertVariant call, got %d", store.UpsertVariantCalls) }
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if store.UpsertProductCalls != 1 {
+		t.Fatalf("expected 1 UpsertProduct call, got %d", store.UpsertProductCalls)
+	}
+	if store.UpsertVariantCalls != 1 {
+		t.Fatalf("expected 1 UpsertVariant call, got %d", store.UpsertVariantCalls)
+	}
 }
 
 func TestSyncFromShopify_ClientError(t *testing.T) {
@@ -89,7 +99,9 @@ func TestSyncFromShopify_ClientError(t *testing.T) {
 	svc := product.NewProductService(store, mockClient)
 
 	err := svc.SyncFromShopify(context.Background())
-	if err == nil { t.Fatal("expected error, got nil") }
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
 }
 
 func TestSyncFromShopify_MultiPage(t *testing.T) {
@@ -115,8 +127,12 @@ func TestSyncFromShopify_MultiPage(t *testing.T) {
 	svc := product.NewProductService(store, mockClient)
 
 	err := svc.SyncFromShopify(context.Background())
-	if err != nil { t.Fatalf("unexpected error: %v", err) }
-	if store.UpsertProductCalls != 2 { t.Fatalf("expected 2 UpsertProduct calls, got %d", store.UpsertProductCalls) }
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if store.UpsertProductCalls != 2 {
+		t.Fatalf("expected 2 UpsertProduct calls, got %d", store.UpsertProductCalls)
+	}
 }
 
 func TestGetProductByID_NotFound(t *testing.T) {
@@ -124,13 +140,17 @@ func TestGetProductByID_NotFound(t *testing.T) {
 	svc := product.NewProductService(store, &product.MockShopifyClient{})
 
 	_, err := svc.GetProductByID(context.Background(), "nonexistent-uuid")
-	if err == nil { t.Fatal("expected error, got nil") }
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
 }
 
 func TestUpdateProductStatus_InvalidStatus(t *testing.T) {
 	store := product.NewMockProductStore()
 	svc := product.NewProductService(store, &product.MockShopifyClient{})
 
-	err := svc.UpdateProductStatus(context.Background(), "any-id", "invalid_status")
-	if err == nil { t.Fatal("expected validation error for invalid status") }
+	_, err := svc.UpdateProductStatus(context.Background(), "any-id", "invalid_status")
+	if err == nil {
+		t.Fatal("expected validation error for invalid status")
+	}
 }

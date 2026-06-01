@@ -67,6 +67,10 @@ func (h *Handler) GetProducts(c *fiber.Ctx) error {
 		TotalPages: totalPages,
 		ItemsKey:   "products",
 		Items:      products,
+		Extra: map[string]interface{}{
+			"sort":   query.Sort,
+			"search": query.Search,
+		},
 	}
 
 	return response.Success(c, fiber.StatusOK, "Products retrieved", paginatedData)
@@ -112,30 +116,55 @@ func (h *Handler) GetProductVariants(c *fiber.Ctx) error {
 	slog.InfoContext(c.Context(), "GetProductVariants", slog.String("product_id", c.Params("id")))
 	variants, err := h.service.GetVariantsByProductID(c.Context(), c.Params("id"))
 	if err != nil { return response.Error(c, err) }
-	return response.Success(c, fiber.StatusOK, "Variants retrieved", variants)
+	
+	data := map[string]interface{}{
+		"product_id": c.Params("id"),
+		"variants":   variants,
+	}
+	
+	return response.Success(c, fiber.StatusOK, "Variants retrieved", data)
 }
 
 // UpdateProductStatus godoc
-// @Summary Update product status
+// @Summary Update product fulfillment type
 // @Tags Product
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Product ID"
-// @Success 200 {object} response.Envelope
+// @Success 200 {object} response.Envelope{data=map[string]interface{}}
 // @Failure 400 {object} response.Envelope{error=response.ErrorBlock}
 // @Router /products/{id}/status [patch]
 func (h *Handler) UpdateProductStatus(c *fiber.Ctx) error {
 	slog.InfoContext(c.Context(), "UpdateProductStatus", slog.String("product_id", c.Params("id")))
 	var req struct {
-		Status string `json:"status" validate:"required"`
+		FulfillmentType string `json:"fulfillment_type" validate:"required"`
 	}
 	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
 	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
-	if err := h.service.UpdateProductStatus(c.Context(), c.Params("id"), req.Status); err != nil {
+	
+	p, err := h.service.UpdateProductStatus(c.Context(), c.Params("id"), req.FulfillmentType)
+	if err != nil {
 		return response.Error(c, err)
 	}
-	return response.Success(c, fiber.StatusOK, "Product status updated", nil)
+	
+	// Assuming all variants have same fulfillment_type, label, and date after update
+	var batchLabel, shipDate *string
+	var fulfillmentType string
+	if p != nil && len(p.Variants) > 0 {
+		fulfillmentType = string(p.Variants[0].FulfillmentType)
+		batchLabel = p.PreorderBatchLabel
+		shipDate = p.ExpectedShipDate
+	}
+
+	data := map[string]interface{}{
+		"id":                   c.Params("id"),
+		"fulfillment_type":     fulfillmentType,
+		"preorder_batch_label": batchLabel,
+		"expected_ship_date":   shipDate,
+	}
+
+	return response.Success(c, fiber.StatusOK, "Product status updated", data)
 }
 
 // UpdateVariantBatchLabel godoc
@@ -145,18 +174,38 @@ func (h *Handler) UpdateProductStatus(c *fiber.Ctx) error {
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Product ID"
+// @Success 200 {object} response.Envelope{data=map[string]interface{}}
 // @Router /products/{id}/batch [patch]
 func (h *Handler) UpdateVariantBatchLabel(c *fiber.Ctx) error {
 	slog.InfoContext(c.Context(), "UpdateVariantBatchLabel", slog.String("product_id", c.Params("id")))
 	var req struct {
-		BatchLabel string `json:"batch_label" validate:"required"`
+		PreorderBatchLabel string  `json:"preorder_batch_label" validate:"required"`
+		ExpectedShipDate   *string `json:"expected_ship_date"`
 	}
 	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
 	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
-	if err := h.service.UpdateVariantBatchLabel(c.Context(), c.Params("id"), req.BatchLabel); err != nil {
+	
+	p, err := h.service.UpdateVariantBatchLabel(c.Context(), c.Params("id"), req.PreorderBatchLabel, req.ExpectedShipDate)
+	if err != nil {
 		return response.Error(c, err)
 	}
-	return response.Success(c, fiber.StatusOK, "Batch label updated", nil)
+
+	var batchLabel, shipDate *string
+	var fulfillmentType string
+	if p != nil && len(p.Variants) > 0 {
+		fulfillmentType = string(p.Variants[0].FulfillmentType)
+		batchLabel = p.PreorderBatchLabel
+		shipDate = p.ExpectedShipDate
+	}
+
+	data := map[string]interface{}{
+		"id":                   c.Params("id"),
+		"fulfillment_type":     fulfillmentType,
+		"preorder_batch_label": batchLabel,
+		"expected_ship_date":   shipDate,
+	}
+
+	return response.Success(c, fiber.StatusOK, "Batch label updated", data)
 }
 
 // UpdateVariantPrice godoc
