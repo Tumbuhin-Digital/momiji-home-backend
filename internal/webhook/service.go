@@ -175,7 +175,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 			LineItems: draftItems,
 		}
 		if payload.Email != "" {
-			draftInput.Customer = &shopify.DraftOrderCustomer{Email: payload.Email}
+			draftInput.Email = payload.Email
 		}
 
 		draftRes, draftErr := s.shopClient.CreateDraftOrder(ctx, draftInput)

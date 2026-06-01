@@ -62,17 +62,14 @@ func (c *clientImpl) QueryAdminGraphQL(ctx context.Context, query string, variab
 }
 
 type DraftOrderInput struct {
-	LineItems []DraftOrderLineItem `json:"lineItems"`
-	Customer  *DraftOrderCustomer  `json:"customer,omitempty"`
+	LineItems  []DraftOrderLineItem `json:"lineItems"`
+	Email      string               `json:"email,omitempty"`
+	CustomerID string               `json:"customerId,omitempty"`
 }
 
 type DraftOrderLineItem struct {
 	VariantID string `json:"variantId"`
 	Quantity  int    `json:"quantity"`
-}
-
-type DraftOrderCustomer struct {
-	Email string `json:"email"`
 }
 
 type DraftOrderResponse struct {
@@ -114,13 +111,13 @@ func (c *clientImpl) CreateDraftOrder(ctx context.Context, input DraftOrderInput
 	}
 
 	if err := json.Unmarshal(resBytes, &res); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal shopify response (body: %s): %w", string(resBytes), err)
 	}
 	if len(res.Data.DraftOrderCreate.UserErrors) > 0 {
 		return nil, fmt.Errorf("shopify draft order error: %s", res.Data.DraftOrderCreate.UserErrors[0].Message)
 	}
 	if res.Data.DraftOrderCreate.DraftOrder == nil {
-		return nil, fmt.Errorf("failed to create draft order")
+		return nil, fmt.Errorf("failed to create draft order, raw response: %s", string(resBytes))
 	}
 
 	return res.Data.DraftOrderCreate.DraftOrder, nil
