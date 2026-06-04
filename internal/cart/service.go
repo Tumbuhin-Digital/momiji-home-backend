@@ -156,22 +156,29 @@ func (s *service) AddItem(ctx context.Context, userID, sessionID *string, req Ca
 		return apierror.ErrNotFound
 	}
 	
-	if string(variant.FulfillmentType) != req.FulfillmentType {
-		return apierror.ErrBadRequest
-	}
-
-	var price float64
-	fmt.Sscanf(variant.WSPrice, "%f", &price)
-
 	cart, err := s.getOrCreateCart(ctx, userID, sessionID)
 	if err != nil {
 		return err
 	}
 
+	currentQty, err := s.store.GetVariantQtyInCart(ctx, cart.ID, req.VariantID)
+	if err != nil {
+		return apierror.ErrInternal
+	}
+
+	available := variant.InventoryQuantity - currentQty
+	derivedType := string(product.FulfillmentTypePreOrder)
+	if available > 0 {
+		derivedType = string(product.FulfillmentTypeShipReady)
+	}
+
+	var price float64
+	fmt.Sscanf(variant.WSPrice, "%f", &price)
+
 	item := &CartItemModel{
 		CartID:           cart.ID,
 		ShopifyVariantID: req.VariantID,
-		FulfillmentType:  req.FulfillmentType,
+		FulfillmentType:  derivedType,
 		Quantity:         req.Quantity,
 		UnitPrice:        price,
 	}

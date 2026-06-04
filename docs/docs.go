@@ -2086,18 +2086,10 @@ const docTemplate = `{
         "internal_cart.CartItemRequest": {
             "type": "object",
             "required": [
-                "fulfillment_type",
                 "quantity",
                 "variant_id"
             ],
             "properties": {
-                "fulfillment_type": {
-                    "type": "string",
-                    "enum": [
-                        "ship_ready",
-                        "pre_order"
-                    ]
-                },
                 "quantity": {
                     "type": "integer",
                     "minimum": 1

@@ -34,9 +34,8 @@ type CartSummaryDTO struct {
 }
 
 type CartItemRequest struct {
-	VariantID       string `json:"variant_id" validate:"required"`
-	FulfillmentType string `json:"fulfillment_type" validate:"required,oneof=ship_ready pre_order"`
-	Quantity        int    `json:"quantity" validate:"required,min=1"`
+	VariantID string `json:"variant_id" validate:"required"`
+	Quantity  int    `json:"quantity" validate:"required,min=1"`
 }
 
 type UpdateCartItemRequest struct {

@@ -114,18 +114,12 @@ definitions:
     type: object
   internal_cart.CartItemRequest:
     properties:
-      fulfillment_type:
-        enum:
-        - ship_ready
-        - pre_order
-        type: string
       quantity:
         minimum: 1
         type: integer
       variant_id:
         type: string
     required:
-    - fulfillment_type
     - quantity
     - variant_id
     type: object

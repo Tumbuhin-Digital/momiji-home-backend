@@ -57,6 +57,16 @@ func (s *PostgresCartStore) AddItem(ctx context.Context, item *CartItemModel) er
 	return err
 }
 
+func (s *PostgresCartStore) GetVariantQtyInCart(ctx context.Context, cartID string, shopifyVariantID string) (int, error) {
+	var totalQty int64
+	err := s.db.WithContext(ctx).
+		Model(&CartItemModel{}).
+		Where("cart_id = ? AND shopify_variant_id = ?", cartID, shopifyVariantID).
+		Select("COALESCE(SUM(quantity), 0)").
+		Scan(&totalQty).Error
+	return int(totalQty), err
+}
+
 func (s *PostgresCartStore) UpdateItemQuantity(ctx context.Context, itemID string, quantity int) error {
 	return s.db.WithContext(ctx).Model(&CartItemModel{}).Where("id = ?", itemID).Update("quantity", quantity).Error
 }
