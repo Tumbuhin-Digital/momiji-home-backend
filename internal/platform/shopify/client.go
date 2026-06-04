@@ -13,6 +13,7 @@ type Client interface {
 	QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error)
 	CreateDraftOrder(ctx context.Context, input DraftOrderInput) (*DraftOrderResponse, error)
 	CreateStorefrontCart(ctx context.Context, input CartCreateInput) (*CartCreateResponse, error)
+	CreateRefund(ctx context.Context, shopifyOrderID string, amount float64, currency string, reason string) error
 }
 
 type clientImpl struct {
@@ -121,6 +122,64 @@ func (c *clientImpl) CreateDraftOrder(ctx context.Context, input DraftOrderInput
 	}
 
 	return res.Data.DraftOrderCreate.DraftOrder, nil
+}
+
+type RefundTransaction struct {
+	Kind    string `json:"kind"`
+	Gateway string `json:"gateway"`
+	Amount  string `json:"amount"`
+}
+
+type RefundInput struct {
+	Currency     string              `json:"currency"`
+	Note         string              `json:"note"`
+	Transactions []RefundTransaction `json:"transactions"`
+}
+
+type RefundPayload struct {
+	Refund RefundInput `json:"refund"`
+}
+
+func (c *clientImpl) CreateRefund(ctx context.Context, shopifyOrderID string, amount float64, currency string, reason string) error {
+	// The PRD mentions REST API for Refund since GraphQL doesn't fully support gateway transactions for refund simply
+	url := fmt.Sprintf("https://%s/admin/api/2024-01/orders/%s/refunds.json", c.StoreDomain, shopifyOrderID)
+
+	amountStr := fmt.Sprintf("%.2f", amount)
+	payload := RefundPayload{
+		Refund: RefundInput{
+			Currency: currency,
+			Note:     reason,
+			Transactions: []RefundTransaction{
+				{
+					Kind:    "refund",
+					Gateway: "shopify_payments",
+					Amount:  amountStr,
+				},
+			},
+		},
+	}
+
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Shopify-Access-Token", c.AdminToken)
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		resBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("shopify refund error: status %d body %s", resp.StatusCode, string(resBody))
+	}
+
+	return nil
 }
 
 type CartCreateInput struct {

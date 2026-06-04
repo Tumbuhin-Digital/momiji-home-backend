@@ -45,6 +45,7 @@ type ShipmentEmailData struct {
 	OrderNumber    string
 	Carrier        string
 	TrackingNumber string
+	TrackingURL    string
 }
 
 type service struct {

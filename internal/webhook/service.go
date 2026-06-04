@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/auth"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/checkout"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/order"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/email"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
@@ -28,8 +29,9 @@ type service struct {
 	authStore     auth.AuthStore
 	productStore  product.Store
 	shopClient    shopify.Client
-	preorderStore preorder.PreorderStore
-	emailService  email.NotificationService
+	preorderStore    preorder.PreorderStore
+	emailService     email.NotificationService
+	stockLockService checkout.StockLockService
 }
 
 func NewWebhookService(
@@ -39,14 +41,16 @@ func NewWebhookService(
 	shopClient shopify.Client,
 	preorderStore preorder.PreorderStore,
 	emailService email.NotificationService,
+	stockLockService checkout.StockLockService,
 ) WebhookService {
 	return &service{
-		orderStore:    orderStore,
-		authStore:     authStore,
-		productStore:  productStore,
-		shopClient:    shopClient,
-		preorderStore: preorderStore,
-		emailService:  emailService,
+		orderStore:       orderStore,
+		authStore:        authStore,
+		productStore:     productStore,
+		shopClient:       shopClient,
+		preorderStore:    preorderStore,
+		emailService:     emailService,
+		stockLockService: stockLockService,
 	}
 }
 
@@ -257,6 +261,9 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 			_ = s.emailService.SendOrderConfirmation(bgCtx, payload.Email, emailData)
 		}
 	}()
+
+	// Release stock locks associated with this customer
+	_ = s.stockLockService.ReleaseLocks(ctx, &customerID, nil)
 
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/order"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server/middleware"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/response"
@@ -14,11 +15,12 @@ import (
 type Handler struct {
 	cartService     cart.CartService
 	checkoutService CheckoutService
+	orderService    order.OrderService
 	jwtSecret       string
 }
 
-func NewCheckoutHandler(cartService cart.CartService, checkoutService CheckoutService, jwtSecret string) *Handler {
-	return &Handler{cartService: cartService, checkoutService: checkoutService, jwtSecret: jwtSecret}
+func NewCheckoutHandler(cartService cart.CartService, checkoutService CheckoutService, orderService order.OrderService, jwtSecret string) *Handler {
+	return &Handler{cartService: cartService, checkoutService: checkoutService, orderService: orderService, jwtSecret: jwtSecret}
 }
 
 func (h *Handler) SetupRoutes(router fiber.Router) {
@@ -193,13 +195,19 @@ func (h *Handler) GetCheckoutConfirm(c *fiber.Ctx) error {
 		return response.Error(c, apierror.New(400, "bad_request", "shopify_order_id is required"))
 	}
 	
-	// Mock implementation. Real implementation should check order DB by shopify_order_id.
-	// We will implement this correctly when OrderStore is accessible here or via OrderService.
-	// For now, just return a mock response
+	// Fetch from OrderService
+	orderRes, err := h.orderService.GetOrderByShopifyID(c.Context(), orderID)
+	if err != nil {
+		if err == apierror.ErrNotFound {
+			return response.Error(c, apierror.New(404, "not_found", "Order not yet confirmed by webhook"))
+		}
+		return response.Error(c, err)
+	}
+	
 	return response.Success(c, fiber.StatusOK, "Order confirmed", fiber.Map{
-		"order_id":         "mock-uuid",
-		"order_number":     "#1234",
-		"status":           "PROCESSING",
+		"order_id":         orderRes.ID,
+		"order_number":     orderRes.OrderNumber,
+		"status":           orderRes.FinancialStatus,
 		"shopify_order_id": orderID,
 	})
 }

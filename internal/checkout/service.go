@@ -15,12 +15,13 @@ type CheckoutService interface {
 }
 
 type service struct {
-	cartService cart.CartService
-	shopifyCli  shopify.Client
+	cartService      cart.CartService
+	shopifyCli       shopify.Client
+	stockLockService StockLockService
 }
 
-func NewCheckoutService(cartService cart.CartService, shopifyCli shopify.Client) CheckoutService {
-	return &service{cartService: cartService, shopifyCli: shopifyCli}
+func NewCheckoutService(cartService cart.CartService, shopifyCli shopify.Client, stockLockService StockLockService) CheckoutService {
+	return &service{cartService: cartService, shopifyCli: shopifyCli, stockLockService: stockLockService}
 }
 
 func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *string, req InitiateCheckoutRequest) (*InitiateCheckoutResponse, error) {
@@ -34,12 +35,23 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	}
 
 	var lines []shopify.CartLineInput
+	var lockReqs []LockRequest
 
 	for _, item := range cartRes.ShipReady {
 		lines = append(lines, shopify.CartLineInput{
 			MerchandiseId: item.VariantID,
 			Quantity:      item.Quantity,
 		})
+		lockReqs = append(lockReqs, LockRequest{
+			ShopifyVariantID: item.VariantID,
+			Quantity:         item.Quantity,
+		})
+	}
+
+	if len(lockReqs) > 0 {
+		if err := s.stockLockService.AcquireLocks(ctx, userID, sessionID, lockReqs); err != nil {
+			return nil, err
+		}
 	}
 
 	for _, item := range cartRes.PreOrder {

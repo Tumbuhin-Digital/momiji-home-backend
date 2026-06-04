@@ -144,13 +144,18 @@ func (m *MockShopifyClient) CreateDraftOrder(ctx context.Context, input shopify.
 }
 
 func (m *MockShopifyClient) CreateStorefrontCart(ctx context.Context, input shopify.CartCreateInput) (*shopify.CartCreateResponse, error) {
-	return m.CartResponse, m.CartErr
+	return &shopify.CartCreateResponse{CheckoutUrl: "mock-url"}, nil
+}
+
+func (m *MockShopifyClient) CreateRefund(ctx context.Context, shopifyOrderID string, amount float64, currency string, reason string) error {
+	return nil
 }
 
 type MockShopifyClientFunc struct {
-	QueryAdminGraphQLFn        func(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error)
-	CreateDraftOrderFn         func(ctx context.Context, input shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error)
-	CreateStorefrontCartFn     func(ctx context.Context, input shopify.CartCreateInput) (*shopify.CartCreateResponse, error)
+	QueryAdminGraphQLFn      func(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error)
+	CreateDraftOrderFn       func(ctx context.Context, input shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error)
+	CreateStorefrontCartFunc func(ctx context.Context, input shopify.CartCreateInput) (*shopify.CartCreateResponse, error)
+	CreateRefundFunc         func(ctx context.Context, shopifyOrderID string, amount float64, currency string, reason string) error
 }
 
 func (m *MockShopifyClientFunc) QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error) {
@@ -162,5 +167,15 @@ func (m *MockShopifyClientFunc) CreateDraftOrder(ctx context.Context, input shop
 }
 
 func (m *MockShopifyClientFunc) CreateStorefrontCart(ctx context.Context, input shopify.CartCreateInput) (*shopify.CartCreateResponse, error) {
-	return m.CreateStorefrontCartFn(ctx, input)
+	if m.CreateStorefrontCartFunc != nil {
+		return m.CreateStorefrontCartFunc(ctx, input)
+	}
+	return &shopify.CartCreateResponse{CheckoutUrl: "mock-url"}, nil
+}
+
+func (m *MockShopifyClientFunc) CreateRefund(ctx context.Context, shopifyOrderID string, amount float64, currency string, reason string) error {
+	if m.CreateRefundFunc != nil {
+		return m.CreateRefundFunc(ctx, shopifyOrderID, amount, currency, reason)
+	}
+	return nil
 }

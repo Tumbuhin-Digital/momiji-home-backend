@@ -38,6 +38,7 @@ type PreorderRow struct {
 	BatchLabel       string
 	SettlementStatus string
 	DueDate          *time.Time
+	ShopifyOrderID   *string
 }
 
 // SettlementFilter is used for listing settlements with optional filters.

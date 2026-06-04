@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/auth"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/email"
@@ -12,17 +14,18 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"golang.org/x/crypto/bcrypt"
-	"github.com/google/uuid"
 )
 
 type OrderService interface {
 	CreateOrder(ctx context.Context, userID, sessionID *string, req CreateOrderRequest) (*OrderResponse, error)
 	GetOrders(ctx context.Context, userID string, query OrderQuery) ([]OrderResponse, int64, error)
 	GetOrder(ctx context.Context, userID, orderID string) (*OrderResponse, error)
+	GetOrderByShopifyID(ctx context.Context, shopifyOrderID string) (*OrderResponse, error)
 	AcceptOrder(ctx context.Context, userID, orderID, fulfillmentType string) error
 	CancelOrder(ctx context.Context, userID, orderID, fulfillmentType, reason string) error
 	UpdateFulfillmentStep(ctx context.Context, userID, orderID, itemID string, step int) error
 	UpdateItemsReceived(ctx context.Context, userID, orderID, itemID string, count int) error
+	AddTrackingNumber(ctx context.Context, userID, orderID, itemID, trackingNumber, trackingURL string) error
 }
 
 type service struct {
@@ -101,9 +104,9 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 			total += price
 			totalShipReady += price
 			totalChargedNow += price
-			
+
 			title := item.Title
-			
+
 			orderItems = append(orderItems, OrderItem{
 				ShopifyVariantID: item.VariantID,
 				Type:             "ship_ready",
@@ -121,14 +124,14 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 		if req.GuestInfo != nil {
 			email = req.GuestInfo.Email
 		}
-		
+
 		cartInput := shopify.CartCreateInput{
 			Lines: sfItems,
 		}
 		if email != "" {
 			cartInput.BuyerIdentity = &shopify.CartBuyerIdentityInput{Email: email}
 		}
-		
+
 		chkRes, chkErr := s.shopClient.CreateStorefrontCart(ctx, cartInput)
 		if chkErr != nil {
 			return nil, fmt.Errorf("failed to create cart: %w", chkErr)
@@ -151,13 +154,13 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 			total += dep
 			totalDepositPaid += dep
 			totalChargedNow += dep
-			
+
 			bal, _ := strconv.ParseFloat(item.BalanceDue, 64)
 			totalBalanceDue += bal
-			
+
 			unitPrice, _ := strconv.ParseFloat(item.UnitPrice, 64)
 			title := item.Title
-			
+
 			orderItems = append(orderItems, OrderItem{
 				ShopifyVariantID: item.VariantID,
 				Type:             "pre_order",
@@ -171,7 +174,7 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 				BalanceDue:       &bal,
 			})
 		}
-		
+
 		draftInput := shopify.DraftOrderInput{
 			LineItems: draftItems,
 		}
@@ -227,14 +230,25 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 	// Map to response
 	var shipReady []OrderItemDetail
 	var preOrder []OrderItemDetail
-	
+
 	for _, it := range order.Items {
 		var itemTitle string
-		if it.Title != nil { itemTitle = *it.Title }
+		if it.Title != nil {
+			itemTitle = *it.Title
+		}
 		var unitPrice, amountCharged, balanceDue *string
-		if it.UnitPrice != nil { val := fmt.Sprintf("%.2f", *it.UnitPrice); unitPrice = &val }
-		if it.AmountCharged != nil { val := fmt.Sprintf("%.2f", *it.AmountCharged); amountCharged = &val }
-		if it.BalanceDue != nil { val := fmt.Sprintf("%.2f", *it.BalanceDue); balanceDue = &val }
+		if it.UnitPrice != nil {
+			val := fmt.Sprintf("%.2f", *it.UnitPrice)
+			unitPrice = &val
+		}
+		if it.AmountCharged != nil {
+			val := fmt.Sprintf("%.2f", *it.AmountCharged)
+			amountCharged = &val
+		}
+		if it.BalanceDue != nil {
+			val := fmt.Sprintf("%.2f", *it.BalanceDue)
+			balanceDue = &val
+		}
 
 		detail := OrderItemDetail{
 			ID:              it.ID,
@@ -264,8 +278,12 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 		}
 	}
 
-	if shipReady == nil { shipReady = []OrderItemDetail{} }
-	if preOrder == nil { preOrder = []OrderItemDetail{} }
+	if shipReady == nil {
+		shipReady = []OrderItemDetail{}
+	}
+	if preOrder == nil {
+		preOrder = []OrderItemDetail{}
+	}
 
 	response := &OrderResponse{
 		ID:                  order.ID,
@@ -306,9 +324,13 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 			var emailItems []email.OrderItemData
 			for _, it := range order.Items {
 				title := ""
-				if it.Title != nil { title = *it.Title }
+				if it.Title != nil {
+					title = *it.Title
+				}
 				amt := 0.0
-				if it.AmountCharged != nil { amt = *it.AmountCharged }
+				if it.AmountCharged != nil {
+					amt = *it.AmountCharged
+				}
 				emailItems = append(emailItems, email.OrderItemData{
 					Title:    title,
 					Type:     it.Type,
@@ -336,19 +358,30 @@ func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery
 	if err != nil {
 		return nil, 0, apierror.ErrInternal
 	}
-	
+
 	var res []OrderResponse
 	for _, o := range orders {
 		var shipReady []OrderItemDetail
 		var preOrder []OrderItemDetail
 		for _, it := range o.Items {
 			var itemTitle string
-			if it.Title != nil { itemTitle = *it.Title }
+			if it.Title != nil {
+				itemTitle = *it.Title
+			}
 			var unitPrice, amountCharged, balanceDue *string
-			if it.UnitPrice != nil { val := fmt.Sprintf("%.2f", *it.UnitPrice); unitPrice = &val }
-			if it.AmountCharged != nil { val := fmt.Sprintf("%.2f", *it.AmountCharged); amountCharged = &val }
-			if it.BalanceDue != nil { val := fmt.Sprintf("%.2f", *it.BalanceDue); balanceDue = &val }
-			
+			if it.UnitPrice != nil {
+				val := fmt.Sprintf("%.2f", *it.UnitPrice)
+				unitPrice = &val
+			}
+			if it.AmountCharged != nil {
+				val := fmt.Sprintf("%.2f", *it.AmountCharged)
+				amountCharged = &val
+			}
+			if it.BalanceDue != nil {
+				val := fmt.Sprintf("%.2f", *it.BalanceDue)
+				balanceDue = &val
+			}
+
 			detail := OrderItemDetail{
 				ID:              it.ID,
 				VariantID:       it.ShopifyVariantID,
@@ -362,17 +395,27 @@ func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery
 				AmountCharged:   amountCharged,
 				BalanceDue:      balanceDue,
 			}
-			if it.DpAmount != nil { val := fmt.Sprintf("%.2f", *it.DpAmount); detail.DpAmount = &val }
-			if it.FinalAmount != nil { val := fmt.Sprintf("%.2f", *it.FinalAmount); detail.FinalAmount = &val }
-			
+			if it.DpAmount != nil {
+				val := fmt.Sprintf("%.2f", *it.DpAmount)
+				detail.DpAmount = &val
+			}
+			if it.FinalAmount != nil {
+				val := fmt.Sprintf("%.2f", *it.FinalAmount)
+				detail.FinalAmount = &val
+			}
+
 			if it.Type == "ship_ready" {
 				shipReady = append(shipReady, detail)
 			} else {
 				preOrder = append(preOrder, detail)
 			}
 		}
-		if shipReady == nil { shipReady = []OrderItemDetail{} }
-		if preOrder == nil { preOrder = []OrderItemDetail{} }
+		if shipReady == nil {
+			shipReady = []OrderItemDetail{}
+		}
+		if preOrder == nil {
+			preOrder = []OrderItemDetail{}
+		}
 
 		res = append(res, OrderResponse{
 			ID:                o.ID,
@@ -389,7 +432,9 @@ func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery
 			LineItems:         LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
 		})
 	}
-	if res == nil { res = []OrderResponse{} }
+	if res == nil {
+		res = []OrderResponse{}
+	}
 	return res, total, nil
 }
 
@@ -406,11 +451,22 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 	var preOrder []OrderItemDetail
 	for _, it := range o.Items {
 		var itemTitle string
-		if it.Title != nil { itemTitle = *it.Title }
+		if it.Title != nil {
+			itemTitle = *it.Title
+		}
 		var unitPrice, amountCharged, balanceDue *string
-		if it.UnitPrice != nil { val := fmt.Sprintf("%.2f", *it.UnitPrice); unitPrice = &val }
-		if it.AmountCharged != nil { val := fmt.Sprintf("%.2f", *it.AmountCharged); amountCharged = &val }
-		if it.BalanceDue != nil { val := fmt.Sprintf("%.2f", *it.BalanceDue); balanceDue = &val }
+		if it.UnitPrice != nil {
+			val := fmt.Sprintf("%.2f", *it.UnitPrice)
+			unitPrice = &val
+		}
+		if it.AmountCharged != nil {
+			val := fmt.Sprintf("%.2f", *it.AmountCharged)
+			amountCharged = &val
+		}
+		if it.BalanceDue != nil {
+			val := fmt.Sprintf("%.2f", *it.BalanceDue)
+			balanceDue = &val
+		}
 
 		detail := OrderItemDetail{
 			ID:              it.ID,
@@ -425,17 +481,27 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 			AmountCharged:   amountCharged,
 			BalanceDue:      balanceDue,
 		}
-		if it.DpAmount != nil { val := fmt.Sprintf("%.2f", *it.DpAmount); detail.DpAmount = &val }
-		if it.FinalAmount != nil { val := fmt.Sprintf("%.2f", *it.FinalAmount); detail.FinalAmount = &val }
-		
+		if it.DpAmount != nil {
+			val := fmt.Sprintf("%.2f", *it.DpAmount)
+			detail.DpAmount = &val
+		}
+		if it.FinalAmount != nil {
+			val := fmt.Sprintf("%.2f", *it.FinalAmount)
+			detail.FinalAmount = &val
+		}
+
 		if it.Type == "ship_ready" {
 			shipReady = append(shipReady, detail)
 		} else {
 			preOrder = append(preOrder, detail)
 		}
 	}
-	if shipReady == nil { shipReady = []OrderItemDetail{} }
-	if preOrder == nil { preOrder = []OrderItemDetail{} }
+	if shipReady == nil {
+		shipReady = []OrderItemDetail{}
+	}
+	if preOrder == nil {
+		preOrder = []OrderItemDetail{}
+	}
 
 	return &OrderResponse{
 		ID:                  o.ID,
@@ -455,10 +521,98 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 	}, nil
 }
 
+func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string) (*OrderResponse, error) {
+	o, err := s.store.GetOrderByShopifyID(ctx, shopifyOrderID)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	if o == nil {
+		return nil, apierror.ErrNotFound
+	}
+	// We can reuse the same response building logic
+	// But GetOrderByShopifyID might not be tied to the specific request user (e.g. guest callback)
+	// So we don't check userID here.
+
+	var shipReady []OrderItemDetail
+	var preOrder []OrderItemDetail
+	for _, it := range o.Items {
+		var itemTitle string
+		if it.Title != nil {
+			itemTitle = *it.Title
+		}
+		var unitPrice, amountCharged, balanceDue *string
+		if it.UnitPrice != nil {
+			val := fmt.Sprintf("%.2f", *it.UnitPrice)
+			unitPrice = &val
+		}
+		if it.AmountCharged != nil {
+			val := fmt.Sprintf("%.2f", *it.AmountCharged)
+			amountCharged = &val
+		}
+		if it.BalanceDue != nil {
+			val := fmt.Sprintf("%.2f", *it.BalanceDue)
+			balanceDue = &val
+		}
+
+		detail := OrderItemDetail{
+			ID:              it.ID,
+			VariantID:       it.ShopifyVariantID,
+			Type:            it.Type,
+			Quantity:        it.Quantity,
+			ItemStatus:      it.ItemStatus,
+			FulfillmentStep: it.FulfillmentStep,
+			ItemsReceived:   it.ItemsReceived,
+			Title:           itemTitle,
+			UnitPrice:       unitPrice,
+			AmountCharged:   amountCharged,
+			BalanceDue:      balanceDue,
+		}
+		if it.DpAmount != nil {
+			val := fmt.Sprintf("%.2f", *it.DpAmount)
+			detail.DpAmount = &val
+		}
+		if it.FinalAmount != nil {
+			val := fmt.Sprintf("%.2f", *it.FinalAmount)
+			detail.FinalAmount = &val
+		}
+
+		if it.Type == "ship_ready" {
+			shipReady = append(shipReady, detail)
+		} else {
+			preOrder = append(preOrder, detail)
+		}
+	}
+	if shipReady == nil {
+		shipReady = []OrderItemDetail{}
+	}
+	if preOrder == nil {
+		preOrder = []OrderItemDetail{}
+	}
+
+	return &OrderResponse{
+		ID:                o.ID,
+		OrderNumber:       o.OrderNumber,
+		TotalPrice:        fmt.Sprintf("%.2f", o.TotalPrice),
+		AggregateStatus:   o.AggregateStatus,
+		FinancialStatus:   o.FinancialStatus,
+		FulfillmentStatus: o.FulfillmentStatus,
+		TotalShipReady:    fmt.Sprintf("%.2f", o.TotalShipReady),
+		TotalDepositPaid:  fmt.Sprintf("%.2f", o.TotalDepositPaid),
+		TotalBalanceDue:   fmt.Sprintf("%.2f", o.TotalBalanceDue),
+		TotalChargedNow:   fmt.Sprintf("%.2f", o.TotalChargedNow),
+		Currency:          o.Currency,
+		LineItems:         LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
+	}, nil
+}
+
 func (s *service) AcceptOrder(ctx context.Context, userID, orderID, fulfillmentType string) error {
 	o, err := s.store.GetOrder(ctx, orderID, userID)
-	if err != nil { return apierror.ErrInternal }
-	if o == nil { return apierror.ErrNotFound }
+	if err != nil {
+		return apierror.ErrInternal
+	}
+	if o == nil {
+		return apierror.ErrNotFound
+	}
 
 	if o.AggregateStatus != "pending" && o.AggregateStatus != "pending_payment" {
 		return apierror.New(400, "invalid_transition", "Order is not pending")
@@ -473,8 +627,12 @@ func (s *service) AcceptOrder(ctx context.Context, userID, orderID, fulfillmentT
 
 func (s *service) CancelOrder(ctx context.Context, userID, orderID, fulfillmentType, reason string) error {
 	o, err := s.store.GetOrder(ctx, orderID, userID)
-	if err != nil { return apierror.ErrInternal }
-	if o == nil { return apierror.ErrNotFound }
+	if err != nil {
+		return apierror.ErrInternal
+	}
+	if o == nil {
+		return apierror.ErrNotFound
+	}
 
 	// TODO: log refund note
 	if err := s.store.UpdateOrderStatus(ctx, orderID, "refunded", "cancelled"); err != nil {
@@ -500,5 +658,38 @@ func (s *service) UpdateItemsReceived(ctx context.Context, userID, orderID, item
 	if err := s.store.UpdateOrderItemReceived(ctx, itemID, count); err != nil {
 		return apierror.ErrInternal
 	}
+	return nil
+}
+
+func (s *service) AddTrackingNumber(ctx context.Context, userID, orderID, itemID, trackingNumber, trackingURL string) error {
+	o, err := s.store.GetOrder(ctx, orderID, userID)
+	if err != nil {
+		return apierror.ErrInternal
+	}
+	if o == nil {
+		return apierror.ErrNotFound
+	}
+
+	now := time.Now()
+	if err := s.store.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, &now); err != nil {
+		return apierror.ErrInternal
+	}
+
+	// Trigger email in goroutine
+	go func() {
+		bgCtx := context.Background()
+		user, _ := s.authStore.GetUserByID(bgCtx, o.CustomerID)
+		if user != nil {
+			emailData := email.ShipmentEmailData{
+				CustomerName:   "Customer", // Could be from User struct if added
+				OrderNumber:    o.OrderNumber,
+				Carrier:        "Standard Shipping",
+				TrackingNumber: trackingNumber,
+				TrackingURL:    trackingURL,
+			}
+			_ = s.emailService.SendShipmentDispatched(bgCtx, user.Email, emailData)
+		}
+	}()
+
 	return nil
 }

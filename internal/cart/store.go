@@ -35,6 +35,7 @@ type CartStore interface {
 	GetCart(ctx context.Context, userID, sessionID *string) (*Cart, error)
 	CreateCart(ctx context.Context, cart *Cart) error
 	AddItem(ctx context.Context, item *CartItemModel) error
+	GetVariantQtyInCart(ctx context.Context, cartID string, shopifyVariantID string) (int, error)
 	UpdateItemQuantity(ctx context.Context, itemID string, quantity int) error
 	RemoveItem(ctx context.Context, itemID string) error
 	ClearCart(ctx context.Context, cartID string) error

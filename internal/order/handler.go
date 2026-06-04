@@ -34,6 +34,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	authGrp.Patch("/:id/cancel", h.CancelOrder)
 	authGrp.Patch("/:id/items/:itemId/step", h.UpdateFulfillmentStep)
 	authGrp.Patch("/:id/items/:itemId/received", h.UpdateItemsReceived)
+	authGrp.Patch("/:id/items/:itemId/tracking", h.AddTrackingNumber)
 }
 
 // CreateOrder godoc
@@ -219,4 +220,34 @@ func (h *Handler) UpdateItemsReceived(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Items received count updated", nil)
+}
+
+// AddTrackingNumber godoc
+// @Summary Add tracking number to an item
+// @Tags Order
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Param itemId path string true "Item ID"
+// @Param request body AddTrackingRequest true "Add Tracking Request"
+// @Success 200 {object} response.Envelope
+// @Router /orders/{id}/items/{itemId}/tracking [patch]
+func (h *Handler) AddTrackingNumber(c *fiber.Ctx) error {
+	// Only Admin should theoretically be doing this. RBAC in middleware already verifies JWT. 
+	// We check role manually if needed, but PRD implies Bearer+RBAC
+	role := c.Locals("role").(string)
+	if role != "admin" {
+		return response.Error(c, apierror.ErrForbidden)
+	}
+
+	uid := c.Locals("user_id").(string)
+	var req AddTrackingRequest
+	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
+	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
+
+	if err := h.service.AddTrackingNumber(c.Context(), uid, c.Params("id"), c.Params("itemId"), req.TrackingNumber, req.TrackingURL); err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Tracking information updated", nil)
 }

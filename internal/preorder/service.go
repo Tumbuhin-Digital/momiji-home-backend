@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/email"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 )
 
@@ -28,15 +29,17 @@ type service struct {
 	store        PreorderStore
 	orderStore   OrderUpdater
 	emailService email.NotificationService
+	shopClient   shopify.Client
 }
 
 // NewPreorderService creates the settlement service.
 // It requires both PreorderStore (for settlement ops) and OrderUpdater (to update order status).
-func NewPreorderService(store PreorderStore, orderStore OrderUpdater, emailService email.NotificationService) PreorderService {
+func NewPreorderService(store PreorderStore, orderStore OrderUpdater, emailService email.NotificationService, shopClient shopify.Client) PreorderService {
 	return &service{
 		store:        store,
 		orderStore:   orderStore,
 		emailService: emailService,
+		shopClient:   shopClient,
 	}
 }
 
@@ -253,6 +256,16 @@ func (s *service) ProcessReminders(ctx context.Context) error {
 					BalanceAmount: fmt.Sprintf("$%.2f", r.BalanceAmount),
 				}
 				_ = s.emailService.SendExpired(ctx, r.CustomerEmail, emailData)
+
+				// Calculate 80% refund of the deposit (balanceAmount is equal to deposit)
+				if r.ShopifyOrderID != nil && *r.ShopifyOrderID != "" {
+					refundAmount := r.BalanceAmount * 0.8
+					refundErr := s.shopClient.CreateRefund(ctx, *r.ShopifyOrderID, refundAmount, "USD", "Pre-order expired — auto-refund 80%")
+					if refundErr != nil {
+						// Log error but don't fail the expiry process
+						fmt.Printf("Failed to refund expired settlement %s: %v\n", r.ID, refundErr)
+					}
+				}
 			}
 		}
 	}
