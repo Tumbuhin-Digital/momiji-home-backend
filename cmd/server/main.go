@@ -78,6 +78,7 @@ func main() {
 	orderStore := order.NewPostgresStore(db)
 	preorderStore := preorder.NewPostgresPreorderStore(db)
 	customerStore := customer.NewPostgresStore(db)
+	stockLockStore := checkout.NewPostgresStockLockStore(db)
 
 	// Initialize Services
 	authService := auth.NewAuthService(authStore, cfg.Auth)
@@ -105,9 +106,10 @@ func main() {
 	productService := product.NewProductService(productStore, shopifyClient)
 	cartService := cart.NewCartService(cartStore, productService)
 	orderService := order.NewOrderService(orderStore, cartService, authStore, shopifyClient, preorderStore, notificationService)
-	preorderService := preorder.NewPreorderService(preorderStore, orderStore, notificationService)
+	preorderService := preorder.NewPreorderService(preorderStore, orderStore, notificationService, shopifyClient)
 	customerService := customer.NewCustomerService(customerStore)
-	webhookService := webhook.NewWebhookService(orderStore, authStore, productStore, shopifyClient, preorderStore, notificationService)
+	stockLockService := checkout.NewStockLockService(stockLockStore, productService)
+	webhookService := webhook.NewWebhookService(orderStore, authStore, productStore, shopifyClient, preorderStore, notificationService, stockLockService)
 
 	// Initialize Fiber App
 	app := server.NewFiberApp(log)
@@ -121,8 +123,8 @@ func main() {
 	cartHandler := cart.NewCartHandler(cartService, cfg.Auth.Secret)
 	cartHandler.SetupRoutes(api)
 
-	checkoutService := checkout.NewCheckoutService(cartService, shopifyClient)
-	checkoutHandler := checkout.NewCheckoutHandler(cartService, checkoutService, cfg.Auth.Secret)
+	checkoutService := checkout.NewCheckoutService(cartService, shopifyClient, stockLockService)
+	checkoutHandler := checkout.NewCheckoutHandler(cartService, checkoutService, orderService, cfg.Auth.Secret)
 	checkoutHandler.SetupRoutes(api)
 
 	productHandler := product.NewProductHandler(productService, cfg.Auth.Secret)
@@ -147,6 +149,11 @@ func main() {
 		
 		log.Info("Running nightly Shopify product sync")
 		_ = productService.SyncFromShopify(ctx)
+	})
+
+	scheduler.StartIntervalJob(context.Background(), 5*time.Minute, func(ctx context.Context) {
+		log.Info("Cleaning expired stock locks")
+		_ = stockLockService.CleanExpiredLocks(ctx)
 	})
 
 	// Start server in a separate goroutine
