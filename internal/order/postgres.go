@@ -2,6 +2,8 @@ package order
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -22,6 +24,21 @@ func (s *PostgresStore) GetOrder(ctx context.Context, orderID, customerID string
 	var order Order
 	err := s.db.WithContext(ctx).Preload("Items").Where("id = ? AND customer_id = ?", orderID, customerID).First(&order).Error
 	if err != nil {
+		return nil, err
+	}
+	return &order, nil
+}
+
+func (s *PostgresStore) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string) (*Order, error) {
+	var order Order
+	err := s.db.WithContext(ctx).
+		Preload("Items").
+		Where("shopify_order_id = ?", shopifyOrderID).
+		First(&order).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &order, nil
@@ -71,6 +88,16 @@ func (s *PostgresStore) UpdateOrderStatus(ctx context.Context, orderID, financia
 
 func (s *PostgresStore) UpdateOrderItemStep(ctx context.Context, itemID string, step int) error {
 	return s.db.WithContext(ctx).Model(&OrderItem{}).Where("id = ?", itemID).Update("fulfillment_step", step).Error
+}
+
+func (s *PostgresStore) UpdateOrderItemTracking(ctx context.Context, itemID, trackingNumber, trackingURL string, shippedAt *time.Time) error {
+	return s.db.WithContext(ctx).Model(&OrderItem{}).Where("id = ?", itemID).Updates(map[string]interface{}{
+		"tracking_number": trackingNumber,
+		"tracking_url":    trackingURL,
+		"shipped_at":      shippedAt,
+		"item_status":     "shipped",
+		"fulfillment_step": 3,
+	}).Error
 }
 
 func (s *PostgresStore) UpdateOrderItemReceived(ctx context.Context, itemID string, count int) error {

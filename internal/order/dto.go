@@ -66,6 +66,11 @@ type UpdateReceivedRequest struct {
 	ItemsReceived int `json:"items_received" validate:"required,min=0"`
 }
 
+type AddTrackingRequest struct {
+	TrackingNumber string `json:"tracking_number" validate:"required"`
+	TrackingURL    string `json:"tracking_url" validate:"required,url"`
+}
+
 type OrderQuery struct {
 	Page   int    `query:"page"`
 	Limit  int    `query:"limit"`
