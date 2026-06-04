@@ -19,3 +19,18 @@ func StartDailyJob(ctx context.Context, fn func(ctx context.Context)) {
 		}
 	}()
 }
+
+func StartIntervalJob(ctx context.Context, interval time.Duration, fn func(ctx context.Context)) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				fn(ctx)
+			}
+		}
+	}()
+}

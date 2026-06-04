@@ -48,7 +48,8 @@ func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFi
 			preorder_settlements.balance_amount,
 			product_variants.preorder_batch_label as batch_label,
 			preorder_settlements.status as settlement_status,
-			preorder_settlements.due_date
+			preorder_settlements.due_date,
+			orders.shopify_order_id
 		`).
 		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
 		Joins("JOIN orders ON orders.id = order_line_items.order_id").
@@ -133,7 +134,8 @@ func (s *postgresStore) GetSettlementsForReminder(ctx context.Context, daysSince
 			preorder_settlements.balance_amount,
 			product_variants.preorder_batch_label as batch_label,
 			preorder_settlements.status as settlement_status,
-			preorder_settlements.due_date
+			preorder_settlements.due_date,
+			orders.shopify_order_id
 		`).
 		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
 		Joins("JOIN orders ON orders.id = order_line_items.order_id").
