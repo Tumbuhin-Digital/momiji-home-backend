@@ -11,7 +11,6 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 )
 
-
 type ProductService interface {
 	GetVariantByID(ctx context.Context, variantID string) (*VariantDTO, error)
 	GetProducts(ctx context.Context, query ProductQuery) ([]ProductDTO, int64, error)
@@ -48,7 +47,7 @@ func (s *service) GetProducts(ctx context.Context, query ProductQuery) ([]Produc
 	if err != nil {
 		return nil, 0, apierror.ErrInternal
 	}
-	
+
 	dtos := make([]ProductDTO, len(products))
 	for i, p := range products {
 		dtos[i] = mapProductToDTO(&p)
@@ -61,7 +60,7 @@ func mapProductToDTO(p *Product) ProductDTO {
 	for i, v := range p.Variants {
 		variants[i] = *mapVariantToDTO(&v)
 	}
-	
+
 	images := make([]ProductImageDTO, len(p.Images))
 	for i, img := range p.Images {
 		images[i] = ProductImageDTO{
@@ -71,7 +70,9 @@ func mapProductToDTO(p *Product) ProductDTO {
 			Position: img.Position,
 		}
 	}
-	if images == nil { images = []ProductImageDTO{} }
+	if images == nil {
+		images = []ProductImageDTO{}
+	}
 
 	// Determine product-level preorder_batch_label and expected_ship_date from first variant
 	var batchLabel, shipDate *string
@@ -84,7 +85,7 @@ func mapProductToDTO(p *Product) ProductDTO {
 			shipDate = &dt
 		}
 	}
-	
+
 	return ProductDTO{
 		ID:                 p.ID,
 		ShopifyID:          p.ShopifyID,
@@ -124,10 +125,7 @@ func mapVariantToDTO(variant *ProductVariant) *VariantDTO {
 		sku = &skuStr
 	}
 
-	ft := string(FulfillmentTypePreOrder)
-	if variant.InventoryQuantity > 0 {
-		ft = string(FulfillmentTypeShipReady)
-	}
+	ft := string(variant.FulfillmentType)
 
 	return &VariantDTO{
 		ID:                variant.ShopifyVariantID,
@@ -192,8 +190,12 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 										Sku               string `json:"sku"`
 										Price             string `json:"price"`
 										InventoryQuantity int    `json:"inventoryQuantity"`
-										Image             struct{ Url string `json:"url"` } `json:"image"`
-										InventoryItem     struct{ ID  string `json:"id"` }  `json:"inventoryItem"`
+										Image             struct {
+											Url string `json:"url"`
+										} `json:"image"`
+										InventoryItem struct {
+											ID string `json:"id"`
+										} `json:"inventoryItem"`
 									} `json:"node"`
 								} `json:"edges"`
 							} `json:"variants"`
@@ -232,15 +234,21 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 			for _, vEdge := range pNode.Variants.Edges {
 				vNode := vEdge.Node
 				price, _ := strconv.ParseFloat(vNode.Price, 64)
+				ft := FulfillmentTypeShipReady
+
+				if vNode.InventoryQuantity <= 0 {
+					ft = FulfillmentTypePreOrder
+				}
+
 				variant := &ProductVariant{
-					ProductID:        p.ID,
-					ShopifyVariantID: vNode.ID,
-					Title:            vNode.Title,
-					SKU:               vNode.Sku,
-					Price:             price,
-					ImageSrc:          vNode.Image.Url,
-					FulfillmentType:   string(FulfillmentTypeShipReady),
-					InventoryQuantity: vNode.InventoryQuantity,
+					ProductID:              p.ID,
+					ShopifyVariantID:       vNode.ID,
+					Title:                  vNode.Title,
+					SKU:                    vNode.Sku,
+					Price:                  price,
+					ImageSrc:               vNode.Image.Url,
+					FulfillmentType:        string(ft),
+					InventoryQuantity:      vNode.InventoryQuantity,
 					ShopifyInventoryItemID: vNode.InventoryItem.ID,
 				}
 				if err := s.store.UpsertVariant(ctx, variant); err != nil {
@@ -268,17 +276,25 @@ var validProductStatuses = map[string]bool{"active": true, "draft": true, "archi
 
 func (s *service) GetProductByID(ctx context.Context, id string) (*ProductDTO, error) {
 	p, err := s.store.GetProductByID(ctx, id)
-	if err != nil { return nil, apierror.ErrInternal }
-	if p == nil { return nil, apierror.ErrNotFound }
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	if p == nil {
+		return nil, apierror.ErrNotFound
+	}
 	dto := mapProductToDTO(p)
 	return &dto, nil
 }
 
 func (s *service) GetVariantsByProductID(ctx context.Context, productID string) ([]VariantDTO, error) {
 	variants, err := s.store.GetVariantsByProductID(ctx, productID)
-	if err != nil { return nil, apierror.ErrInternal }
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
 	dtos := make([]VariantDTO, len(variants))
-	for i, v := range variants { dtos[i] = *mapVariantToDTO(&v) }
+	for i, v := range variants {
+		dtos[i] = *mapVariantToDTO(&v)
+	}
 	return dtos, nil
 }
 
