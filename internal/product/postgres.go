@@ -27,7 +27,7 @@ func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Prod
 		searchPattern := "%" + q.Search + "%"
 		query = query.Where("title ILIKE ? OR description ILIKE ?", searchPattern, searchPattern)
 	}
-	
+
 	if q.FulfillmentType != "" {
 		query = query.Joins("JOIN product_variants ON product_variants.product_id = products.id").
 			Where("product_variants.fulfillment_type = ?", q.FulfillmentType).
@@ -39,12 +39,18 @@ func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Prod
 	}
 
 	page := q.Page
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	limit := q.Limit
-	if limit < 1 { limit = 20 }
-	if limit > 100 { limit = 100 } // Fix 2D: Cap limit to 100
+	if limit < 1 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	} // Fix 2D: Cap limit to 100
 	offset := (page - 1) * limit
-	
+
 	orderStr := "products.created_at DESC" // Fix 1C: Default sorting
 	switch q.Sort {
 	case "price_asc":
@@ -101,7 +107,7 @@ func (s *PostgresStore) UpsertProduct(ctx context.Context, product *Product) err
 func (s *PostgresStore) UpsertVariant(ctx context.Context, variant *ProductVariant) error {
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "shopify_variant_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"title", "sku", "price", "image_src", "inventory_quantity", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"title", "sku", "price", "image_src", "inventory_quantity", "fulfillment_type", "shopify_inventory_item_id", "updated_at"}),
 	}).Create(variant).Error
 }
 
@@ -135,7 +141,9 @@ func (s *PostgresStore) GetProductByID(ctx context.Context, productID string) (*
 	var p Product
 	err := s.db.WithContext(ctx).Where("id = ?", productID).First(&p).Error
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) { return nil, nil }
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &p, nil
