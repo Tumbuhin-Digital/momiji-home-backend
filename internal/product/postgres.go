@@ -122,7 +122,16 @@ func (s *PostgresStore) UpdateVariantPrices(ctx context.Context, variantID strin
 	if len(updates) == 0 {
 		return nil
 	}
-	return s.db.WithContext(ctx).Model(&ProductVariant{}).Where("shopify_variant_id = ?", variantID).Updates(updates).Error
+	result := s.db.WithContext(ctx).Model(&ProductVariant{}).
+		Where("shopify_variant_id = ?", variantID).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (s *PostgresStore) GetProductByShopifyID(ctx context.Context, shopifyID string) (*Product, error) {
