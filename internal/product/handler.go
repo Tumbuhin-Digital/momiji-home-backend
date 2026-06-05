@@ -2,6 +2,7 @@ package product
 
 import (
 	"log/slog"
+	"net/url"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server/middleware"
@@ -60,9 +61,13 @@ func (h *Handler) GetProducts(c *fiber.Ctx) error {
 	}
 
 	limit := query.Limit
-	if limit < 1 { limit = 20 }
+	if limit < 1 {
+		limit = 20
+	}
 	page := query.Page
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	totalPages := int((total + int64(limit) - 1) / int64(limit))
 
 	paginatedData := response.PaginatedData{
@@ -106,7 +111,9 @@ func (h *Handler) SyncProducts(c *fiber.Ctx) error {
 func (h *Handler) GetProductByID(c *fiber.Ctx) error {
 	slog.InfoContext(c.Context(), "GetProductByID", slog.String("product_id", c.Params("id")))
 	dto, err := h.service.GetProductByID(c.Context(), c.Params("id"))
-	if err != nil { return response.Error(c, err) }
+	if err != nil {
+		return response.Error(c, err)
+	}
 	return response.Success(c, fiber.StatusOK, "Product retrieved", dto)
 }
 
@@ -120,13 +127,15 @@ func (h *Handler) GetProductByID(c *fiber.Ctx) error {
 func (h *Handler) GetProductVariants(c *fiber.Ctx) error {
 	slog.InfoContext(c.Context(), "GetProductVariants", slog.String("product_id", c.Params("id")))
 	variants, err := h.service.GetVariantsByProductID(c.Context(), c.Params("id"))
-	if err != nil { return response.Error(c, err) }
-	
+	if err != nil {
+		return response.Error(c, err)
+	}
+
 	data := map[string]interface{}{
 		"product_id": c.Params("id"),
 		"variants":   variants,
 	}
-	
+
 	return response.Success(c, fiber.StatusOK, "Variants retrieved", data)
 }
 
@@ -144,14 +153,18 @@ func (h *Handler) GetProductVariants(c *fiber.Ctx) error {
 func (h *Handler) UpdateProductStatus(c *fiber.Ctx) error {
 	slog.InfoContext(c.Context(), "UpdateProductStatus", slog.String("product_id", c.Params("id")))
 	var req UpdateProductStatusRequest
-	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
-	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
-	
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
 	p, err := h.service.UpdateProductStatus(c.Context(), c.Params("id"), req.FulfillmentType)
 	if err != nil {
 		return response.Error(c, err)
 	}
-	
+
 	// Assuming all variants have same fulfillment_type, label, and date after update
 	var batchLabel, shipDate *string
 	var fulfillmentType string
@@ -184,9 +197,13 @@ func (h *Handler) UpdateProductStatus(c *fiber.Ctx) error {
 func (h *Handler) UpdateVariantBatchLabel(c *fiber.Ctx) error {
 	slog.InfoContext(c.Context(), "UpdateVariantBatchLabel", slog.String("product_id", c.Params("id")))
 	var req UpdateVariantBatchLabelRequest
-	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
-	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
-	
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
 	p, err := h.service.UpdateVariantBatchLabel(c.Context(), c.Params("id"), req.PreorderBatchLabel, req.ExpectedShipDate)
 	if err != nil {
 		return response.Error(c, err)
@@ -220,10 +237,13 @@ func (h *Handler) UpdateVariantBatchLabel(c *fiber.Ctx) error {
 // @Param body body UpdateVariantPriceRequest true "Price override payload"
 // @Router /products/variant/{id}/price [patch]
 func (h *Handler) UpdateVariantPrice(c *fiber.Ctx) error {
-	slog.InfoContext(c.Context(), "UpdateVariantPrice", slog.String("variant_id", c.Params("id")))
+	variantID, _ := url.PathUnescape(c.Params("id"))
+	slog.InfoContext(c.Context(), "UpdateVariantPrice", slog.String("variant_id", variantID))
 	var req UpdateVariantPriceRequest
-	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
-	if err := h.service.UpdateVariantPrice(c.Context(), c.Params("id"), req.WSPrice, req.RetailPrice); err != nil {
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := h.service.UpdateVariantPrice(c.Context(), variantID, req.WSPrice, req.RetailPrice); err != nil {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Variant price updated", nil)
