@@ -39,7 +39,19 @@ func (s *service) GetVariantByID(ctx context.Context, variantID string) (*Varian
 	if variant == nil {
 		return nil, apierror.ErrNotFound
 	}
-	return mapVariantToDTO(variant), nil
+
+	dto := mapVariantToDTO(variant)
+
+	p, err := s.store.GetProductByID(ctx, variant.ProductID)
+	if err == nil && p != nil {
+		if variant.Title == "" || variant.Title == "Default Title" {
+			dto.Title = p.Title
+		} else {
+			dto.Title = p.Title + " - " + variant.Title
+		}
+	}
+
+	return dto, nil
 }
 
 func (s *service) GetProducts(ctx context.Context, query ProductQuery) ([]ProductDTO, int64, error) {
