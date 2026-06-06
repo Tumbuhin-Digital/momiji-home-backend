@@ -26,16 +26,26 @@ func NewCheckoutHandler(cartService cart.CartService, checkoutService CheckoutSe
 func (h *Handler) SetupRoutes(router fiber.Router) {
 	// Shipping routes (authenticated)
 	shipping := router.Group("/shipping")
-	shipping.Use(middleware.Auth(h.jwtSecret))
+	shipping.Use(middleware.OptionalAuth(h.jwtSecret))
 	shipping.Get("/methods", h.GetShippingMethods)
 	shipping.Post("/calculate", h.CalculateShipping)
 
 	// Checkout routes (authenticated)
 	checkout := router.Group("/checkout")
-	checkout.Use(middleware.Auth(h.jwtSecret))
+	checkout.Use(middleware.OptionalAuth(h.jwtSecret))
 	checkout.Post("/summary", h.GetCheckoutSummary)
 	checkout.Post("/", h.InitiateCheckout)
 	checkout.Get("/confirm", h.GetCheckoutConfirm)
+}
+
+func (h *Handler) extractIdentity(c *fiber.Ctx) (userID *string, sessionID *string) {
+	if uid, ok := c.Locals("user_id").(string); ok && uid != "" {
+		userID = &uid
+	}
+	if sid, ok := c.Locals("session_id").(string); ok && sid != "" {
+		sessionID = &sid
+	}
+	return
 }
 
 // GetShippingMethods godoc
@@ -102,9 +112,9 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
-	uid := c.Locals("user_id").(string)
+	uid, sid := h.extractIdentity(c)
 	
-	cartRes, err := h.cartService.GetCartResponse(c.Context(), &uid, nil)
+	cartRes, err := h.cartService.GetCartResponse(c.Context(), uid, sid)
 	if err != nil {
 		return response.Error(c, err)
 	}
@@ -171,9 +181,14 @@ func (h *Handler) InitiateCheckout(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
-	uid := c.Locals("user_id").(string)
+	uid, sid := h.extractIdentity(c)
 	
-	res, err := h.checkoutService.InitiateCheckout(c.Context(), &uid, nil, req)
+	// Guest must provide email if not logged in
+	if uid == nil && req.Email == "" {
+		return response.Error(c, apierror.New(400, "validation_error", "email is required for guest checkout"))
+	}
+
+	res, err := h.checkoutService.InitiateCheckout(c.Context(), uid, sid, req)
 	if err != nil {
 		return response.Error(c, err)
 	}
