@@ -2,7 +2,6 @@ package product
 
 import (
 	"log/slog"
-	"net/url"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server/middleware"
@@ -33,9 +32,9 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	admin.Use(middleware.Auth(h.jwtSecret))
 	admin.Use(middleware.RBAC("admin"))
 	admin.Post("/sync", h.SyncProducts)
-	admin.Patch("/variant/:id/price", h.UpdateVariantPrice)
 	admin.Patch("/:id/status", h.UpdateProductStatus)
 	admin.Patch("/:id/batch", h.UpdateVariantBatchLabel)
+	admin.Patch("/variant/price", h.UpdateVariantPrice)
 }
 
 // GetProducts godoc
@@ -228,23 +227,28 @@ func (h *Handler) UpdateVariantBatchLabel(c *fiber.Ctx) error {
 }
 
 // UpdateVariantPrice godoc
-// @Summary Override ws_price and/or retail_price for a variant
-// @Tags Product
+// @Summary Update variant wholesale/retail price
+// @Tags Admin/Product
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param id path string true "Variant ID"
-// @Param body body UpdateVariantPriceRequest true "Price override payload"
-// @Router /products/variant/{id}/price [patch]
+// @Param request body UpdateVariantPriceRequest true "Variant Price Request"
+// @Success 200 {object} response.Envelope
+// @Router /products/variant/price [patch]
 func (h *Handler) UpdateVariantPrice(c *fiber.Ctx) error {
-	variantID, _ := url.PathUnescape(c.Params("id"))
-	slog.InfoContext(c.Context(), "UpdateVariantPrice", slog.String("variant_id", variantID))
 	var req UpdateVariantPriceRequest
 	if err := c.BodyParser(&req); err != nil {
 		return response.Error(c, err)
 	}
-	if err := h.service.UpdateVariantPrice(c.Context(), variantID, req.WSPrice, req.RetailPrice); err != nil {
+	if err := validator.ValidateStruct(&req); err != nil {
 		return response.Error(c, err)
 	}
+
+	slog.InfoContext(c.Context(), "UpdateVariantPrice", slog.String("variant_id", req.VariantID))
+
+	if err := h.service.UpdateVariantPrice(c.Context(), req.VariantID, req.WSPrice, req.RetailPrice); err != nil {
+		return response.Error(c, err)
+	}
+
 	return response.Success(c, fiber.StatusOK, "Variant price updated", nil)
 }
