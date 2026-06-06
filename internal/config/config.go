@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
@@ -116,11 +115,11 @@ func Load() (*Config, error) {
 	var port int
 	fmt.Sscanf(os.Getenv("SMTP_PORT"), "%d", &port)
 	if port == 0 {
-		port = 587
+		port = 465
 	}
 	cfg.Email.SMTPPort = port
 	cfg.Email.SMTPUser = os.Getenv("SMTP_USER")
-	cfg.Email.SMTPPassword = os.Getenv("SMTP_PASSWORD")
+	cfg.Email.SMTPPassword = os.Getenv("SMTP_PASS")
 	cfg.Email.From = os.Getenv("EMAIL_FROM")
 
 	return cfg, nil
@@ -138,12 +137,12 @@ func loadYAML(filename string, envNode string, target interface{}) error {
 		if err := yaml.Unmarshal(data, &raw); err != nil {
 			return err
 		}
-		
+
 		envData, ok := raw[envNode]
 		if !ok {
 			return fmt.Errorf("environment '%s' not found in config file", envNode)
 		}
-		
+
 		// Re-marshal and unmarshal into the target struct
 		bytes, err := yaml.Marshal(envData)
 		if err != nil {
