@@ -70,7 +70,7 @@ func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Prod
 		orderStr = "products.created_at DESC"
 	}
 
-	err := query.Preload("Variants").Order(orderStr).Offset(offset).Limit(limit).Find(&products).Error
+	err := query.Preload("Images").Preload("Variants").Order(orderStr).Offset(offset).Limit(limit).Find(&products).Error
 	return products, total, err
 }
 
@@ -111,6 +111,39 @@ func (s *PostgresStore) UpsertVariant(ctx context.Context, variant *ProductVaria
 	}).Create(variant).Error
 }
 
+func (s *PostgresStore) UpsertProductImages(ctx context.Context, productID string, images []ProductImage) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Get all current image Shopify IDs
+		var currentIDs []string
+		for _, img := range images {
+			currentIDs = append(currentIDs, img.ShopifyID)
+		}
+
+		// Delete images that are no longer present
+		if len(currentIDs) > 0 {
+			if err := tx.Where("product_id = ? AND shopify_id NOT IN ?", productID, currentIDs).Delete(&ProductImage{}).Error; err != nil {
+				return err
+			}
+		} else {
+			if err := tx.Where("product_id = ?", productID).Delete(&ProductImage{}).Error; err != nil {
+				return err
+			}
+		}
+
+		// Upsert the provided images
+		if len(images) > 0 {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "shopify_id"}},
+				DoUpdates: clause.AssignmentColumns([]string{"src", "alt", "position"}),
+			}).Create(&images).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
 func (s *PostgresStore) UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64, retailPrice *float64) error {
 	updates := map[string]interface{}{}
 	if wsPrice != nil {
@@ -148,7 +181,7 @@ func (s *PostgresStore) GetProductByShopifyID(ctx context.Context, shopifyID str
 
 func (s *PostgresStore) GetProductByID(ctx context.Context, productID string) (*Product, error) {
 	var p Product
-	err := s.db.WithContext(ctx).Where("id = ?", productID).First(&p).Error
+	err := s.db.WithContext(ctx).Preload("Images").Preload("Variants").Where("id = ?", productID).First(&p).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil

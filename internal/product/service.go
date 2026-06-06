@@ -161,6 +161,11 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 			edges {
 			  node {
 				id title descriptionHtml status
+				images(first: 10) {
+				  edges {
+					node { id url altText }
+				  }
+				}
 				variants(first: 10) {
 				  edges {
 					node { id title sku price inventoryQuantity image { url } inventoryItem { id } }
@@ -194,6 +199,15 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 							Title           string `json:"title"`
 							DescriptionHtml string `json:"descriptionHtml"`
 							Status          string `json:"status"`
+							Images          struct {
+								Edges []struct {
+									Node struct {
+										ID      string `json:"id"`
+										Url     string `json:"url"`
+										AltText string `json:"altText"`
+									} `json:"node"`
+								} `json:"edges"`
+							} `json:"images"`
 							Variants        struct {
 								Edges []struct {
 									Node struct {
@@ -241,6 +255,22 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 				slog.WarnContext(ctx, "product not found after upsert, skipping variants",
 					slog.String("shopify_id", product.ShopifyID))
 				continue
+			}
+
+			// Store product images
+			var productImages []ProductImage
+			for i, iEdge := range pNode.Images.Edges {
+				iNode := iEdge.Node
+				productImages = append(productImages, ProductImage{
+					ProductID: p.ID,
+					ShopifyID: iNode.ID,
+					Src:       iNode.Url,
+					Alt:       iNode.AltText,
+					Position:  i + 1,
+				})
+			}
+			if err := s.store.UpsertProductImages(ctx, p.ID, productImages); err != nil {
+				slog.ErrorContext(ctx, "failed to upsert product images", slog.String("error", err.Error()))
 			}
 
 			for _, vEdge := range pNode.Variants.Edges {

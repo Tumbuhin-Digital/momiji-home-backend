@@ -63,4 +63,5 @@ type Store interface {
 	GetVariantsByProductID(ctx context.Context, productID string) ([]ProductVariant, error)
 	UpdateProductStatus(ctx context.Context, productID string, fulfillmentType string) error
 	UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) error
+	UpsertProductImages(ctx context.Context, productID string, images []ProductImage) error
 }
