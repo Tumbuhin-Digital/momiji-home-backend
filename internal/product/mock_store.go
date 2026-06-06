@@ -30,6 +30,7 @@ type MockProductStore struct {
 	GetVariantsByProductIDErr  error
 	UpdateProductStatusErr     error
 	UpdateVariantBatchLabelErr error
+	UpsertProductImagesErr     error
 }
 
 func NewMockProductStore() *MockProductStore {
@@ -122,6 +123,10 @@ func (m *MockProductStore) UpdateProductStatus(ctx context.Context, productID st
 
 func (m *MockProductStore) UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) error {
 	m.UpdateVariantBatchLabelCalls++
+	return nil
+}
+
+func (m *MockProductStore) UpsertProductImages(ctx context.Context, productID string, images []ProductImage) error {
 	return nil
 }
 
