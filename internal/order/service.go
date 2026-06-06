@@ -3,6 +3,7 @@ package order
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -346,7 +347,9 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 				HasBalanceDue:   hasPreOrder,
 				TotalBalanceDue: fmt.Sprintf("$%.2f", order.TotalBalanceDue),
 			}
-			_ = s.emailService.SendOrderConfirmation(bgCtx, customerEmail, emailData)
+			if err := s.emailService.SendOrderConfirmation(bgCtx, customerEmail, emailData); err != nil {
+				slog.Error("Failed to send order confirmation email", slog.Any("error", err), slog.String("to", customerEmail))
+			}
 		}
 	}()
 

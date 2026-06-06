@@ -61,6 +61,7 @@ type UpdateVariantBatchLabelRequest struct {
 }
 
 type UpdateVariantPriceRequest struct {
-	WSPrice     *float64 `json:"ws_price"`
-	RetailPrice *float64 `json:"retail_price"`
+	VariantID   string   `json:"variant_id" validate:"required"`
+	WSPrice     *float64 `json:"ws_price" validate:"omitempty,min=0"`
+	RetailPrice *float64 `json:"retail_price" validate:"omitempty,min=0"`
 }
