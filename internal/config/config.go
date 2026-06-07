@@ -17,9 +17,10 @@ type Config struct {
 }
 
 type AppConfig struct {
-	Env  string
-	Port string
-	Host string
+	Env         string
+	Port        string
+	Host        string
+	FrontendURL string
 }
 
 type DatabaseConfig struct {
@@ -73,9 +74,10 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		App: AppConfig{
-			Env:  env,
-			Port: os.Getenv("PORT"),
-			Host: os.Getenv("APP_HOST"),
+			Env:         env,
+			Port:        os.Getenv("PORT"),
+			Host:        os.Getenv("APP_HOST"),
+			FrontendURL: os.Getenv("FE_URL"),
 		},
 	}
 	if cfg.App.Port == "" {

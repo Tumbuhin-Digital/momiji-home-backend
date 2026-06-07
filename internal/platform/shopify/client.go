@@ -199,7 +199,24 @@ type AttributeInput struct {
 }
 
 type CartBuyerIdentityInput struct {
-	Email string `json:"email,omitempty"`
+	Email                      string                     `json:"email,omitempty"`
+	Phone                      string                     `json:"phone,omitempty"`
+	DeliveryAddressPreferences []CartDeliveryAddressInput `json:"deliveryAddressPreferences,omitempty"`
+}
+
+type CartDeliveryAddressInput struct {
+	DeliveryAddress AddressInput `json:"deliveryAddress"`
+}
+
+type AddressInput struct {
+	FirstName string `json:"firstName,omitempty"`
+	LastName  string `json:"lastName,omitempty"`
+	Address1  string `json:"address1,omitempty"`
+	City      string `json:"city,omitempty"`
+	Province  string `json:"province,omitempty"`
+	Zip       string `json:"zip,omitempty"`
+	Country   string `json:"country,omitempty"`
+	Phone     string `json:"phone,omitempty"`
 }
 
 type CartCreateResponse struct {

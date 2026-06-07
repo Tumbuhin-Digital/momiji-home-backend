@@ -107,7 +107,10 @@ func (s *PostgresStore) UpsertProduct(ctx context.Context, product *Product) err
 func (s *PostgresStore) UpsertVariant(ctx context.Context, variant *ProductVariant) error {
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "shopify_variant_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"title", "sku", "price", "image_src", "inventory_quantity", "fulfillment_type", "shopify_inventory_item_id", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{
+			"title", "sku", "price", "image_src",
+			"inventory_quantity", "shopify_inventory_item_id", "updated_at",
+		}),
 	}).Create(variant).Error
 }
 
@@ -165,6 +168,35 @@ func (s *PostgresStore) UpdateVariantPrices(ctx context.Context, variantID strin
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+func (s *PostgresStore) GetAllVariants(ctx context.Context) ([]ProductVariant, error) {
+	var variants []ProductVariant
+	if err := s.db.WithContext(ctx).Preload("Product").Find(&variants).Error; err != nil {
+		return nil, err
+	}
+	return variants, nil
+}
+
+func (s *PostgresStore) BulkUpdateVariantDimensions(ctx context.Context, inputs []DimensionUpdateInput) error {
+	tx := s.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
+
+	for _, input := range inputs {
+		res := tx.Model(&ProductVariant{}).Where("shopify_variant_id = ?", input.ShopifyVariantID).Updates(map[string]interface{}{
+			"weight_kg": input.WeightKg,
+			"width_cm":  input.WidthCm,
+			"height_cm": input.HeightCm,
+			"depth_cm":  input.DepthCm,
+		})
+		if res.Error != nil {
+			return res.Error
+		}
+	}
+	return tx.Commit().Error
 }
 
 func (s *PostgresStore) GetProductByShopifyID(ctx context.Context, shopifyID string) (*Product, error) {

@@ -255,9 +255,25 @@ definitions:
     properties:
       address_id:
         type: integer
+      address1:
+        type: string
+      city:
+        type: string
+      country:
+        type: string
       email:
         type: string
+      first_name:
+        type: string
+      last_name:
+        type: string
+      phone:
+        type: string
       shipping_method:
+        type: string
+      state:
+        type: string
+      zip:
         type: string
     required:
     - shipping_method
@@ -367,6 +383,16 @@ definitions:
         type: string
     required:
     - fulfillment_type
+    type: object
+  internal_order.AddTrackingRequest:
+    properties:
+      tracking_number:
+        type: string
+      tracking_url:
+        type: string
+    required:
+    - tracking_number
+    - tracking_url
     type: object
   internal_order.CancelOrderRequest:
     properties:
@@ -583,9 +609,15 @@ definitions:
   internal_product.UpdateVariantPriceRequest:
     properties:
       retail_price:
+        minimum: 0
         type: number
+      variant_id:
+        type: string
       ws_price:
+        minimum: 0
         type: number
+    required:
+    - variant_id
     type: object
   internal_product.VariantDTO:
     properties:
@@ -603,6 +635,8 @@ definitions:
         type: string
       title:
         type: string
+      weight_kg:
+        type: number
       ws_price:
         type: string
     type: object
@@ -1355,6 +1389,39 @@ paths:
       summary: Update fulfillment step
       tags:
       - Order
+  /orders/{id}/items/{itemId}/tracking:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Item ID
+        in: path
+        name: itemId
+        required: true
+        type: string
+      - description: Add Tracking Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_order.AddTrackingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Add tracking number to an item
+      tags:
+      - Order
   /preorders:
     get:
       parameters:
@@ -1658,30 +1725,61 @@ paths:
       summary: Sync products from Shopify
       tags:
       - Product
-  /products/variant/{id}/price:
+  /products/variant/price:
     patch:
       consumes:
       - application/json
       parameters:
-      - description: Variant ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Price override payload
+      - description: Variant Price Request
         in: body
-        name: body
+        name: request
         required: true
         schema:
           $ref: '#/definitions/internal_product.UpdateVariantPriceRequest'
       produces:
       - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Update variant wholesale/retail price
+      tags:
+      - Admin/Product
+  /products/variants/dimensions/import:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: CSV File
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Import product dimensions via CSV
+      tags:
+      - Admin/Product
+  /products/variants/dimensions/template:
+    get:
+      produces:
+      - text/csv
       responses: {}
       security:
       - BearerAuth: []
-      summary: Override ws_price and/or retail_price for a variant
+      summary: Download product dimension CSV template
       tags:
-      - Product
+      - Admin/Product
   /shipping/calculate:
     post:
       consumes:

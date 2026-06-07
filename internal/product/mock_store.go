@@ -130,6 +130,18 @@ func (m *MockProductStore) UpsertProductImages(ctx context.Context, productID st
 	return nil
 }
 
+func (m *MockProductStore) GetAllVariants(ctx context.Context) ([]ProductVariant, error) {
+	out := []ProductVariant{}
+	for _, v := range m.Variants {
+		out = append(out, *v)
+	}
+	return out, nil
+}
+
+func (m *MockProductStore) BulkUpdateVariantDimensions(ctx context.Context, inputs []DimensionUpdateInput) error {
+	return nil
+}
+
 // MockShopifyClient is a test double for shopify.Client.
 type MockShopifyClient struct {
 	AdminGraphQLResponse []byte

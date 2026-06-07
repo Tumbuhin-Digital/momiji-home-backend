@@ -1,0 +1,8 @@
+ALTER TABLE product_variants
+  ALTER COLUMN fulfillment_type SET DEFAULT 'ship_ready';
+
+ALTER TABLE product_variants
+  ADD COLUMN IF NOT EXISTS weight_kg   NUMERIC(8,3) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS width_cm    NUMERIC(8,1) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS height_cm   NUMERIC(8,1) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS depth_cm    NUMERIC(8,1) DEFAULT 0;
