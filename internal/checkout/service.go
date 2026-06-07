@@ -3,6 +3,7 @@ package checkout
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strconv"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
@@ -18,10 +19,11 @@ type service struct {
 	cartService      cart.CartService
 	shopifyCli       shopify.Client
 	stockLockService StockLockService
+	feURL            string
 }
 
-func NewCheckoutService(cartService cart.CartService, shopifyCli shopify.Client, stockLockService StockLockService) CheckoutService {
-	return &service{cartService: cartService, shopifyCli: shopifyCli, stockLockService: stockLockService}
+func NewCheckoutService(cartService cart.CartService, shopifyCli shopify.Client, stockLockService StockLockService, feURL string) CheckoutService {
+	return &service{cartService: cartService, shopifyCli: shopifyCli, stockLockService: stockLockService, feURL: feURL}
 }
 
 func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *string, req InitiateCheckoutRequest) (*InitiateCheckoutResponse, error) {
@@ -77,8 +79,38 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		Lines: lines,
 	}
 
+	buyerIdentity := &shopify.CartBuyerIdentityInput{}
+	hasBuyerIdentity := false
+
 	if req.Email != "" {
-		cartInput.BuyerIdentity = &shopify.CartBuyerIdentityInput{Email: req.Email}
+		buyerIdentity.Email = req.Email
+		hasBuyerIdentity = true
+	}
+	if req.Phone != "" {
+		buyerIdentity.Phone = req.Phone
+		hasBuyerIdentity = true
+	}
+
+	if req.Address1 != "" || req.City != "" {
+		buyerIdentity.DeliveryAddressPreferences = []shopify.CartDeliveryAddressInput{
+			{
+				DeliveryAddress: shopify.AddressInput{
+					FirstName: req.FirstName,
+					LastName:  req.LastName,
+					Address1:  req.Address1,
+					City:      req.City,
+					Province:  req.State,
+					Zip:       req.Zip,
+					Country:   req.Country,
+					Phone:     req.Phone,
+				},
+			},
+		}
+		hasBuyerIdentity = true
+	}
+
+	if hasBuyerIdentity {
+		cartInput.BuyerIdentity = buyerIdentity
 	}
 
 	res, err := s.shopifyCli.CreateStorefrontCart(ctx, cartInput)
@@ -86,7 +118,12 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		return nil, fmt.Errorf("failed to create shopify cart: %w", err)
 	}
 
+	checkoutUrl := res.CheckoutUrl
+	if s.feURL != "" {
+		checkoutUrl += "?return_to=" + url.QueryEscape(s.feURL)
+	}
+
 	return &InitiateCheckoutResponse{
-		CheckoutUrl: res.CheckoutUrl,
+		CheckoutUrl: checkoutUrl,
 	}, nil
 }

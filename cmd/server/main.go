@@ -123,7 +123,7 @@ func main() {
 	cartHandler := cart.NewCartHandler(cartService, cfg.Auth.Secret)
 	cartHandler.SetupRoutes(api)
 
-	checkoutService := checkout.NewCheckoutService(cartService, shopifyClient, stockLockService)
+	checkoutService := checkout.NewCheckoutService(cartService, shopifyClient, stockLockService, cfg.App.FrontendURL)
 	checkoutHandler := checkout.NewCheckoutHandler(cartService, checkoutService, orderService, cfg.Auth.Secret)
 	checkoutHandler.SetupRoutes(api)
 
