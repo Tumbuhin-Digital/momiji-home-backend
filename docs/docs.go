@@ -1212,6 +1212,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/orders/{id}/items/{itemId}/tracking": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Order"
+                ],
+                "summary": "Add tracking number to an item",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Item ID",
+                        "name": "itemId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Add Tracking Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_order.AddTrackingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
         "/preorders": {
             "get": {
                 "security": [
@@ -1505,7 +1557,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/products/variant/{id}/price": {
+        "/products/variant/price": {
             "patch": {
                 "security": [
                     {
@@ -1519,20 +1571,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Product"
+                    "Admin/Product"
                 ],
-                "summary": "Override ws_price and/or retail_price for a variant",
+                "summary": "Update variant wholesale/retail price",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Variant ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Price override payload",
-                        "name": "body",
+                        "description": "Variant Price Request",
+                        "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
@@ -1540,6 +1585,66 @@ const docTemplate = `{
                         }
                     }
                 ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/products/variants/dimensions/import": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin/Product"
+                ],
+                "summary": "Import product dimensions via CSV",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "CSV File",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/products/variants/dimensions/template": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "text/csv"
+                ],
+                "tags": [
+                    "Admin/Product"
+                ],
+                "summary": "Download product dimension CSV template",
                 "responses": {}
             }
         },
@@ -2303,13 +2408,37 @@ const docTemplate = `{
                 "shipping_method"
             ],
             "properties": {
+                "address1": {
+                    "type": "string"
+                },
                 "address_id": {
                     "type": "integer"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "country": {
+                    "type": "string"
                 },
                 "email": {
                     "type": "string"
                 },
+                "first_name": {
+                    "type": "string"
+                },
+                "last_name": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                },
                 "shipping_method": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "zip": {
                     "type": "string"
                 }
             }
@@ -2473,6 +2602,21 @@ const docTemplate = `{
             ],
             "properties": {
                 "fulfillment_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_order.AddTrackingRequest": {
+            "type": "object",
+            "required": [
+                "tracking_number",
+                "tracking_url"
+            ],
+            "properties": {
+                "tracking_number": {
+                    "type": "string"
+                },
+                "tracking_url": {
                     "type": "string"
                 }
             }
@@ -2799,12 +2943,20 @@ const docTemplate = `{
         },
         "internal_product.UpdateVariantPriceRequest": {
             "type": "object",
+            "required": [
+                "variant_id"
+            ],
             "properties": {
                 "retail_price": {
-                    "type": "number"
+                    "type": "number",
+                    "minimum": 0
+                },
+                "variant_id": {
+                    "type": "string"
                 },
                 "ws_price": {
-                    "type": "number"
+                    "type": "number",
+                    "minimum": 0
                 }
             }
         },
@@ -2831,6 +2983,9 @@ const docTemplate = `{
                 },
                 "title": {
                     "type": "string"
+                },
+                "weight_kg": {
+                    "type": "number"
                 },
                 "ws_price": {
                     "type": "string"
