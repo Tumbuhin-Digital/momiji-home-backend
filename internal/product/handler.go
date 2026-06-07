@@ -1,7 +1,10 @@
 package product
 
 import (
+	"encoding/csv"
+	"fmt"
 	"log/slog"
+	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server/middleware"
@@ -35,6 +38,8 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	admin.Patch("/:id/status", h.UpdateProductStatus)
 	admin.Patch("/:id/batch", h.UpdateVariantBatchLabel)
 	admin.Patch("/variant/price", h.UpdateVariantPrice)
+	admin.Get("/variants/dimensions/template", h.DownloadDimensionTemplate)
+	admin.Post("/variants/dimensions/import", h.ImportDimensions)
 }
 
 // GetProducts godoc
@@ -251,4 +256,130 @@ func (h *Handler) UpdateVariantPrice(c *fiber.Ctx) error {
 	}
 
 	return response.Success(c, fiber.StatusOK, "Variant price updated", nil)
+}
+
+// DownloadDimensionTemplate godoc
+// @Summary Download product dimension CSV template
+// @Tags Admin/Product
+// @Produce text/csv
+// @Security BearerAuth
+// @Router /products/variants/dimensions/template [get]
+func (h *Handler) DownloadDimensionTemplate(c *fiber.Ctx) error {
+	variants, err := h.service.GetAllVariants(c.Context())
+	if err != nil {
+		return response.Error(c, err)
+	}
+
+	c.Set("Content-Type", "text/csv")
+	c.Set("Content-Disposition", `attachment; filename="dimension-template.csv"`)
+
+	writer := csv.NewWriter(c.Response().BodyWriter())
+	header := []string{"variant_id", "product_title", "variant_title", "sku", "weight_kg", "width_cm", "height_cm", "depth_cm"}
+	_ = writer.Write(header)
+
+	for _, v := range variants {
+		productTitle := ""
+		if v.Product != nil {
+			productTitle = v.Product.Title
+		}
+		row := []string{
+			v.ShopifyVariantID,
+			productTitle,
+			v.Title,
+			v.SKU,
+			fmt.Sprintf("%.3f", v.WeightKg),
+			fmt.Sprintf("%.1f", v.WidthCm),
+			fmt.Sprintf("%.1f", v.HeightCm),
+			fmt.Sprintf("%.1f", v.DepthCm),
+		}
+		_ = writer.Write(row)
+	}
+	writer.Flush()
+	return nil
+}
+
+// ImportDimensions godoc
+// @Summary Import product dimensions via CSV
+// @Tags Admin/Product
+// @Accept mpfd
+// @Produce json
+// @Security BearerAuth
+// @Param file formData file true "CSV File"
+// @Success 200 {object} response.Envelope
+// @Router /products/variants/dimensions/import [post]
+func (h *Handler) ImportDimensions(c *fiber.Ctx) error {
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		return response.Error(c, apierror.New(400, "bad_request", "Missing file parameter"))
+	}
+
+	file, err := fileHeader.Open()
+	if err != nil {
+		return response.Error(c, err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records, err := reader.ReadAll()
+	if err != nil {
+		return response.Error(c, apierror.New(400, "bad_request", "Invalid CSV format"))
+	}
+
+	if len(records) < 2 {
+		return response.Error(c, apierror.New(400, "bad_request", "CSV is empty"))
+	}
+
+	var updates []DimensionUpdateInput
+	// Map header indices
+	headers := records[0]
+	idxMap := make(map[string]int)
+	for i, h := range headers {
+		idxMap[h] = i
+	}
+
+	vidIdx, ok := idxMap["variant_id"]
+	if !ok {
+		return response.Error(c, apierror.New(400, "bad_request", "Missing variant_id column"))
+	}
+
+	parseFloat := func(s string) float64 {
+		if s == "" {
+			return 0
+		}
+		f, _ := strconv.ParseFloat(s, 64)
+		return f
+	}
+
+	for _, row := range records[1:] {
+		if len(row) <= vidIdx {
+			continue
+		}
+		vid := row[vidIdx]
+		if vid == "" {
+			continue
+		}
+
+		input := DimensionUpdateInput{ShopifyVariantID: vid}
+		if idx, ok := idxMap["weight_kg"]; ok && len(row) > idx && row[idx] != "" {
+			input.WeightKg = parseFloat(row[idx])
+		}
+		if idx, ok := idxMap["width_cm"]; ok && len(row) > idx && row[idx] != "" {
+			input.WidthCm = parseFloat(row[idx])
+		}
+		if idx, ok := idxMap["height_cm"]; ok && len(row) > idx && row[idx] != "" {
+			input.HeightCm = parseFloat(row[idx])
+		}
+		if idx, ok := idxMap["depth_cm"]; ok && len(row) > idx && row[idx] != "" {
+			input.DepthCm = parseFloat(row[idx])
+		}
+		updates = append(updates, input)
+	}
+
+	if err := h.service.BulkUpdateDimensions(c.Context(), updates); err != nil {
+		return response.Error(c, err)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Dimensions imported successfully", map[string]interface{}{
+		"updated_count": len(updates),
+	})
 }

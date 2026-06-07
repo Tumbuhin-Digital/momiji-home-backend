@@ -20,6 +20,8 @@ type ProductService interface {
 	UpdateProductStatus(ctx context.Context, productID string, fulfillmentType string) (*ProductDTO, error)
 	UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) (*ProductDTO, error)
 	UpdateVariantPrice(ctx context.Context, variantID string, wsPrice *float64, retailPrice *float64) error
+	GetAllVariants(ctx context.Context) ([]ProductVariant, error)
+	BulkUpdateDimensions(ctx context.Context, rows []DimensionUpdateInput) error
 }
 
 type service struct {
@@ -148,6 +150,7 @@ func mapVariantToDTO(variant *ProductVariant) *VariantDTO {
 		WSPrice:           wsPrice,
 		FulfillmentType:   FulfillmentType(ft),
 		InventoryQuantity: variant.InventoryQuantity,
+		WeightKg:          variant.WeightKg,
 	}
 }
 
@@ -276,12 +279,6 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 			for _, vEdge := range pNode.Variants.Edges {
 				vNode := vEdge.Node
 				price, _ := strconv.ParseFloat(vNode.Price, 64)
-				ft := FulfillmentTypeShipReady
-
-				if vNode.InventoryQuantity <= 0 {
-					ft = FulfillmentTypePreOrder
-				}
-
 				variant := &ProductVariant{
 					ProductID:              p.ID,
 					ShopifyVariantID:       vNode.ID,
@@ -289,7 +286,6 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 					SKU:                    vNode.Sku,
 					Price:                  price,
 					ImageSrc:               vNode.Image.Url,
-					FulfillmentType:        string(ft),
 					InventoryQuantity:      vNode.InventoryQuantity,
 					ShopifyInventoryItemID: vNode.InventoryItem.ID,
 				}
@@ -365,4 +361,12 @@ func (s *service) UpdateVariantPrice(ctx context.Context, variantID string, wsPr
 		return apierror.ErrInternal
 	}
 	return nil
+}
+
+func (s *service) GetAllVariants(ctx context.Context) ([]ProductVariant, error) {
+	return s.store.GetAllVariants(ctx)
+}
+
+func (s *service) BulkUpdateDimensions(ctx context.Context, rows []DimensionUpdateInput) error {
+	return s.store.BulkUpdateVariantDimensions(ctx, rows)
 }

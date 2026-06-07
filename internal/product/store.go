@@ -35,13 +35,18 @@ type ProductImage struct {
 type ProductVariant struct {
 	ID                 string `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
 	ProductID          string
-	ShopifyVariantID   string `gorm:"uniqueIndex"`
+	Product            *Product `gorm:"foreignKey:ProductID"`
+	ShopifyVariantID   string   `gorm:"uniqueIndex" json:"shopify_variant_id"`
 	Title              string
 	SKU                string
 	Price              float64
 	ImageSrc           string
 	RetailPrice        *float64
 	WSPrice            *float64
+	WeightKg           float64
+	WidthCm            float64
+	HeightCm           float64
+	DepthCm            float64
 	FulfillmentType    string
 	PreorderBatchLabel     *string
 	ExpectedShipDate       *time.Time
@@ -61,7 +66,17 @@ type Store interface {
 	UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64, retailPrice *float64) error
 	GetProductByID(ctx context.Context, productID string) (*Product, error)
 	GetVariantsByProductID(ctx context.Context, productID string) ([]ProductVariant, error)
+	GetAllVariants(ctx context.Context) ([]ProductVariant, error)
 	UpdateProductStatus(ctx context.Context, productID string, fulfillmentType string) error
 	UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) error
 	UpsertProductImages(ctx context.Context, productID string, images []ProductImage) error
+	BulkUpdateVariantDimensions(ctx context.Context, inputs []DimensionUpdateInput) error
+}
+
+type DimensionUpdateInput struct {
+	ShopifyVariantID string
+	WeightKg         float64
+	WidthCm          float64
+	HeightCm         float64
+	DepthCm          float64
 }
