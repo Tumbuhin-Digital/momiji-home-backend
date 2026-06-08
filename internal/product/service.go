@@ -340,6 +340,19 @@ func (s *service) UpdateProductStatus(ctx context.Context, productID string, ful
 	if fulfillmentType != "ship_ready" && fulfillmentType != "pre_order" {
 		return nil, apierror.New(400, "validation_error", "fulfillment_type must be ship_ready or pre_order")
 	}
+
+	if fulfillmentType == "ship_ready" {
+		variants, err := s.store.GetVariantsByProductID(ctx, productID)
+		if err != nil {
+			return nil, apierror.ErrInternal
+		}
+		for _, v := range variants {
+			if v.InventoryQuantity <= 0 {
+				return nil, apierror.New(400, "inventory_error", "Cannot set status to ship_ready. Variant '" + v.Title + "' has 0 inventory.")
+			}
+		}
+	}
+
 	if err := s.store.UpdateProductStatus(ctx, productID, fulfillmentType); err != nil {
 		return nil, apierror.ErrInternal
 	}

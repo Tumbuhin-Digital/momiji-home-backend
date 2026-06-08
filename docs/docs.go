@@ -2034,6 +2034,9 @@ const docTemplate = `{
                 "image_src": {
                     "type": "string"
                 },
+                "inventory_quantity": {
+                    "type": "integer"
+                },
                 "quantity": {
                     "type": "integer"
                 },
@@ -2170,6 +2173,9 @@ const docTemplate = `{
                 },
                 "image_src": {
                     "type": "string"
+                },
+                "inventory_quantity": {
+                    "type": "integer"
                 },
                 "quantity": {
                     "type": "integer"
@@ -2621,6 +2627,38 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_order.AddressDTO": {
+            "type": "object",
+            "properties": {
+                "address1": {
+                    "type": "string"
+                },
+                "address2": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "country": {
+                    "type": "string"
+                },
+                "first_name": {
+                    "type": "string"
+                },
+                "last_name": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                },
+                "province": {
+                    "type": "string"
+                },
+                "zip": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_order.CancelOrderRequest": {
             "type": "object",
             "required": [
@@ -2646,6 +2684,26 @@ const docTemplate = `{
                     "$ref": "#/definitions/internal_order.GuestInfo"
                 },
                 "shipping_method": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_order.CustomerDTO": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "first_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_name": {
+                    "type": "string"
+                },
+                "phone": {
                     "type": "string"
                 }
             }
@@ -2740,6 +2798,9 @@ const docTemplate = `{
                 "currency": {
                     "type": "string"
                 },
+                "customer": {
+                    "$ref": "#/definitions/internal_order.CustomerDTO"
+                },
                 "financial_status": {
                     "type": "string"
                 },
@@ -2752,8 +2813,14 @@ const docTemplate = `{
                 "line_items": {
                     "$ref": "#/definitions/internal_order.LineItemsGroup"
                 },
+                "order_date": {
+                    "type": "string"
+                },
                 "order_number": {
                     "type": "string"
+                },
+                "shipping_address": {
+                    "$ref": "#/definitions/internal_order.AddressDTO"
                 },
                 "shopify_checkout_url": {
                     "type": "string"

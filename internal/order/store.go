@@ -3,6 +3,8 @@ package order
 import (
 	"context"
 	"time"
+
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/customer"
 )
 
 type Order struct {
@@ -27,7 +29,9 @@ type Order struct {
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 
-	Items []OrderItem `gorm:"foreignKey:OrderID"`
+	Items           []OrderItem       `gorm:"foreignKey:OrderID"`
+	Customer        *customer.Customer `gorm:"foreignKey:CustomerID"`
+	ShippingAddress *customer.Address  `gorm:"foreignKey:ShippingAddressID"`
 }
 
 type OrderItem struct {

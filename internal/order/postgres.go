@@ -22,7 +22,7 @@ func (s *PostgresStore) CreateOrder(ctx context.Context, order *Order) error {
 
 func (s *PostgresStore) GetOrder(ctx context.Context, orderID, customerID string) (*Order, error) {
 	var order Order
-	err := s.db.WithContext(ctx).Preload("Items").Where("id = ? AND customer_id = ?", orderID, customerID).First(&order).Error
+	err := s.db.WithContext(ctx).Preload("Items").Preload("Customer").Preload("ShippingAddress").Where("id = ? AND customer_id = ?", orderID, customerID).First(&order).Error
 	if err != nil {
 		return nil, err
 	}
@@ -33,6 +33,8 @@ func (s *PostgresStore) GetOrderByShopifyID(ctx context.Context, shopifyOrderID 
 	var order Order
 	err := s.db.WithContext(ctx).
 		Preload("Items").
+		Preload("Customer").
+		Preload("ShippingAddress").
 		Where("shopify_order_id = ?", shopifyOrderID).
 		First(&order).Error
 	if err != nil {
@@ -75,7 +77,7 @@ func (s *PostgresStore) GetOrdersByCustomer(ctx context.Context, customerID stri
 	if limit < 1 { limit = 20 }
 	offset := (page - 1) * limit
 
-	err := query.Preload("Items").Order("created_at DESC").Offset(offset).Limit(limit).Find(&orders).Error
+	err := query.Preload("Items").Preload("Customer").Preload("ShippingAddress").Order("created_at DESC").Offset(offset).Limit(limit).Find(&orders).Error
 	return orders, total, err
 }
 
