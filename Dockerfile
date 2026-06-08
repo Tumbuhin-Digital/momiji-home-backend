@@ -32,8 +32,8 @@ WORKDIR /app
 COPY --from=builder /app/main .
 COPY --from=builder /app/migrations ./migrations
 COPY --from=builder /app/config ./config
-COPY --from=builder /app/.env .
 COPY --from=builder /app/internal/platform/email/templates ./internal/platform/email/templates
+COPY --from=builder /app/.env .
 COPY entrypoint.sh .
 RUN chmod +x /app/entrypoint.sh 
 
