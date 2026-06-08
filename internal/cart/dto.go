@@ -13,15 +13,16 @@ type CartResponse struct {
 }
 
 type CartItem struct {
-	ID            string `json:"id"`
-	VariantID     string `json:"variant_id"`
-	Title         string `json:"title"`
-	ImageSrc      string `json:"image_src"`
-	Quantity      int    `json:"quantity"`
-	UnitPrice     string `json:"unit_price"`
-	DepositAmount string `json:"deposit_amount,omitempty"`
-	BalanceDue    string `json:"balance_due,omitempty"`
-	Subtotal      string `json:"subtotal"`
+	ID                string `json:"id"`
+	VariantID         string `json:"variant_id"`
+	Title             string `json:"title"`
+	ImageSrc          string `json:"image_src"`
+	Quantity          int    `json:"quantity"`
+	InventoryQuantity int    `json:"inventory_quantity"`
+	UnitPrice         string `json:"unit_price"`
+	DepositAmount     string `json:"deposit_amount,omitempty"`
+	BalanceDue        string `json:"balance_due,omitempty"`
+	Subtotal          string `json:"subtotal"`
 }
 
 type CartSummaryDTO struct {

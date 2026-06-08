@@ -101,13 +101,14 @@ func (s *service) GetCartResponse(ctx context.Context, userID, sessionID *string
 		subtotal := item.UnitPrice * float64(item.Quantity)
 		
 		cItem := CartItem{
-			ID:        item.ID,
-			VariantID: item.ShopifyVariantID,
-			Title:     variant.Title,
-			ImageSrc:  variant.ImageSrc,
-			Quantity:  item.Quantity,
-			UnitPrice: fmt.Sprintf("%.2f", item.UnitPrice),
-			Subtotal:  fmt.Sprintf("%.2f", subtotal),
+			ID:                item.ID,
+			VariantID:         item.ShopifyVariantID,
+			Title:             variant.Title,
+			ImageSrc:          variant.ImageSrc,
+			Quantity:          item.Quantity,
+			InventoryQuantity: variant.InventoryQuantity,
+			UnitPrice:         fmt.Sprintf("%.2f", item.UnitPrice),
+			Subtotal:          fmt.Sprintf("%.2f", subtotal),
 		}
 
 		if item.FulfillmentType == string(product.FulfillmentTypePreOrder) {
