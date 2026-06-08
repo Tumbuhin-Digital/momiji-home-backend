@@ -289,6 +289,7 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 	response := &OrderResponse{
 		ID:                  order.ID,
 		OrderNumber:         order.OrderNumber,
+		OrderDate:           order.CreatedAt.Format(time.RFC3339),
 		ShopifyCheckoutURL:  checkoutURL,
 		ShopifyDraftInvoice: draftInvoiceURL,
 		TotalPrice:          fmt.Sprintf("%.2f", order.TotalPrice),
@@ -301,6 +302,46 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 		TotalChargedNow:     fmt.Sprintf("%.2f", order.TotalChargedNow),
 		Currency:            order.Currency,
 		LineItems:           LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
+	}
+
+	if order.Customer != nil {
+		firstName := ""
+		lastName := ""
+		if order.Customer.FirstName != nil { firstName = *order.Customer.FirstName }
+		if order.Customer.LastName != nil { lastName = *order.Customer.LastName }
+		phone := ""
+		if order.Customer.Phone != nil { phone = *order.Customer.Phone }
+
+		response.Customer = &CustomerDTO{
+			ID:        order.Customer.ID,
+			FirstName: firstName,
+			LastName:  lastName,
+			Email:     order.Customer.Email,
+			Phone:     phone,
+		}
+	}
+
+	if order.ShippingAddress != nil {
+		firstName := ""
+		lastName := ""
+		if order.ShippingAddress.FirstName != nil { firstName = *order.ShippingAddress.FirstName }
+		if order.ShippingAddress.LastName != nil { lastName = *order.ShippingAddress.LastName }
+		address2 := ""
+		if order.ShippingAddress.Address2 != nil { address2 = *order.ShippingAddress.Address2 }
+		phone := ""
+		if order.ShippingAddress.Phone != nil { phone = *order.ShippingAddress.Phone }
+
+		response.ShippingAddress = &AddressDTO{
+			FirstName: firstName,
+			LastName:  lastName,
+			Address1:  order.ShippingAddress.Address1,
+			Address2:  address2,
+			City:      order.ShippingAddress.City,
+			Province:  order.ShippingAddress.Province,
+			Country:   order.ShippingAddress.Country,
+			Zip:       order.ShippingAddress.Zip,
+			Phone:     phone,
+		}
 	}
 
 	// Trigger email notification
@@ -420,9 +461,10 @@ func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery
 			preOrder = []OrderItemDetail{}
 		}
 
-		res = append(res, OrderResponse{
+		dto := OrderResponse{
 			ID:                o.ID,
 			OrderNumber:       o.OrderNumber,
+			OrderDate:         o.CreatedAt.Format(time.RFC3339),
 			TotalPrice:        fmt.Sprintf("%.2f", o.TotalPrice),
 			AggregateStatus:   o.AggregateStatus,
 			FinancialStatus:   o.FinancialStatus,
@@ -433,7 +475,49 @@ func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery
 			TotalChargedNow:   fmt.Sprintf("%.2f", o.TotalChargedNow),
 			Currency:          o.Currency,
 			LineItems:         LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
-		})
+		}
+
+		if o.Customer != nil {
+			firstName := ""
+			lastName := ""
+			if o.Customer.FirstName != nil { firstName = *o.Customer.FirstName }
+			if o.Customer.LastName != nil { lastName = *o.Customer.LastName }
+			phone := ""
+			if o.Customer.Phone != nil { phone = *o.Customer.Phone }
+
+			dto.Customer = &CustomerDTO{
+				ID:        o.Customer.ID,
+				FirstName: firstName,
+				LastName:  lastName,
+				Email:     o.Customer.Email,
+				Phone:     phone,
+			}
+		}
+
+		if o.ShippingAddress != nil {
+			firstName := ""
+			lastName := ""
+			if o.ShippingAddress.FirstName != nil { firstName = *o.ShippingAddress.FirstName }
+			if o.ShippingAddress.LastName != nil { lastName = *o.ShippingAddress.LastName }
+			address2 := ""
+			if o.ShippingAddress.Address2 != nil { address2 = *o.ShippingAddress.Address2 }
+			phone := ""
+			if o.ShippingAddress.Phone != nil { phone = *o.ShippingAddress.Phone }
+
+			dto.ShippingAddress = &AddressDTO{
+				FirstName: firstName,
+				LastName:  lastName,
+				Address1:  o.ShippingAddress.Address1,
+				Address2:  address2,
+				City:      o.ShippingAddress.City,
+				Province:  o.ShippingAddress.Province,
+				Country:   o.ShippingAddress.Country,
+				Zip:       o.ShippingAddress.Zip,
+				Phone:     phone,
+			}
+		}
+
+		res = append(res, dto)
 	}
 	if res == nil {
 		res = []OrderResponse{}
@@ -506,9 +590,10 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 		preOrder = []OrderItemDetail{}
 	}
 
-	return &OrderResponse{
+	dto := &OrderResponse{
 		ID:                  o.ID,
 		OrderNumber:         o.OrderNumber,
+		OrderDate:           o.CreatedAt.Format(time.RFC3339),
 		ShopifyCheckoutURL:  "",
 		ShopifyDraftInvoice: "",
 		TotalPrice:          fmt.Sprintf("%.2f", o.TotalPrice),
@@ -521,7 +606,49 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 		TotalChargedNow:     fmt.Sprintf("%.2f", o.TotalChargedNow),
 		Currency:            o.Currency,
 		LineItems:           LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
-	}, nil
+	}
+
+	if o.Customer != nil {
+		firstName := ""
+		lastName := ""
+		if o.Customer.FirstName != nil { firstName = *o.Customer.FirstName }
+		if o.Customer.LastName != nil { lastName = *o.Customer.LastName }
+		phone := ""
+		if o.Customer.Phone != nil { phone = *o.Customer.Phone }
+
+		dto.Customer = &CustomerDTO{
+			ID:        o.Customer.ID,
+			FirstName: firstName,
+			LastName:  lastName,
+			Email:     o.Customer.Email,
+			Phone:     phone,
+		}
+	}
+
+	if o.ShippingAddress != nil {
+		firstName := ""
+		lastName := ""
+		if o.ShippingAddress.FirstName != nil { firstName = *o.ShippingAddress.FirstName }
+		if o.ShippingAddress.LastName != nil { lastName = *o.ShippingAddress.LastName }
+		address2 := ""
+		if o.ShippingAddress.Address2 != nil { address2 = *o.ShippingAddress.Address2 }
+		phone := ""
+		if o.ShippingAddress.Phone != nil { phone = *o.ShippingAddress.Phone }
+
+		dto.ShippingAddress = &AddressDTO{
+			FirstName: firstName,
+			LastName:  lastName,
+			Address1:  o.ShippingAddress.Address1,
+			Address2:  address2,
+			City:      o.ShippingAddress.City,
+			Province:  o.ShippingAddress.Province,
+			Country:   o.ShippingAddress.Country,
+			Zip:       o.ShippingAddress.Zip,
+			Phone:     phone,
+		}
+	}
+
+	return dto, nil
 }
 
 func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string) (*OrderResponse, error) {
@@ -592,9 +719,10 @@ func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string
 		preOrder = []OrderItemDetail{}
 	}
 
-	return &OrderResponse{
+	dto := &OrderResponse{
 		ID:                o.ID,
 		OrderNumber:       o.OrderNumber,
+		OrderDate:         o.CreatedAt.Format(time.RFC3339),
 		TotalPrice:        fmt.Sprintf("%.2f", o.TotalPrice),
 		AggregateStatus:   o.AggregateStatus,
 		FinancialStatus:   o.FinancialStatus,
@@ -605,7 +733,49 @@ func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string
 		TotalChargedNow:   fmt.Sprintf("%.2f", o.TotalChargedNow),
 		Currency:          o.Currency,
 		LineItems:         LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
-	}, nil
+	}
+
+	if o.Customer != nil {
+		firstName := ""
+		lastName := ""
+		if o.Customer.FirstName != nil { firstName = *o.Customer.FirstName }
+		if o.Customer.LastName != nil { lastName = *o.Customer.LastName }
+		phone := ""
+		if o.Customer.Phone != nil { phone = *o.Customer.Phone }
+
+		dto.Customer = &CustomerDTO{
+			ID:        o.Customer.ID,
+			FirstName: firstName,
+			LastName:  lastName,
+			Email:     o.Customer.Email,
+			Phone:     phone,
+		}
+	}
+
+	if o.ShippingAddress != nil {
+		firstName := ""
+		lastName := ""
+		if o.ShippingAddress.FirstName != nil { firstName = *o.ShippingAddress.FirstName }
+		if o.ShippingAddress.LastName != nil { lastName = *o.ShippingAddress.LastName }
+		address2 := ""
+		if o.ShippingAddress.Address2 != nil { address2 = *o.ShippingAddress.Address2 }
+		phone := ""
+		if o.ShippingAddress.Phone != nil { phone = *o.ShippingAddress.Phone }
+
+		dto.ShippingAddress = &AddressDTO{
+			FirstName: firstName,
+			LastName:  lastName,
+			Address1:  o.ShippingAddress.Address1,
+			Address2:  address2,
+			City:      o.ShippingAddress.City,
+			Province:  o.ShippingAddress.Province,
+			Country:   o.ShippingAddress.Country,
+			Zip:       o.ShippingAddress.Zip,
+			Phone:     phone,
+		}
+	}
+
+	return dto, nil
 }
 
 func (s *service) AcceptOrder(ctx context.Context, userID, orderID, fulfillmentType string) error {
