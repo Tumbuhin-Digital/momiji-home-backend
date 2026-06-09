@@ -68,6 +68,7 @@ func (h *Handler) extractAuth(c *fiber.Ctx) (*string, *string) {
 // @Tags Cart
 // @Produce json
 // @Security BearerAuth
+// @Security SessionAuth
 // @Success 200 {object} response.Envelope{data=CartResponse}
 // @Router /cart [get]
 func (h *Handler) GetCart(c *fiber.Ctx) error {
@@ -84,6 +85,7 @@ func (h *Handler) GetCart(c *fiber.Ctx) error {
 // @Tags Cart
 // @Produce json
 // @Security BearerAuth
+// @Security SessionAuth
 // @Success 200 {object} response.Envelope{data=CartSummaryDTO}
 // @Router /cart/summary [get]
 func (h *Handler) GetSummary(c *fiber.Ctx) error {
@@ -101,6 +103,7 @@ func (h *Handler) GetSummary(c *fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Security SessionAuth
 // @Param request body CartItemRequest true "Add Item Request"
 // @Success 200 {object} response.Envelope
 // @Router /cart/items [post]
@@ -126,6 +129,7 @@ func (h *Handler) AddItem(c *fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Security SessionAuth
 // @Param id path string true "Item ID"
 // @Param request body UpdateCartItemRequest true "Update Quantity Request"
 // @Success 200 {object} response.Envelope
@@ -153,6 +157,7 @@ func (h *Handler) UpdateItem(c *fiber.Ctx) error {
 // @Tags Cart
 // @Produce json
 // @Security BearerAuth
+// @Security SessionAuth
 // @Param id path string true "Item ID"
 // @Success 200 {object} response.Envelope
 // @Router /cart/items/{id} [delete]
@@ -171,6 +176,7 @@ func (h *Handler) RemoveItem(c *fiber.Ctx) error {
 // @Tags Cart
 // @Produce json
 // @Security BearerAuth
+// @Security SessionAuth
 // @Success 200 {object} response.Envelope
 // @Router /cart [delete]
 func (h *Handler) ClearCart(c *fiber.Ctx) error {

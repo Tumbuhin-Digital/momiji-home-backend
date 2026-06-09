@@ -43,6 +43,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Security SessionAuth
 // @Param request body CreateOrderRequest true "Create Order Request"
 // @Success 201 {object} response.Envelope{data=OrderResponse}
 // @Router /orders [post]

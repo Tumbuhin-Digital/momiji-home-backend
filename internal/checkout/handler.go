@@ -73,6 +73,7 @@ func (h *Handler) GetShippingMethods(c *fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Security SessionAuth
 // @Param request body CalculateShippingRequest true "Calculate Request"
 // @Success 200 {object} response.Envelope
 // @Router /shipping/calculate [post]
@@ -100,6 +101,7 @@ func (h *Handler) CalculateShipping(c *fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Security SessionAuth
 // @Param request body CheckoutSummaryRequest true "Checkout Summary Request"
 // @Success 200 {object} response.Envelope{data=CheckoutSummaryResponse}
 // @Router /checkout/summary [post]
@@ -169,6 +171,7 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Security SessionAuth
 // @Param request body InitiateCheckoutRequest true "Initiate Checkout Request"
 // @Success 200 {object} response.Envelope{data=InitiateCheckoutResponse}
 // @Router /checkout [post]

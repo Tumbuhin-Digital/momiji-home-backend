@@ -916,6 +916,7 @@ paths:
             $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
       security:
       - BearerAuth: []
+      - SessionAuth: []
       summary: Clear all cart items
       tags:
       - Cart
@@ -934,6 +935,7 @@ paths:
               type: object
       security:
       - BearerAuth: []
+      - SessionAuth: []
       summary: Get Cart
       tags:
       - Cart
@@ -957,6 +959,7 @@ paths:
             $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
       security:
       - BearerAuth: []
+      - SessionAuth: []
       summary: Add item to cart
       tags:
       - Cart
@@ -977,6 +980,7 @@ paths:
             $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
       security:
       - BearerAuth: []
+      - SessionAuth: []
       summary: Remove item from cart
       tags:
       - Cart
@@ -1004,6 +1008,7 @@ paths:
             $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
       security:
       - BearerAuth: []
+      - SessionAuth: []
       summary: Update item quantity
       tags:
       - Cart
@@ -1063,6 +1068,7 @@ paths:
               type: object
       security:
       - BearerAuth: []
+      - SessionAuth: []
       summary: Get Cart Summary
       tags:
       - Cart
@@ -1091,6 +1097,7 @@ paths:
               type: object
       security:
       - BearerAuth: []
+      - SessionAuth: []
       summary: Initiate Shopify checkout
       tags:
       - Checkout
@@ -1149,6 +1156,7 @@ paths:
               type: object
       security:
       - BearerAuth: []
+      - SessionAuth: []
       summary: Get checkout summary
       tags:
       - Checkout
@@ -1283,6 +1291,7 @@ paths:
               type: object
       security:
       - BearerAuth: []
+      - SessionAuth: []
       summary: Create an order from cart
       tags:
       - Order
@@ -1844,6 +1853,7 @@ paths:
             $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
       security:
       - BearerAuth: []
+      - SessionAuth: []
       summary: Calculate shipping cost
       tags:
       - Shipping
@@ -1908,5 +1918,9 @@ securityDefinitions:
   BearerAuth:
     in: header
     name: Authorization
+    type: apiKey
+  SessionAuth:
+    in: header
+    name: X-Session-ID
     type: apiKey
 swagger: "2.0"

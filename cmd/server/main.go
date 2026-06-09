@@ -9,6 +9,9 @@ package main
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
+// @securityDefinitions.apikey SessionAuth
+// @in header
+// @name X-Session-ID
 
 import (
 	"context"
