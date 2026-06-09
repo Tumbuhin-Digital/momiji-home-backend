@@ -51,6 +51,9 @@ func (s *service) GetVariantByID(ctx context.Context, variantID string) (*Varian
 		} else {
 			dto.Title = p.Title + " - " + variant.Title
 		}
+		if dto.ImageSrc == "" && len(p.Images) > 0 {
+			dto.ImageSrc = p.Images[0].Src
+		}
 	}
 
 	return dto, nil
@@ -70,11 +73,6 @@ func (s *service) GetProducts(ctx context.Context, query ProductQuery) ([]Produc
 }
 
 func mapProductToDTO(p *Product) ProductDTO {
-	variants := make([]VariantDTO, len(p.Variants))
-	for i, v := range p.Variants {
-		variants[i] = *mapVariantToDTO(&v)
-	}
-
 	images := make([]ProductImageDTO, len(p.Images))
 	for i, img := range p.Images {
 		images[i] = ProductImageDTO{
@@ -86,6 +84,15 @@ func mapProductToDTO(p *Product) ProductDTO {
 	}
 	if images == nil {
 		images = []ProductImageDTO{}
+	}
+
+	variants := make([]VariantDTO, len(p.Variants))
+	for i, v := range p.Variants {
+		vDto := mapVariantToDTO(&v)
+		if vDto.ImageSrc == "" && len(p.Images) > 0 {
+			vDto.ImageSrc = p.Images[0].Src
+		}
+		variants[i] = *vDto
 	}
 
 	// Determine product-level preorder_batch_label and expected_ship_date from first variant
