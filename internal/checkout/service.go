@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
@@ -13,17 +14,19 @@ import (
 
 type CheckoutService interface {
 	InitiateCheckout(ctx context.Context, userID, sessionID *string, req InitiateCheckoutRequest) (*InitiateCheckoutResponse, error)
+	ValidateAddress(ctx context.Context, req ValidateAddressRequest) map[string]string
 }
 
 type service struct {
 	cartService      cart.CartService
 	shopifyCli       shopify.Client
 	stockLockService StockLockService
+	store            StockLockStore
 	feURL            string
 }
 
-func NewCheckoutService(cartService cart.CartService, shopifyCli shopify.Client, stockLockService StockLockService, feURL string) CheckoutService {
-	return &service{cartService: cartService, shopifyCli: shopifyCli, stockLockService: stockLockService, feURL: feURL}
+func NewCheckoutService(cartService cart.CartService, shopifyCli shopify.Client, stockLockService StockLockService, store StockLockStore, feURL string) CheckoutService {
+	return &service{cartService: cartService, shopifyCli: shopifyCli, stockLockService: stockLockService, store: store, feURL: feURL}
 }
 
 func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *string, req InitiateCheckoutRequest) (*InitiateCheckoutResponse, error) {
@@ -126,4 +129,31 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	return &InitiateCheckoutResponse{
 		CheckoutUrl: checkoutUrl,
 	}, nil
+}
+
+func (s *service) ValidateAddress(ctx context.Context, req ValidateAddressRequest) map[string]string {
+	if !strings.EqualFold(req.Country, "US") && !strings.EqualFold(req.Country, "United States") {
+		return nil
+	}
+
+	zipDetails, err := s.store.GetUSZipCodeDetails(ctx, req.Zip)
+	if err != nil || zipDetails == nil {
+		return map[string]string{"zip": "Invalid US ZIP code"}
+	}
+
+	errors := make(map[string]string)
+
+	if !strings.EqualFold(req.City, zipDetails.City) {
+		errors["city"] = "City does not match ZIP"
+	}
+
+	if !strings.EqualFold(req.State, zipDetails.StateAbbr) && !strings.EqualFold(req.State, zipDetails.StateName) {
+		errors["state"] = "State does not match ZIP"
+	}
+
+	if len(errors) > 0 {
+		return errors
+	}
+
+	return nil
 }

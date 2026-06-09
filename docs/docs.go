@@ -1987,6 +1987,53 @@ const docTemplate = `{
                 }
             }
         },
+        "/shipping/validate-address": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Shipping"
+                ],
+                "summary": "Validate shipping address",
+                "parameters": [
+                    {
+                        "description": "Validate Address Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_checkout.ValidateAddressRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
         "/webhooks/shopify/inventory_levels/update": {
             "post": {
                 "consumes": [
@@ -2515,6 +2562,29 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/internal_checkout.ShippingMethod"
                     }
+                }
+            }
+        },
+        "internal_checkout.ValidateAddressRequest": {
+            "type": "object",
+            "required": [
+                "city",
+                "country",
+                "state",
+                "zip"
+            ],
+            "properties": {
+                "city": {
+                    "type": "string"
+                },
+                "country": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "zip": {
+                    "type": "string"
                 }
             }
         },
