@@ -126,7 +126,14 @@ func (h *Handler) GetOrders(c *fiber.Ctx) error {
 // @Router /orders/{id} [get]
 func (h *Handler) GetOrder(c *fiber.Ctx) error {
 	uid := c.Locals("user_id").(string)
-	res, err := h.service.GetOrder(c.Context(), uid, c.Params("id"))
+	role := c.Locals("role").(string)
+
+	customerID := uid
+	if role == "admin" {
+		customerID = ""
+	}
+
+	res, err := h.service.GetOrder(c.Context(), customerID, c.Params("id"))
 	if err != nil {
 		return response.Error(c, err)
 	}

@@ -55,3 +55,14 @@ func (s *PostgresStockLockStore) DeleteLocksBySession(ctx context.Context, userI
 func (s *PostgresStockLockStore) DeleteExpiredLocks(ctx context.Context) error {
 	return s.db.WithContext(ctx).Where("expires_at <= ?", time.Now()).Delete(&StockLock{}).Error
 }
+
+func (s *PostgresStockLockStore) GetUSZipCodeDetails(ctx context.Context, zip string) (*UsZipCode, error) {
+	var zipCode UsZipCode
+	if err := s.db.WithContext(ctx).Where("zip_code = ?", zip).First(&zipCode).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &zipCode, nil
+}

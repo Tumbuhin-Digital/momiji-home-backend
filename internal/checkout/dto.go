@@ -73,3 +73,10 @@ type InitiateCheckoutRequest struct {
 type InitiateCheckoutResponse struct {
 	CheckoutUrl string `json:"checkout_url"`
 }
+
+type ValidateAddressRequest struct {
+	Country string `json:"country" validate:"required"`
+	State   string `json:"state" validate:"required"`
+	City    string `json:"city" validate:"required"`
+	Zip     string `json:"zip" validate:"required"`
+}

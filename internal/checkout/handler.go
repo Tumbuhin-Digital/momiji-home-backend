@@ -29,6 +29,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	shipping.Use(middleware.OptionalAuth(h.jwtSecret))
 	shipping.Get("/methods", h.GetShippingMethods)
 	shipping.Post("/calculate", h.CalculateShipping)
+	shipping.Post("/validate-address", h.ValidateAddress)
 
 	// Checkout routes (authenticated)
 	checkout := router.Group("/checkout")
@@ -228,4 +229,39 @@ func (h *Handler) GetCheckoutConfirm(c *fiber.Ctx) error {
 		"status":           orderRes.FinancialStatus,
 		"shopify_order_id": orderID,
 	})
+}
+
+// ValidateAddress godoc
+// @Summary Validate shipping address
+// @Tags Shipping
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Security SessionAuth
+// @Param request body ValidateAddressRequest true "Validate Address Request"
+// @Success 200 {object} response.Envelope
+// @Failure 422 {object} response.Envelope
+// @Router /shipping/validate-address [post]
+func (h *Handler) ValidateAddress(c *fiber.Ctx) error {
+	var req ValidateAddressRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	errs := h.checkoutService.ValidateAddress(c.Context(), req)
+	if len(errs) > 0 {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(response.Envelope{
+			Status:  "error",
+			Message: "Address validation failed",
+			Error: &response.ErrorBlock{
+				Code:    "validation_error",
+				Details: errs,
+			},
+		})
+	}
+
+	return response.Success(c, fiber.StatusOK, "Address is valid", nil)
 }

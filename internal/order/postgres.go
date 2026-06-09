@@ -22,8 +22,15 @@ func (s *PostgresStore) CreateOrder(ctx context.Context, order *Order) error {
 
 func (s *PostgresStore) GetOrder(ctx context.Context, orderID, customerID string) (*Order, error) {
 	var order Order
-	err := s.db.WithContext(ctx).Preload("Items").Preload("Customer").Preload("ShippingAddress").Where("id = ? AND customer_id = ?", orderID, customerID).First(&order).Error
+	query := s.db.WithContext(ctx).Preload("Items").Preload("Customer").Preload("ShippingAddress").Where("id = ?", orderID)
+	if customerID != "" {
+		query = query.Where("customer_id = ?", customerID)
+	}
+	err := query.First(&order).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &order, nil

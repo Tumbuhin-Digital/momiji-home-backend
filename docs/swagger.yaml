@@ -307,6 +307,22 @@ definitions:
           $ref: '#/definitions/internal_checkout.ShippingMethod'
         type: array
     type: object
+  internal_checkout.ValidateAddressRequest:
+    properties:
+      city:
+        type: string
+      country:
+        type: string
+      state:
+        type: string
+      zip:
+        type: string
+    required:
+    - city
+    - country
+    - state
+    - zip
+    type: object
   internal_customer.AddressResponse:
     properties:
       address1:
@@ -1874,6 +1890,34 @@ paths:
       security:
       - BearerAuth: []
       summary: List shipping methods
+      tags:
+      - Shipping
+  /shipping/validate-address:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Validate Address Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_checkout.ValidateAddressRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/github_com_tumbuhindigi-sys_momiji-home-backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      - SessionAuth: []
+      summary: Validate shipping address
       tags:
       - Shipping
   /webhooks/shopify/inventory_levels/update:
