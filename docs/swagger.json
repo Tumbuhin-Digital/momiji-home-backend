@@ -304,6 +304,9 @@
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "produces": [
@@ -338,6 +341,9 @@
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "produces": [
@@ -362,6 +368,9 @@
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "consumes": [
@@ -400,6 +409,9 @@
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "produces": [
@@ -431,6 +443,9 @@
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "consumes": [
@@ -545,6 +560,9 @@
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "produces": [
@@ -581,6 +599,9 @@
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "consumes": [
@@ -683,6 +704,9 @@
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "consumes": [
@@ -922,6 +946,9 @@
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "consumes": [
@@ -1882,6 +1909,9 @@
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "consumes": [
@@ -3141,6 +3171,11 @@
         "BearerAuth": {
             "type": "apiKey",
             "name": "Authorization",
+            "in": "header"
+        },
+        "SessionAuth": {
+            "type": "apiKey",
+            "name": "X-Session-ID",
             "in": "header"
         }
     }

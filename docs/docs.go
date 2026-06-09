@@ -310,6 +310,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "produces": [
@@ -344,6 +347,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "produces": [
@@ -368,6 +374,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "consumes": [
@@ -406,6 +415,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "produces": [
@@ -437,6 +449,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "consumes": [
@@ -551,6 +566,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "produces": [
@@ -587,6 +605,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "consumes": [
@@ -689,6 +710,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "consumes": [
@@ -928,6 +952,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "consumes": [
@@ -1888,6 +1915,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "SessionAuth": []
                     }
                 ],
                 "consumes": [
@@ -3147,6 +3177,11 @@ const docTemplate = `{
         "BearerAuth": {
             "type": "apiKey",
             "name": "Authorization",
+            "in": "header"
+        },
+        "SessionAuth": {
+            "type": "apiKey",
+            "name": "X-Session-ID",
             "in": "header"
         }
     }
