@@ -178,7 +178,7 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 				}
 				variants(first: 10) {
 				  edges {
-					node { id title sku price inventoryQuantity image { url } inventoryItem { id } }
+					node { id title sku price weight weightUnit inventoryQuantity image { url } inventoryItem { id } }
 				  }
 				}
 			  }
@@ -221,11 +221,13 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 							Variants        struct {
 								Edges []struct {
 									Node struct {
-										ID                string `json:"id"`
-										Title             string `json:"title"`
-										Sku               string `json:"sku"`
-										Price             string `json:"price"`
-										InventoryQuantity int    `json:"inventoryQuantity"`
+										ID                string  `json:"id"`
+										Title             string  `json:"title"`
+										Sku               string  `json:"sku"`
+										Price             string  `json:"price"`
+										Weight            float64 `json:"weight"`
+										WeightUnit        string  `json:"weightUnit"`
+										InventoryQuantity int     `json:"inventoryQuantity"`
 										Image             struct {
 											Url string `json:"url"`
 										} `json:"image"`
@@ -286,6 +288,15 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 			for _, vEdge := range pNode.Variants.Edges {
 				vNode := vEdge.Node
 				price, _ := strconv.ParseFloat(vNode.Price, 64)
+				weightKg := vNode.Weight
+				if vNode.WeightUnit == "GRAMS" {
+					weightKg = vNode.Weight / 1000.0
+				} else if vNode.WeightUnit == "OUNCES" {
+					weightKg = vNode.Weight * 0.0283495
+				} else if vNode.WeightUnit == "POUNDS" {
+					weightKg = vNode.Weight * 0.453592
+				}
+
 				variant := &ProductVariant{
 					ProductID:              p.ID,
 					ShopifyVariantID:       vNode.ID,
@@ -295,6 +306,7 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 					ImageSrc:               vNode.Image.Url,
 					InventoryQuantity:      vNode.InventoryQuantity,
 					ShopifyInventoryItemID: vNode.InventoryItem.ID,
+					WeightKg:               weightKg,
 				}
 				if err := s.store.UpsertVariant(ctx, variant); err != nil {
 					return fmt.Errorf("failed to upsert variant %s: %w", variant.ShopifyVariantID, err)
