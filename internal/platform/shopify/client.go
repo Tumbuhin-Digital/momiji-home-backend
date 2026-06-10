@@ -14,6 +14,7 @@ type Client interface {
 	CreateDraftOrder(ctx context.Context, input DraftOrderInput) (*DraftOrderResponse, error)
 	CreateStorefrontCart(ctx context.Context, input CartCreateInput) (*CartCreateResponse, error)
 	CreateRefund(ctx context.Context, shopifyOrderID string, amount float64, currency string, reason string) error
+	GetVariantsInventory(ctx context.Context, variantIDs []string) (map[string]int, error)
 }
 
 type clientImpl struct {
@@ -316,4 +317,49 @@ func (c *clientImpl) CreateStorefrontCart(ctx context.Context, input CartCreateI
 	}
 
 	return res.Data.CartCreate.Cart, nil
+}
+
+func (c *clientImpl) GetVariantsInventory(ctx context.Context, variantIDs []string) (map[string]int, error) {
+	if len(variantIDs) == 0 {
+		return make(map[string]int), nil
+	}
+
+	query := `
+		query getVariantsInventory($ids: [ID!]!) {
+		  nodes(ids: $ids) {
+			... on ProductVariant {
+			  id
+			  inventoryQuantity
+			}
+		  }
+		}
+	`
+	vars := map[string]interface{}{"ids": variantIDs}
+	
+	resBytes, err := c.QueryAdminGraphQL(ctx, query, vars)
+	if err != nil {
+		return nil, err
+	}
+
+	var res struct {
+		Data struct {
+			Nodes []struct {
+				ID                string `json:"id"`
+				InventoryQuantity int    `json:"inventoryQuantity"`
+			} `json:"nodes"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resBytes, &res); err != nil {
+		return nil, err
+	}
+
+	inventoryMap := make(map[string]int)
+	for _, node := range res.Data.Nodes {
+		if node.ID != "" {
+			inventoryMap[node.ID] = node.InventoryQuantity
+		}
+	}
+
+	return inventoryMap, nil
 }

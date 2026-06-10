@@ -150,6 +150,8 @@ type MockShopifyClient struct {
 	DraftOrderErr        error
 	CartResponse     *shopify.CartCreateResponse
 	CartErr          error
+	GetVariantsInventoryResponse map[string]int
+	GetVariantsInventoryErr      error
 }
 
 func (m *MockShopifyClient) QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error) {
@@ -168,11 +170,16 @@ func (m *MockShopifyClient) CreateRefund(ctx context.Context, shopifyOrderID str
 	return nil
 }
 
+func (m *MockShopifyClient) GetVariantsInventory(ctx context.Context, variantIDs []string) (map[string]int, error) {
+	return m.GetVariantsInventoryResponse, m.GetVariantsInventoryErr
+}
+
 type MockShopifyClientFunc struct {
 	QueryAdminGraphQLFn      func(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error)
 	CreateDraftOrderFn       func(ctx context.Context, input shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error)
-	CreateStorefrontCartFunc func(ctx context.Context, input shopify.CartCreateInput) (*shopify.CartCreateResponse, error)
-	CreateRefundFunc         func(ctx context.Context, shopifyOrderID string, amount float64, currency string, reason string) error
+	CreateStorefrontCartFunc   func(ctx context.Context, input shopify.CartCreateInput) (*shopify.CartCreateResponse, error)
+	CreateRefundFunc           func(ctx context.Context, shopifyOrderID string, amount float64, currency string, reason string) error
+	GetVariantsInventoryFunc   func(ctx context.Context, variantIDs []string) (map[string]int, error)
 }
 
 func (m *MockShopifyClientFunc) QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error) {
@@ -195,4 +202,11 @@ func (m *MockShopifyClientFunc) CreateRefund(ctx context.Context, shopifyOrderID
 		return m.CreateRefundFunc(ctx, shopifyOrderID, amount, currency, reason)
 	}
 	return nil
+}
+
+func (m *MockShopifyClientFunc) GetVariantsInventory(ctx context.Context, variantIDs []string) (map[string]int, error) {
+	if m.GetVariantsInventoryFunc != nil {
+		return m.GetVariantsInventoryFunc(ctx, variantIDs)
+	}
+	return make(map[string]int), nil
 }
