@@ -54,21 +54,36 @@ func NewWebhookService(
 	}
 }
 
-func (s *service) getLocalVariant(ctx context.Context, restVariantID int64) (*product.ProductVariant, error) {
+func (s *service) getLocalVariant(ctx context.Context, item ShopifyOrderLineItem) (*product.ProductVariant, error) {
+	for _, prop := range item.Properties {
+		if prop.Name == "variant_ref" {
+			if gid, ok := prop.Value.(string); ok && gid != "" {
+				v, err := s.productStore.GetVariantByShopifyID(ctx, gid)
+				if err == nil && v != nil {
+					return v, nil
+				}
+			}
+		}
+	}
+
+	if item.VariantID == 0 {
+		return nil, apierror.ErrNotFound
+	}
+
 	// Webhooks usually send numeric IDs, but our DB stores GraphQL GIDs: gid://shopify/ProductVariant/12345
 	// We'll search by exact match or suffix match
-	suffix := fmt.Sprintf("/%d", restVariantID)
+	suffix := fmt.Sprintf("/%d", item.VariantID)
 	
 	// Since we don't have a GetVariantBySuffix method in store, we might need to fetch all and filter or 
 	// construct the GID if we assume the standard format.
-	gid := fmt.Sprintf("gid://shopify/ProductVariant/%d", restVariantID)
+	gid := fmt.Sprintf("gid://shopify/ProductVariant/%d", item.VariantID)
 	v, err := s.productStore.GetVariantByShopifyID(ctx, gid)
 	if err == nil && v != nil {
 		return v, nil
 	}
 	
 	// If exact GID fails, fallback to simple numeric string (just in case)
-	v2, err := s.productStore.GetVariantByShopifyID(ctx, strconv.FormatInt(restVariantID, 10))
+	v2, err := s.productStore.GetVariantByShopifyID(ctx, strconv.FormatInt(item.VariantID, 10))
 	if err == nil && v2 != nil {
 		return v2, nil
 	}
@@ -118,7 +133,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 	var draftItems []shopify.DraftOrderLineItem
 
 	for _, item := range payload.LineItems {
-		variant, err := s.getLocalVariant(ctx, item.VariantID)
+		variant, err := s.getLocalVariant(ctx, item)
 		if err != nil {
 			slog.WarnContext(ctx, "Webhook: variant not found locally", slog.Int64("variant_id", item.VariantID))
 			continue
@@ -132,8 +147,18 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 			hasPreOrder = true
 			totalDepositPaid += price
 			
-			// Assume balance is equal to deposit for 50/50 rule
-			bal := price
+			fullPrice := price * 2
+			for _, prop := range item.Properties {
+				if prop.Name == "full_price" {
+					if valStr, ok := prop.Value.(string); ok {
+						if p, err := strconv.ParseFloat(valStr, 64); err == nil {
+							fullPrice = p
+						}
+					}
+				}
+			}
+
+			bal := fullPrice - price
 			totalBalanceDue += bal
 
 			title := item.Title
@@ -173,20 +198,17 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		}
 	}
 
-	var draftOrderID string
-	if hasPreOrder && len(draftItems) > 0 {
-		draftInput := shopify.DraftOrderInput{
-			LineItems: draftItems,
-		}
-		if payload.Email != "" {
-			draftInput.Email = payload.Email
-		}
-
-		draftRes, draftErr := s.shopClient.CreateDraftOrder(ctx, draftInput)
-		if draftErr != nil {
-			slog.ErrorContext(ctx, "Webhook: failed to create draft order", slog.Any("error", draftErr))
-		} else if draftRes != nil {
-			draftOrderID = draftRes.ID
+	var checkoutRef string
+	var shippingMethod string
+	for _, note := range payload.NoteAttributes {
+		if note.Name == "checkout_reference" {
+			if val, ok := note.Value.(string); ok {
+				checkoutRef = val
+			}
+		} else if note.Name == "preorder_shipping_method" {
+			if val, ok := note.Value.(string); ok {
+				shippingMethod = val
+			}
 		}
 	}
 
@@ -194,7 +216,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 	if payload.OrderNumber == 0 {
 		orderNumber = fmt.Sprintf("ORD-%s", uuid.NewString()[:8])
 	}
-	
+
 	newOrder := &order.Order{
 		OrderNumber:       orderNumber,
 		CustomerID:        customerID,
@@ -211,8 +233,11 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		ShopifyOrderID:    &shopifyOrderIDStr,
 	}
 	
-	if draftOrderID != "" {
-		newOrder.ShopifyDraftOrderID = &draftOrderID
+	if checkoutRef != "" {
+		newOrder.ShopifyDraftOrderID = &checkoutRef
+	}
+	if shippingMethod != "" {
+		newOrder.ShippingMethod = &shippingMethod
 	}
 
 	if err := s.orderStore.CreateOrder(ctx, newOrder); err != nil {
