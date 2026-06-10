@@ -670,8 +670,8 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Shopify Order ID",
-                        "name": "shopify_order_id",
+                        "description": "Checkout Reference UUID",
+                        "name": "checkout_reference",
                         "in": "query",
                         "required": true
                     }
@@ -2128,6 +2128,9 @@ const docTemplate = `{
                 },
                 "variant_id": {
                     "type": "string"
+                },
+                "weight": {
+                    "type": "number"
                 }
             }
         },
@@ -2268,6 +2271,9 @@ const docTemplate = `{
                 },
                 "variant_id": {
                     "type": "string"
+                },
+                "weight": {
+                    "type": "number"
                 }
             }
         },
@@ -2529,6 +2535,9 @@ const docTemplate = `{
         "internal_checkout.InitiateCheckoutResponse": {
             "type": "object",
             "properties": {
+                "checkout_reference": {
+                    "type": "string"
+                },
                 "checkout_url": {
                     "type": "string"
                 }
@@ -3196,6 +3205,12 @@ const docTemplate = `{
                 "price": {
                     "type": "string"
                 },
+                "properties": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_webhook.ShopifyProperty"
+                    }
+                },
                 "quantity": {
                     "type": "integer"
                 },
@@ -3234,12 +3249,27 @@ const docTemplate = `{
                         "$ref": "#/definitions/internal_webhook.ShopifyOrderLineItem"
                     }
                 },
+                "note_attributes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_webhook.ShopifyProperty"
+                    }
+                },
                 "order_number": {
                     "type": "integer"
                 },
                 "total_price": {
                     "type": "string"
                 }
+            }
+        },
+        "internal_webhook.ShopifyProperty": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "value": {}
             }
         }
     },

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
@@ -39,13 +40,14 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		return nil, apierror.New(400, "bad_request", "cart is empty")
 	}
 
-	var lines []shopify.CartLineInput
+	var draftLines []shopify.DraftOrderLineItem
 	var lockReqs []LockRequest
 
 	for _, item := range cartRes.ShipReady {
-		lines = append(lines, shopify.CartLineInput{
-			MerchandiseId: item.VariantID,
-			Quantity:      item.Quantity,
+		draftLines = append(draftLines, shopify.DraftOrderLineItem{
+			VariantID:         item.VariantID,
+			Quantity:          item.Quantity,
+			OriginalUnitPrice: item.UnitPrice,
 		})
 		lockReqs = append(lockReqs, LockRequest{
 			ShopifyVariantID: item.VariantID,
@@ -60,74 +62,79 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	}
 
 	for _, item := range cartRes.PreOrder {
-		// Calculate 50% deposit
 		unitPrice, _ := strconv.ParseFloat(item.UnitPrice, 64)
 		deposit := unitPrice * 0.5
-
-		// Storefront Cart API allows overriding price using _customPrice attribute if configured, 
-		// but standard attributes just attach data. We'll add the attribute for tracking.
-		// NOTE: Actual Shopify custom pricing in carts requires Shopify Scripts or B2B APIs,
-		// or passing custom attributes and modifying the price via Scripts.
-		lines = append(lines, shopify.CartLineInput{
-			MerchandiseId: item.VariantID,
-			Quantity:      item.Quantity,
-			Attributes: []shopify.AttributeInput{
-				{Key: "_is_preorder", Value: "true"},
-				{Key: "_deposit_price", Value: fmt.Sprintf("%.2f", deposit)},
+		
+		requiresShipping := false
+		
+		draftLine := shopify.DraftOrderLineItem{
+			Title:             fmt.Sprintf("[PREORDER] %s (DP 50%%)", item.Title),
+			Quantity:          item.Quantity,
+			OriginalUnitPrice: fmt.Sprintf("%.2f", deposit),
+			RequiresShipping:  &requiresShipping,
+			CustomAttributes: []shopify.AttributeInput{
+				{Key: "type", Value: "preorder_dp"},
+				{Key: "full_price", Value: fmt.Sprintf("%.2f", unitPrice)},
+				{Key: "variant_ref", Value: item.VariantID},
 			},
+		}
+
+		if item.Weight > 0 {
+			draftLine.Weight = &shopify.DraftOrderLineItemWeightInput{
+				Unit:  "KILOGRAMS",
+				Value: item.Weight,
+			}
+		}
+
+		draftLines = append(draftLines, draftLine)
+	}
+
+	draftInput := shopify.DraftOrderInput{
+		LineItems: draftLines,
+	}
+
+	if req.Email != "" {
+		draftInput.Email = req.Email
+	}
+
+	checkoutRef := uuid.NewString()
+
+	draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
+		Key: "checkout_reference", Value: checkoutRef,
+	})
+
+	if req.ShippingMethod != "" {
+		draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
+			Key: "preorder_shipping_method", Value: req.ShippingMethod,
 		})
 	}
 
-	cartInput := shopify.CartCreateInput{
-		Lines: lines,
-	}
-
-	buyerIdentity := &shopify.CartBuyerIdentityInput{}
-	hasBuyerIdentity := false
-
-	if req.Email != "" {
-		buyerIdentity.Email = req.Email
-		hasBuyerIdentity = true
-	}
-	if req.Phone != "" {
-		buyerIdentity.Phone = req.Phone
-		hasBuyerIdentity = true
-	}
-
 	if req.Address1 != "" || req.City != "" {
-		buyerIdentity.DeliveryAddressPreferences = []shopify.CartDeliveryAddressInput{
-			{
-				DeliveryAddress: shopify.AddressInput{
-					FirstName: req.FirstName,
-					LastName:  req.LastName,
-					Address1:  req.Address1,
-					City:      req.City,
-					Province:  req.State,
-					Zip:       req.Zip,
-					Country:   req.Country,
-					Phone:     req.Phone,
-				},
-			},
+		draftInput.ShippingAddress = &shopify.AddressInput{
+			FirstName: req.FirstName,
+			LastName:  req.LastName,
+			Address1:  req.Address1,
+			City:      req.City,
+			Province:  req.State,
+			Zip:       req.Zip,
+			Country:   req.Country,
+			Phone:     req.Phone,
 		}
-		hasBuyerIdentity = true
 	}
 
-	if hasBuyerIdentity {
-		cartInput.BuyerIdentity = buyerIdentity
-	}
-
-	res, err := s.shopifyCli.CreateStorefrontCart(ctx, cartInput)
+	res, err := s.shopifyCli.CreateDraftOrder(ctx, draftInput)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create shopify cart: %w", err)
+		return nil, fmt.Errorf("failed to create shopify draft order: %w", err)
 	}
 
-	checkoutUrl := res.CheckoutUrl
+	checkoutUrl := res.InvoiceUrl
 	if s.feURL != "" {
 		checkoutUrl += "?return_to=" + url.QueryEscape(s.feURL)
 	}
 
 	return &InitiateCheckoutResponse{
-		CheckoutUrl: checkoutUrl,
+		CheckoutUrl:       checkoutUrl,
+		CheckoutReference: checkoutRef,
 	}, nil
 }
 

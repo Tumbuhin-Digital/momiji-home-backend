@@ -204,14 +204,18 @@ func (h *Handler) InitiateCheckout(c *fiber.Ctx) error {
 // @Tags Checkout
 // @Produce json
 // @Security BearerAuth
-// @Param shopify_order_id query string true "Shopify Order ID"
+// @Param checkout_reference query string true "Checkout Reference UUID"
 // @Success 200 {object} response.Envelope{data=map[string]interface{}}
 // @Failure 404 {object} response.Envelope
 // @Router /checkout/confirm [get]
 func (h *Handler) GetCheckoutConfirm(c *fiber.Ctx) error {
-	orderID := c.Query("shopify_order_id")
+	orderID := c.Query("checkout_reference")
 	if orderID == "" {
-		return response.Error(c, apierror.New(400, "bad_request", "shopify_order_id is required"))
+		// Fallback for older frontend polling implementations
+		orderID = c.Query("shopify_order_id")
+	}
+	if orderID == "" {
+		return response.Error(c, apierror.New(400, "bad_request", "checkout_reference is required"))
 	}
 	
 	// Fetch from OrderService

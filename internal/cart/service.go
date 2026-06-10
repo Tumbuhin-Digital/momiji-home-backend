@@ -109,6 +109,7 @@ func (s *service) GetCartResponse(ctx context.Context, userID, sessionID *string
 			InventoryQuantity: variant.InventoryQuantity,
 			UnitPrice:         fmt.Sprintf("%.2f", item.UnitPrice),
 			Subtotal:          fmt.Sprintf("%.2f", subtotal),
+			Weight:            variant.WeightKg,
 		}
 
 		if item.FulfillmentType == string(product.FulfillmentTypePreOrder) {

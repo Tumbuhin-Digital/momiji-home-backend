@@ -9,15 +9,22 @@ type ShopifyOrderWebhook struct {
 	FinancialStatus string                  `json:"financial_status"`
 	LineItems       []ShopifyOrderLineItem  `json:"line_items"`
 	Customer        ShopifyCustomer         `json:"customer"`
+	NoteAttributes  []ShopifyProperty       `json:"note_attributes"`
 }
 
 type ShopifyOrderLineItem struct {
 	ID        int64  `json:"id"`
 	VariantID int64  `json:"variant_id"`
 	Title     string `json:"title"`
-	Quantity  int    `json:"quantity"`
-	Price     string `json:"price"`
-	SKU       string `json:"sku"`
+	Quantity   int               `json:"quantity"`
+	Price      string            `json:"price"`
+	SKU        string            `json:"sku"`
+	Properties []ShopifyProperty `json:"properties"`
+}
+
+type ShopifyProperty struct {
+	Name  string      `json:"name"`
+	Value interface{} `json:"value"`
 }
 
 type ShopifyCustomer struct {

@@ -63,14 +63,33 @@ func (c *clientImpl) QueryAdminGraphQL(ctx context.Context, query string, variab
 }
 
 type DraftOrderInput struct {
-	LineItems  []DraftOrderLineItem `json:"lineItems"`
-	Email      string               `json:"email,omitempty"`
-	CustomerID string               `json:"customerId,omitempty"`
+	LineItems        []DraftOrderLineItem `json:"lineItems"`
+	Email            string               `json:"email,omitempty"`
+	CustomerID       string               `json:"customerId,omitempty"`
+	ShippingAddress  *AddressInput        `json:"shippingAddress,omitempty"`
+	ShippingLine     *ShippingLineInput   `json:"shippingLine,omitempty"`
+	CustomAttributes []AttributeInput     `json:"customAttributes,omitempty"`
+}
+
+type ShippingLineInput struct {
+	Price              string `json:"price"`
+	ShippingRateHandle string `json:"shippingRateHandle,omitempty"`
+	Title              string `json:"title"`
 }
 
 type DraftOrderLineItem struct {
-	VariantID string `json:"variantId"`
-	Quantity  int    `json:"quantity"`
+	VariantID         string                        `json:"variantId,omitempty"`
+	Title             string                        `json:"title,omitempty"`
+	OriginalUnitPrice string                        `json:"originalUnitPrice,omitempty"`
+	Quantity          int                           `json:"quantity"`
+	RequiresShipping  *bool                         `json:"requiresShipping,omitempty"`
+	CustomAttributes  []AttributeInput              `json:"customAttributes,omitempty"`
+	Weight            *DraftOrderLineItemWeightInput `json:"weight,omitempty"`
+}
+
+type DraftOrderLineItemWeightInput struct {
+	Unit  string  `json:"unit"`
+	Value float64 `json:"value"`
 }
 
 type DraftOrderResponse struct {
