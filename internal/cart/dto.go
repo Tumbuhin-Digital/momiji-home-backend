@@ -23,6 +23,7 @@ type CartItem struct {
 	DepositAmount     string `json:"deposit_amount,omitempty"`
 	BalanceDue        string `json:"balance_due,omitempty"`
 	Subtotal          string `json:"subtotal"`
+	Weight            float64 `json:"weight,omitempty"`
 }
 
 type CartSummaryDTO struct {
