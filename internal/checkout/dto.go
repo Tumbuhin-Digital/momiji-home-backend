@@ -71,7 +71,8 @@ type InitiateCheckoutRequest struct {
 }
 
 type InitiateCheckoutResponse struct {
-	CheckoutUrl string `json:"checkout_url"`
+	CheckoutUrl       string `json:"checkout_url"`
+	CheckoutReference string `json:"checkout_reference"`
 }
 
 type ValidateAddressRequest struct {
