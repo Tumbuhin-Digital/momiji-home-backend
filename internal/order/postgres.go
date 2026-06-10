@@ -42,7 +42,7 @@ func (s *PostgresStore) GetOrderByShopifyID(ctx context.Context, shopifyOrderID 
 		Preload("Items").
 		Preload("Customer").
 		Preload("ShippingAddress").
-		Where("shopify_order_id = ?", shopifyOrderID).
+		Where("shopify_order_id = ? OR shopify_draft_order_id = ?", shopifyOrderID, shopifyOrderID).
 		First(&order).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
