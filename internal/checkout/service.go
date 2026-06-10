@@ -64,9 +64,9 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	for _, item := range cartRes.PreOrder {
 		unitPrice, _ := strconv.ParseFloat(item.UnitPrice, 64)
 		deposit := unitPrice * 0.5
-		
+
 		requiresShipping := false
-		
+
 		draftLine := shopify.DraftOrderLineItem{
 			Title:             fmt.Sprintf("[PREORDER] %s (DP 50%%)", item.Title),
 			Quantity:          item.Quantity,

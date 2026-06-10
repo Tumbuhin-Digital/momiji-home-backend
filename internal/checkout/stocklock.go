@@ -2,8 +2,10 @@ package checkout
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 )
@@ -22,10 +24,11 @@ type StockLockService interface {
 type stockLockService struct {
 	store          StockLockStore
 	productService product.ProductService
+	shopifyCli     shopify.Client
 }
 
-func NewStockLockService(store StockLockStore, productService product.ProductService) StockLockService {
-	return &stockLockService{store: store, productService: productService}
+func NewStockLockService(store StockLockStore, productService product.ProductService, shopifyCli shopify.Client) StockLockService {
+	return &stockLockService{store: store, productService: productService, shopifyCli: shopifyCli}
 }
 
 func (s *stockLockService) AcquireLocks(ctx context.Context, userID, sessionID *string, requests []LockRequest) error {
@@ -33,11 +36,22 @@ func (s *stockLockService) AcquireLocks(ctx context.Context, userID, sessionID *
 	now := time.Now()
 	expiresAt := now.Add(15 * time.Minute)
 
+	var variantIDs []string
 	for _, req := range requests {
-		// Get product inventory
-		variant, err := s.productService.GetVariantByID(ctx, req.ShopifyVariantID)
-		if err != nil {
-			return err
+		variantIDs = append(variantIDs, req.ShopifyVariantID)
+	}
+
+	// Fetch real-time inventory from Shopify directly to prevent desync bugs
+	realTimeInv, err := s.shopifyCli.GetVariantsInventory(ctx, variantIDs)
+	if err != nil {
+		return fmt.Errorf("failed to check real-time shopify inventory: %w", err)
+	}
+
+	for _, req := range requests {
+		// Get product inventory from Shopify
+		inventoryQty, ok := realTimeInv[req.ShopifyVariantID]
+		if !ok {
+			return apierror.New(404, "not_found", "Variant not found in Shopify: " + req.ShopifyVariantID)
 		}
 
 		// Get active locks
@@ -46,7 +60,7 @@ func (s *stockLockService) AcquireLocks(ctx context.Context, userID, sessionID *
 			return err
 		}
 
-		available := variant.InventoryQuantity - lockedQty
+		available := inventoryQty - lockedQty
 		if available < req.Quantity {
 			return apierror.New(422, "out_of_stock", "Not enough inventory available for variant: " + req.ShopifyVariantID)
 		}
