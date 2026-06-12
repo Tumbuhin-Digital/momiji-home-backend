@@ -78,3 +78,7 @@ func (s *PostgresStore) GetOrdersByCustomer(ctx context.Context, customerID stri
 func (s *PostgresStore) UpsertCustomer(ctx context.Context, cust *Customer) error {
 	return s.db.WithContext(ctx).Save(cust).Error
 }
+
+func (s *PostgresStore) CreateAddress(ctx context.Context, addr *Address) error {
+	return s.db.WithContext(ctx).Save(addr).Error
+}
