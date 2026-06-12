@@ -139,31 +139,33 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		cust.LastName = &payload.Customer.LastName
 	}
 
-	// Extract Shipping Address if present
+	if err := s.customerStore.UpsertCustomer(ctx, cust); err != nil {
+		slog.WarnContext(ctx, "Failed to upsert customer", slog.Any("error", err))
+	}
+
+	// Extract and save Shipping Address if present
 	var shippingAddressID *string
 	if payload.ShippingAddress != nil {
 		addrID := uuid.NewString()
 		shippingAddressID = &addrID
-		cust.Addresses = []customer.Address{
-			{
-				ID:         addrID,
-				CustomerID: customerID,
-				FirstName:  &payload.ShippingAddress.FirstName,
-				LastName:   &payload.ShippingAddress.LastName,
-				Address1:   payload.ShippingAddress.Address1,
-				Address2:   &payload.ShippingAddress.Address2,
-				City:       payload.ShippingAddress.City,
-				Province:   payload.ShippingAddress.Province,
-				Country:    payload.ShippingAddress.Country,
-				Zip:        payload.ShippingAddress.Zip,
-				Phone:      &payload.ShippingAddress.Phone,
-				IsDefault:  true,
-			},
+		addr := &customer.Address{
+			ID:         addrID,
+			CustomerID: customerID,
+			FirstName:  &payload.ShippingAddress.FirstName,
+			LastName:   &payload.ShippingAddress.LastName,
+			Address1:   payload.ShippingAddress.Address1,
+			Address2:   &payload.ShippingAddress.Address2,
+			City:       payload.ShippingAddress.City,
+			Province:   payload.ShippingAddress.Province,
+			Country:    payload.ShippingAddress.Country,
+			Zip:        payload.ShippingAddress.Zip,
+			Phone:      &payload.ShippingAddress.Phone,
+			IsDefault:  true,
 		}
-	}
-
-	if err := s.customerStore.UpsertCustomer(ctx, cust); err != nil {
-		slog.WarnContext(ctx, "Failed to upsert customer", slog.Any("error", err))
+		
+		if err := s.customerStore.CreateAddress(ctx, addr); err != nil {
+			slog.WarnContext(ctx, "Failed to create shipping address", slog.Any("error", err))
+		}
 	}
 
 	var total float64

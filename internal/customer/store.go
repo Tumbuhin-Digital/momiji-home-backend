@@ -52,4 +52,5 @@ type CustomerStore interface {
 	GetCustomerByID(ctx context.Context, id string) (*Customer, error)
 	GetOrdersByCustomer(ctx context.Context, customerID string) ([]CustomerOrder, error)
 	UpsertCustomer(ctx context.Context, cust *Customer) error
+	CreateAddress(ctx context.Context, addr *Address) error
 }
