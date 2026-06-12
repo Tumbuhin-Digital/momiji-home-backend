@@ -112,7 +112,7 @@ func main() {
 	preorderService := preorder.NewPreorderService(preorderStore, orderStore, notificationService, shopifyClient)
 	customerService := customer.NewCustomerService(customerStore)
 	stockLockService := checkout.NewStockLockService(stockLockStore, productService, shopifyClient)
-	webhookService := webhook.NewWebhookService(orderStore, authStore, productStore, shopifyClient, preorderStore, notificationService, stockLockService)
+	webhookService := webhook.NewWebhookService(orderStore, authStore, productStore, shopifyClient, preorderStore, notificationService, stockLockService, customerStore)
 
 	// Initialize Fiber App
 	app := server.NewFiberApp(log)

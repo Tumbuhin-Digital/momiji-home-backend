@@ -9,7 +9,20 @@ type ShopifyOrderWebhook struct {
 	FinancialStatus string                  `json:"financial_status"`
 	LineItems       []ShopifyOrderLineItem  `json:"line_items"`
 	Customer        ShopifyCustomer         `json:"customer"`
+	ShippingAddress *ShopifyAddress         `json:"shipping_address"`
 	NoteAttributes  []ShopifyProperty       `json:"note_attributes"`
+}
+
+type ShopifyAddress struct {
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Address1  string `json:"address1"`
+	Address2  string `json:"address2"`
+	City      string `json:"city"`
+	Province  string `json:"province"`
+	Country   string `json:"country"`
+	Zip       string `json:"zip"`
+	Phone     string `json:"phone"`
 }
 
 type ShopifyOrderLineItem struct {
