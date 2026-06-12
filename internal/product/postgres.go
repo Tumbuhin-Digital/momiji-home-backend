@@ -68,6 +68,16 @@ func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Prod
 		orderStr = "products.title ASC"
 	case "created_at":
 		orderStr = "products.created_at DESC"
+	case "stock_asc":
+		if q.FulfillmentType == "" {
+			query = query.Joins("JOIN product_variants ON product_variants.product_id = products.id").Group("products.id")
+		}
+		orderStr = "SUM(product_variants.inventory_quantity) ASC"
+	case "stock_desc":
+		if q.FulfillmentType == "" {
+			query = query.Joins("JOIN product_variants ON product_variants.product_id = products.id").Group("products.id")
+		}
+		orderStr = "SUM(product_variants.inventory_quantity) DESC"
 	}
 
 	err := query.Preload("Images").Preload("Variants").Order(orderStr).Offset(offset).Limit(limit).Find(&products).Error

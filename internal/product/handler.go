@@ -49,7 +49,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 // @Param page query int false "Page number"
 // @Param limit query int false "Limit per page"
 // @Param search query string false "Search by title or description"
-// @Param sort query string false "Sort order (e.g. price_asc, price_desc, name_asc, created_at)"
+// @Param sort query string false "Sort order (e.g. price_asc, price_desc, name_asc, created_at, stock_asc, stock_desc)"
 // @Param fulfillment_type query string false "Filter by fulfillment type (ship_ready, pre_order)"
 // @Success 200 {object} response.Envelope{data=response.PaginatedData}
 // @Router /products [get]
