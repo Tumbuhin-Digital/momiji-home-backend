@@ -30,6 +30,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 func (h *Handler) verifyShopifyHMAC(c *fiber.Ctx) error {
 	hmacHeader := c.Get("X-Shopify-Hmac-Sha256")
 	if hmacHeader == "" {
+		slog.WarnContext(c.Context(), "Webhook rejected: Missing HMAC header")
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Missing HMAC header"})
 	}
 
@@ -41,6 +42,7 @@ func (h *Handler) verifyShopifyHMAC(c *fiber.Ctx) error {
 	expectedHMAC := base64.StdEncoding.EncodeToString(expectedMAC)
 
 	if !hmac.Equal([]byte(hmacHeader), []byte(expectedHMAC)) {
+		slog.WarnContext(c.Context(), "Webhook rejected: Invalid HMAC signature", slog.String("expected", expectedHMAC), slog.String("got", hmacHeader))
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid HMAC signature"})
 	}
 
