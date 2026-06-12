@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/response"
@@ -57,9 +58,12 @@ func (h *Handler) verifyShopifyHMAC(c *fiber.Ctx) error {
 func (h *Handler) HandleOrderPaid(c *fiber.Ctx) error {
 	var payload ShopifyOrderWebhook
 	if err := json.Unmarshal(c.Body(), &payload); err != nil {
+		slog.ErrorContext(c.Context(), "Failed to unmarshal webhook payload", slog.Any("error", err))
 		return response.Error(c, err)
 	}
 	
+	slog.InfoContext(c.Context(), "Received orders/paid webhook", slog.Int64("order_id", payload.ID), slog.Int("order_number", payload.OrderNumber))
+
 	if err := h.service.HandleOrderPaid(c.Context(), payload); err != nil {
 		return response.Error(c, err)
 	}
