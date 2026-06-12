@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/auth"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/checkout"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/customer"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/order"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/email"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
@@ -32,6 +33,7 @@ type service struct {
 	preorderStore    preorder.PreorderStore
 	emailService     email.NotificationService
 	stockLockService checkout.StockLockService
+	customerStore    customer.CustomerStore
 }
 
 func NewWebhookService(
@@ -42,6 +44,7 @@ func NewWebhookService(
 	preorderStore preorder.PreorderStore,
 	emailService email.NotificationService,
 	stockLockService checkout.StockLockService,
+	customerStore customer.CustomerStore,
 ) WebhookService {
 	return &service{
 		orderStore:       orderStore,
@@ -51,6 +54,7 @@ func NewWebhookService(
 		preorderStore:    preorderStore,
 		emailService:     emailService,
 		stockLockService: stockLockService,
+		customerStore:    customerStore,
 	}
 }
 
@@ -118,7 +122,48 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 
 	if customerID == "" {
 		// Use a fallback or create a generic customer
-		customerID = "guest-" + uuid.NewString()[:8]
+		customerID = uuid.NewString()
+	}
+
+	// 3. Upsert Customer Record
+	shopifyCustomerIDStr := strconv.FormatInt(payload.Customer.ID, 10)
+	cust := &customer.Customer{
+		ID:                customerID,
+		Email:             payload.Customer.Email,
+		ShopifyCustomerID: &shopifyCustomerIDStr,
+	}
+	if payload.Customer.FirstName != "" {
+		cust.FirstName = &payload.Customer.FirstName
+	}
+	if payload.Customer.LastName != "" {
+		cust.LastName = &payload.Customer.LastName
+	}
+
+	// Extract Shipping Address if present
+	var shippingAddressID *string
+	if payload.ShippingAddress != nil {
+		addrID := uuid.NewString()
+		shippingAddressID = &addrID
+		cust.Addresses = []customer.Address{
+			{
+				ID:         addrID,
+				CustomerID: customerID,
+				FirstName:  &payload.ShippingAddress.FirstName,
+				LastName:   &payload.ShippingAddress.LastName,
+				Address1:   payload.ShippingAddress.Address1,
+				Address2:   &payload.ShippingAddress.Address2,
+				City:       payload.ShippingAddress.City,
+				Province:   payload.ShippingAddress.Province,
+				Country:    payload.ShippingAddress.Country,
+				Zip:        payload.ShippingAddress.Zip,
+				Phone:      &payload.ShippingAddress.Phone,
+				IsDefault:  true,
+			},
+		}
+	}
+
+	if err := s.customerStore.UpsertCustomer(ctx, cust); err != nil {
+		slog.WarnContext(ctx, "Failed to upsert customer", slog.Any("error", err))
 	}
 
 	var total float64
@@ -220,6 +265,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 	newOrder := &order.Order{
 		OrderNumber:       orderNumber,
 		CustomerID:        customerID,
+		ShippingAddressID: shippingAddressID,
 		TotalPrice:        total,
 		AggregateStatus:   "processing", // paid
 		FinancialStatus:   "paid",

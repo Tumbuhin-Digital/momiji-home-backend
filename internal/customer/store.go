@@ -51,4 +51,5 @@ type CustomerStore interface {
 	ListCustomers(ctx context.Context, page, limit int, search string) ([]Customer, int64, error)
 	GetCustomerByID(ctx context.Context, id string) (*Customer, error)
 	GetOrdersByCustomer(ctx context.Context, customerID string) ([]CustomerOrder, error)
+	UpsertCustomer(ctx context.Context, cust *Customer) error
 }
