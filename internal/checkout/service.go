@@ -11,6 +11,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
+	"log/slog"
 )
 
 type CheckoutService interface {
@@ -98,6 +99,8 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	}
 
 	checkoutRef := uuid.NewString()
+	
+	slog.InfoContext(ctx, "Initiating checkout", slog.String("checkout_reference", checkoutRef), slog.Int("ship_ready_items", len(cartRes.ShipReady)), slog.Int("pre_order_items", len(cartRes.PreOrder)))
 
 	draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
 		Key: "checkout_reference", Value: checkoutRef,
@@ -124,8 +127,11 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 
 	res, err := s.shopifyCli.CreateDraftOrder(ctx, draftInput)
 	if err != nil {
+		slog.ErrorContext(ctx, "Failed to create shopify draft order", slog.Any("error", err), slog.String("checkout_reference", checkoutRef))
 		return nil, fmt.Errorf("failed to create shopify draft order: %w", err)
 	}
+	
+	slog.InfoContext(ctx, "Shopify draft order created", slog.String("checkout_reference", checkoutRef), slog.String("invoice_url", res.InvoiceUrl))
 
 	checkoutUrl := res.InvoiceUrl
 	if s.feURL != "" {

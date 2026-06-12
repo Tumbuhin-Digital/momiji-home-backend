@@ -241,8 +241,11 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 	}
 
 	if err := s.orderStore.CreateOrder(ctx, newOrder); err != nil {
+		slog.ErrorContext(ctx, "Failed to save order from webhook", slog.Any("error", err), slog.String("checkout_reference", checkoutRef))
 		return fmt.Errorf("failed to save order from webhook: %w", err)
 	}
+	
+	slog.InfoContext(ctx, "Order successfully inserted into database", slog.String("order_id", newOrder.ID), slog.String("order_number", newOrder.OrderNumber), slog.String("shopify_order_id", shopifyOrderIDStr))
 
 	// Auto-create settlement for pre_order items
 	if hasPreOrder {
@@ -283,7 +286,11 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 				HasBalanceDue:   hasPreOrder,
 				TotalBalanceDue: fmt.Sprintf("$%.2f", newOrder.TotalBalanceDue),
 			}
-			_ = s.emailService.SendOrderConfirmation(bgCtx, payload.Email, emailData)
+			if err := s.emailService.SendOrderConfirmation(bgCtx, payload.Email, emailData); err != nil {
+				slog.ErrorContext(bgCtx, "Failed to send order confirmation email", slog.Any("error", err), slog.String("email", payload.Email))
+			} else {
+				slog.InfoContext(bgCtx, "Order confirmation email successfully sent", slog.String("email", payload.Email), slog.String("order_number", newOrder.OrderNumber))
+			}
 		}
 	}()
 
