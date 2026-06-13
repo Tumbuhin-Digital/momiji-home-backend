@@ -910,6 +910,43 @@ const docTemplate = `{
                 }
             }
         },
+        "/dashboard/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns aggregated stats and data for the operations dashboard",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Dashboard"
+                ],
+                "summary": "Get Dashboard Summary",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Envelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/dashboard.DashboardSummaryResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/orders": {
             "get": {
                 "security": [
@@ -2624,6 +2661,110 @@ const docTemplate = `{
                 },
                 "phone": {
                     "type": "string"
+                }
+            }
+        },
+        "dashboard.DashboardSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "recent_orders": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dashboard.RecentOrder"
+                    }
+                },
+                "sales_report": {
+                    "$ref": "#/definitions/dashboard.SalesReport"
+                },
+                "stat_cards": {
+                    "$ref": "#/definitions/dashboard.StatCards"
+                }
+            }
+        },
+        "dashboard.MonthlyRevenue": {
+            "type": "object",
+            "properties": {
+                "month": {
+                    "type": "string"
+                },
+                "revenue": {
+                    "type": "number"
+                }
+            }
+        },
+        "dashboard.PreOrderStat": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "status_label": {
+                    "type": "string"
+                }
+            }
+        },
+        "dashboard.RecentOrder": {
+            "type": "object",
+            "properties": {
+                "customer_name": {
+                    "type": "string"
+                },
+                "items_preview": {
+                    "type": "string"
+                },
+                "order_number": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "status_label": {
+                    "type": "string"
+                }
+            }
+        },
+        "dashboard.SalesReport": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string"
+                },
+                "monthly_revenue": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dashboard.MonthlyRevenue"
+                    }
+                },
+                "total_revenue_this_month": {
+                    "type": "number"
+                }
+            }
+        },
+        "dashboard.StatCards": {
+            "type": "object",
+            "properties": {
+                "available_stock": {
+                    "$ref": "#/definitions/dashboard.StatValue"
+                },
+                "orders_in_progress": {
+                    "$ref": "#/definitions/dashboard.StatValue"
+                },
+                "pre_orders": {
+                    "$ref": "#/definitions/dashboard.PreOrderStat"
+                },
+                "total_products": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dashboard.StatValue": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "delta_today": {
+                    "type": "integer"
                 }
             }
         },

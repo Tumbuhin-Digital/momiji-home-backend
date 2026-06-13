@@ -90,12 +90,11 @@ func (m *MockProductStore) UpsertVariant(ctx context.Context, variant *ProductVa
 	return nil
 }
 
-func (m *MockProductStore) UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64, retailPrice *float64) error {
+func (m *MockProductStore) UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64) error {
 	if m.UpdateVariantPricesErr != nil { return m.UpdateVariantPricesErr }
 	v, ok := m.VariantsByID[variantID]
 	if !ok { return errors.New("variant not found") }
 	v.WSPrice = wsPrice
-	v.RetailPrice = retailPrice
 	return nil
 }
 
