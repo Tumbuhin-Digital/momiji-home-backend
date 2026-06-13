@@ -348,6 +348,73 @@ definitions:
       phone:
         type: string
     type: object
+  dashboard.DashboardSummaryResponse:
+    properties:
+      recent_orders:
+        items:
+          $ref: '#/definitions/dashboard.RecentOrder'
+        type: array
+      sales_report:
+        $ref: '#/definitions/dashboard.SalesReport'
+      stat_cards:
+        $ref: '#/definitions/dashboard.StatCards'
+    type: object
+  dashboard.MonthlyRevenue:
+    properties:
+      month:
+        type: string
+      revenue:
+        type: number
+    type: object
+  dashboard.PreOrderStat:
+    properties:
+      count:
+        type: integer
+      status_label:
+        type: string
+    type: object
+  dashboard.RecentOrder:
+    properties:
+      customer_name:
+        type: string
+      items_preview:
+        type: string
+      order_number:
+        type: string
+      status:
+        type: string
+      status_label:
+        type: string
+    type: object
+  dashboard.SalesReport:
+    properties:
+      currency:
+        type: string
+      monthly_revenue:
+        items:
+          $ref: '#/definitions/dashboard.MonthlyRevenue'
+        type: array
+      total_revenue_this_month:
+        type: number
+    type: object
+  dashboard.StatCards:
+    properties:
+      available_stock:
+        $ref: '#/definitions/dashboard.StatValue'
+      orders_in_progress:
+        $ref: '#/definitions/dashboard.StatValue'
+      pre_orders:
+        $ref: '#/definitions/dashboard.PreOrderStat'
+      total_products:
+        type: integer
+    type: object
+  dashboard.StatValue:
+    properties:
+      count:
+        type: integer
+      delta_today:
+        type: integer
+    type: object
   order.AcceptOrderRequest:
     properties:
       fulfillment_type:
@@ -1277,6 +1344,26 @@ paths:
       summary: Get customer orders
       tags:
       - Customer
+  /dashboard/summary:
+    get:
+      description: Returns aggregated stats and data for the operations dashboard
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/dashboard.DashboardSummaryResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get Dashboard Summary
+      tags:
+      - Dashboard
   /orders:
     get:
       produces:
