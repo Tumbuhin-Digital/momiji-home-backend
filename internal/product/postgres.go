@@ -157,13 +157,10 @@ func (s *PostgresStore) UpsertProductImages(ctx context.Context, productID strin
 	})
 }
 
-func (s *PostgresStore) UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64, retailPrice *float64) error {
+func (s *PostgresStore) UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64) error {
 	updates := map[string]interface{}{}
 	if wsPrice != nil {
 		updates["ws_price"] = *wsPrice
-	}
-	if retailPrice != nil {
-		updates["retail_price"] = *retailPrice
 	}
 	if len(updates) == 0 {
 		return nil

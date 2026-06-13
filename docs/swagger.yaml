@@ -619,9 +619,6 @@ definitions:
     type: object
   product.UpdateVariantPriceRequest:
     properties:
-      retail_price:
-        minimum: 0
-        type: number
       variant_id:
         type: string
       ws_price:

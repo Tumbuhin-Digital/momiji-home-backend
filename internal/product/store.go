@@ -63,7 +63,7 @@ type Store interface {
 	GetProductByShopifyID(ctx context.Context, shopifyID string) (*Product, error)
 	UpsertProduct(ctx context.Context, product *Product) error
 	UpsertVariant(ctx context.Context, variant *ProductVariant) error
-	UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64, retailPrice *float64) error
+	UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64) error
 	GetProductByID(ctx context.Context, productID string) (*Product, error)
 	GetVariantsByProductID(ctx context.Context, productID string) ([]ProductVariant, error)
 	GetAllVariants(ctx context.Context) ([]ProductVariant, error)
