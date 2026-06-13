@@ -19,7 +19,7 @@ type ProductService interface {
 	GetVariantsByProductID(ctx context.Context, productID string) ([]VariantDTO, error)
 	UpdateProductStatus(ctx context.Context, productID string, fulfillmentType string) (*ProductDTO, error)
 	UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) (*ProductDTO, error)
-	UpdateVariantPrice(ctx context.Context, variantID string, wsPrice *float64, retailPrice *float64) error
+	UpdateVariantPrice(ctx context.Context, variantID string, wsPrice *float64) error
 	GetAllVariants(ctx context.Context) ([]ProductVariant, error)
 	BulkUpdateDimensions(ctx context.Context, rows []DimensionUpdateInput) error
 }
@@ -133,12 +133,7 @@ func mapVariantToDTO(variant *ProductVariant) *VariantDTO {
 		wsPrice = fmt.Sprintf("%.2f", variant.Price)
 	}
 
-	retailPrice := "0.00"
-	if variant.RetailPrice != nil {
-		retailPrice = fmt.Sprintf("%.2f", *variant.RetailPrice)
-	} else {
-		retailPrice = fmt.Sprintf("%.2f", variant.Price)
-	}
+	retailPrice := fmt.Sprintf("%.2f", variant.Price)
 
 	var sku *string
 	if variant.SKU != "" {
@@ -385,11 +380,11 @@ func (s *service) UpdateVariantBatchLabel(ctx context.Context, productID string,
 	return s.GetProductByID(ctx, productID)
 }
 
-func (s *service) UpdateVariantPrice(ctx context.Context, variantID string, wsPrice *float64, retailPrice *float64) error {
-	if wsPrice == nil && retailPrice == nil {
-		return apierror.New(400, "validation_error", "at least one of ws_price or retail_price must be provided")
+func (s *service) UpdateVariantPrice(ctx context.Context, variantID string, wsPrice *float64) error {
+	if wsPrice == nil {
+		return nil // Nothing to update
 	}
-	if err := s.store.UpdateVariantPrices(ctx, variantID, wsPrice, retailPrice); err != nil {
+	if err := s.store.UpdateVariantPrices(ctx, variantID, wsPrice); err != nil {
 		return apierror.ErrInternal
 	}
 	return nil

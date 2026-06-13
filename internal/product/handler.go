@@ -251,7 +251,7 @@ func (h *Handler) UpdateVariantPrice(c *fiber.Ctx) error {
 
 	slog.InfoContext(c.Context(), "UpdateVariantPrice", slog.String("variant_id", req.VariantID))
 
-	if err := h.service.UpdateVariantPrice(c.Context(), req.VariantID, req.WSPrice, req.RetailPrice); err != nil {
+	if err := h.service.UpdateVariantPrice(c.Context(), req.VariantID, req.WSPrice); err != nil {
 		return response.Error(c, err)
 	}
 

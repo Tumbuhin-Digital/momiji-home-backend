@@ -152,11 +152,17 @@ func (h *Handler) GetOrder(c *fiber.Ctx) error {
 // @Router /orders/{id}/accept [patch]
 func (h *Handler) AcceptOrder(c *fiber.Ctx) error {
 	uid := c.Locals("user_id").(string)
+	role := c.Locals("role").(string)
+	customerID := uid
+	if role == "admin" {
+		customerID = ""
+	}
+
 	var req AcceptOrderRequest
 	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
 	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
 
-	if err := h.service.AcceptOrder(c.Context(), uid, c.Params("id"), req.FulfillmentType); err != nil {
+	if err := h.service.AcceptOrder(c.Context(), customerID, c.Params("id"), req.FulfillmentType); err != nil {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Order accepted", nil)
@@ -174,11 +180,17 @@ func (h *Handler) AcceptOrder(c *fiber.Ctx) error {
 // @Router /orders/{id}/cancel [patch]
 func (h *Handler) CancelOrder(c *fiber.Ctx) error {
 	uid := c.Locals("user_id").(string)
+	role := c.Locals("role").(string)
+	customerID := uid
+	if role == "admin" {
+		customerID = ""
+	}
+
 	var req CancelOrderRequest
 	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
 	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
 
-	if err := h.service.CancelOrder(c.Context(), uid, c.Params("id"), req.FulfillmentType, req.Reason); err != nil {
+	if err := h.service.CancelOrder(c.Context(), customerID, c.Params("id"), req.FulfillmentType, req.Reason); err != nil {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Order cancelled", nil)
@@ -197,11 +209,17 @@ func (h *Handler) CancelOrder(c *fiber.Ctx) error {
 // @Router /orders/{id}/items/{itemId}/step [patch]
 func (h *Handler) UpdateFulfillmentStep(c *fiber.Ctx) error {
 	uid := c.Locals("user_id").(string)
+	role := c.Locals("role").(string)
+	customerID := uid
+	if role == "admin" {
+		customerID = ""
+	}
+
 	var req UpdateStepRequest
 	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
 	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
 
-	if err := h.service.UpdateFulfillmentStep(c.Context(), uid, c.Params("id"), c.Params("itemId"), req.FulfillmentStep); err != nil {
+	if err := h.service.UpdateFulfillmentStep(c.Context(), customerID, c.Params("id"), c.Params("itemId"), req.FulfillmentStep); err != nil {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Fulfillment step updated", nil)
@@ -220,14 +238,20 @@ func (h *Handler) UpdateFulfillmentStep(c *fiber.Ctx) error {
 // @Router /orders/{id}/items/{itemId}/received [patch]
 func (h *Handler) UpdateItemsReceived(c *fiber.Ctx) error {
 	uid := c.Locals("user_id").(string)
+	role := c.Locals("role").(string)
+	customerID := uid
+	if role == "admin" {
+		customerID = ""
+	}
+
 	var req UpdateReceivedRequest
 	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
 	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
 
-	if err := h.service.UpdateItemsReceived(c.Context(), uid, c.Params("id"), c.Params("itemId"), req.ItemsReceived); err != nil {
+	if err := h.service.UpdateItemsReceived(c.Context(), customerID, c.Params("id"), c.Params("itemId"), req.ItemsReceived); err != nil {
 		return response.Error(c, err)
 	}
-	return response.Success(c, fiber.StatusOK, "Items received count updated", nil)
+	return response.Success(c, fiber.StatusOK, "Items received updated", nil)
 }
 
 // AddTrackingNumber godoc
@@ -242,20 +266,19 @@ func (h *Handler) UpdateItemsReceived(c *fiber.Ctx) error {
 // @Success 200 {object} response.Envelope
 // @Router /orders/{id}/items/{itemId}/tracking [patch]
 func (h *Handler) AddTrackingNumber(c *fiber.Ctx) error {
-	// Only Admin should theoretically be doing this. RBAC in middleware already verifies JWT. 
-	// We check role manually if needed, but PRD implies Bearer+RBAC
+	uid := c.Locals("user_id").(string)
 	role := c.Locals("role").(string)
-	if role != "admin" {
-		return response.Error(c, apierror.ErrForbidden)
+	customerID := uid
+	if role == "admin" {
+		customerID = ""
 	}
 
-	uid := c.Locals("user_id").(string)
 	var req AddTrackingRequest
 	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
 	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
 
-	if err := h.service.AddTrackingNumber(c.Context(), uid, c.Params("id"), c.Params("itemId"), req.TrackingNumber, req.TrackingURL); err != nil {
+	if err := h.service.AddTrackingNumber(c.Context(), customerID, c.Params("id"), c.Params("itemId"), req.TrackingNumber, req.TrackingURL); err != nil {
 		return response.Error(c, err)
 	}
-	return response.Success(c, fiber.StatusOK, "Tracking information updated", nil)
+	return response.Success(c, fiber.StatusOK, "Tracking number added", nil)
 }

@@ -170,7 +170,7 @@ func (s *service) AddItem(ctx context.Context, userID, sessionID *string, req Ca
 
 	available := variant.InventoryQuantity - currentQty
 	derivedType := string(product.FulfillmentTypePreOrder)
-	if available > 0 {
+	if available > 0 && string(variant.FulfillmentType) != string(product.FulfillmentTypePreOrder) {
 		derivedType = string(product.FulfillmentTypeShipReady)
 	}
 

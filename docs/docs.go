@@ -3040,10 +3040,6 @@ const docTemplate = `{
                 "variant_id"
             ],
             "properties": {
-                "retail_price": {
-                    "type": "number",
-                    "minimum": 0
-                },
                 "variant_id": {
                     "type": "string"
                 },
