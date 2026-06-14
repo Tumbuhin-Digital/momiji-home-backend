@@ -226,12 +226,48 @@ func (h *Handler) GetCheckoutConfirm(c *fiber.Ctx) error {
 		}
 		return response.Error(c, err)
 	}
-	
+	// Build items list (all line items, ship_ready + pre_order combined)
+	var items []fiber.Map
+	for _, it := range orderRes.LineItems.ShipReady {
+		items = append(items, fiber.Map{
+			"title":          it.Title,
+			"quantity":       it.Quantity,
+			"type":           "ship_ready",
+			"item_status":    it.ItemStatus,
+			"amount_charged": it.AmountCharged,
+			"balance_due":    it.BalanceDue,
+		})
+	}
+	for _, it := range orderRes.LineItems.PreOrder {
+		items = append(items, fiber.Map{
+			"title":          it.Title,
+			"quantity":       it.Quantity,
+			"type":           "pre_order",
+			"item_status":    it.ItemStatus,
+			"amount_charged": it.AmountCharged,
+			"balance_due":    it.BalanceDue,
+		})
+	}
+	if items == nil {
+		items = []fiber.Map{}
+	}
+
+	customerEmail := ""
+	if orderRes.Customer != nil {
+		customerEmail = orderRes.Customer.Email
+	}
+
 	return response.Success(c, fiber.StatusOK, "Order confirmed", fiber.Map{
-		"order_id":         orderRes.ID,
-		"order_number":     orderRes.OrderNumber,
-		"status":           orderRes.FinancialStatus,
-		"shopify_order_id": orderID,
+		"order_id":             orderRes.ID,
+		"order_number":         orderRes.OrderNumber,
+		"order_date":           orderRes.OrderDate,
+		"customer_email":       customerEmail,
+		"financial_status":     orderRes.FinancialStatus,
+		"total_price":          orderRes.TotalPrice,
+		"total_charged_now":    orderRes.TotalChargedNow,
+		"total_balance_due":    orderRes.TotalBalanceDue,
+		"currency":             orderRes.Currency,
+		"items":                items,
 	})
 }
 

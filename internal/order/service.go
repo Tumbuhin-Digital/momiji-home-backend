@@ -787,8 +787,11 @@ func (s *service) AcceptOrder(ctx context.Context, userID, orderID, fulfillmentT
 		return apierror.ErrNotFound
 	}
 
-	if o.AggregateStatus != "pending" && o.AggregateStatus != "pending_payment" {
-		return apierror.New(400, "invalid_transition", "Order is not pending")
+	// Orders created via webhook are set to "processing" (paid).
+	// Orders created manually (local flow) are "pending_payment".
+	validStatuses := map[string]bool{"pending": true, "pending_payment": true, "processing": true}
+	if !validStatuses[o.AggregateStatus] {
+		return apierror.New(400, "invalid_transition", fmt.Sprintf("Order cannot be accepted from status: %s", o.AggregateStatus))
 	}
 
 	// Update order status logic - simplified

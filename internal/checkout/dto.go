@@ -23,7 +23,7 @@ type CalculateShippingRequest struct {
 }
 
 type CheckoutSummaryRequest struct {
-	ShippingMethod string `json:"shipping_method" validate:"required"`
+	ShippingMethod string `json:"shipping_method,omitempty"`
 	AddressID      int    `json:"address_id,omitempty"`
 }
 
@@ -57,7 +57,7 @@ type CheckoutSummaryResponse struct {
 }
 
 type InitiateCheckoutRequest struct {
-	ShippingMethod string `json:"shipping_method" validate:"required"`
+	ShippingMethod string `json:"shipping_method,omitempty"`
 	AddressID      int    `json:"address_id,omitempty"`
 	Email          string `json:"email,omitempty"`
 	FirstName      string `json:"first_name,omitempty"`

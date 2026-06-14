@@ -7,7 +7,7 @@ type GuestInfo struct {
 }
 
 type CreateOrderRequest struct {
-	ShippingMethod string     `json:"shipping_method" validate:"required"`
+	ShippingMethod string     `json:"shipping_method,omitempty"`
 	GuestInfo      *GuestInfo `json:"guest_info,omitempty"`
 }
 
