@@ -15,18 +15,24 @@ type SettlementResponse struct {
 	CreatedAt       time.Time  `json:"created_at"`
 }
 
-// PreorderListItemResponse represents a rich row matching the API contract.
-type PreorderListItemResponse struct {
-	OrderID          string  `json:"order_id"`
-	OrderNumber      string  `json:"order_number"`
-	CustomerEmail    string  `json:"customer_email"`
-	ItemID           string  `json:"item_id"`
-	Title            string  `json:"title"`
-	Quantity         int     `json:"quantity"`
-	BalanceDue       string  `json:"balance_due"`
-	BatchLabel       string  `json:"batch_label"`
-	SettlementStatus string  `json:"settlement_status"`
-	DueDate          string  `json:"due_date,omitempty"`
+// PreorderGroupSettlement represents an individual order's settlement within a product group.
+type PreorderGroupSettlement struct {
+	SettlementID     string `json:"settlement_id"`
+	OrderID          string `json:"order_id"`
+	OrderNumber      string `json:"order_number"`
+	CustomerEmail    string `json:"customer_email"`
+	Quantity         int    `json:"quantity"`
+	BalanceDue       string `json:"balance_due"`
+	BatchLabel       string `json:"batch_label"`
+	SettlementStatus string `json:"settlement_status"`
+	DueDate          string `json:"due_date,omitempty"`
+}
+
+// PreorderGroupResponse represents a product group with its underlying settlements.
+type PreorderGroupResponse struct {
+	ProductName   string                    `json:"product_name"`
+	TotalQuantity int                       `json:"total_quantity"`
+	Settlements   []PreorderGroupSettlement `json:"settlements"`
 }
 
 // ListSettlementsQuery holds query parameters for the list endpoint.

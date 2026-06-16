@@ -20,7 +20,7 @@ type OrderUpdater interface {
 
 // PreorderService defines the settlement state machine operations.
 type PreorderService interface {
-	ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderListItemResponse, int64, error)
+	ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderGroupResponse, int64, error)
 	GetSettlement(ctx context.Context, id string) (*SettlementResponse, error)
 	InvoiceSettlement(ctx context.Context, id string) (*SettlementResponse, error)
 	MarkSettlementPaid(ctx context.Context, id string) (*SettlementResponse, error)
@@ -33,44 +33,67 @@ type service struct {
 	orderStore   OrderUpdater
 	emailService email.NotificationService
 	shopClient   shopify.Client
+	feURL        string
 }
 
 // NewPreorderService creates the settlement service.
 // It requires both PreorderStore (for settlement ops) and OrderUpdater (to update order status).
-func NewPreorderService(store PreorderStore, orderStore OrderUpdater, emailService email.NotificationService, shopClient shopify.Client) PreorderService {
+func NewPreorderService(store PreorderStore, orderStore OrderUpdater, emailService email.NotificationService, shopClient shopify.Client, feURL string) PreorderService {
 	return &service{
 		store:        store,
 		orderStore:   orderStore,
 		emailService: emailService,
 		shopClient:   shopClient,
+		feURL:        feURL,
 	}
 }
 
-func (s *service) ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderListItemResponse, int64, error) {
+func (s *service) ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderGroupResponse, int64, error) {
 	rows, total, err := s.store.ListSettlements(ctx, filter)
 	if err != nil {
 		return nil, 0, apierror.ErrInternal
 	}
 
-	res := make([]PreorderListItemResponse, len(rows))
-	for i, r := range rows {
+	// Group by Product Title
+	groupsMap := make(map[string]*PreorderGroupResponse)
+	var orderedTitles []string
+
+	for _, r := range rows {
 		var dueDateStr string
 		if r.DueDate != nil {
 			dueDateStr = r.DueDate.Format("2006-01-02")
 		}
-		res[i] = PreorderListItemResponse{
+
+		settlement := PreorderGroupSettlement{
+			SettlementID:     r.ID,
 			OrderID:          r.OrderID,
 			OrderNumber:      r.OrderNumber,
 			CustomerEmail:    r.CustomerEmail,
-			ItemID:           r.OrderLineItemID,
-			Title:            r.Title,
 			Quantity:         r.Quantity,
 			BalanceDue:       fmt.Sprintf("%.2f", r.BalanceAmount),
 			BatchLabel:       r.BatchLabel,
 			SettlementStatus: r.SettlementStatus,
 			DueDate:          dueDateStr,
 		}
+
+		if g, exists := groupsMap[r.Title]; exists {
+			g.TotalQuantity += r.Quantity
+			g.Settlements = append(g.Settlements, settlement)
+		} else {
+			groupsMap[r.Title] = &PreorderGroupResponse{
+				ProductName:   r.Title,
+				TotalQuantity: r.Quantity,
+				Settlements:   []PreorderGroupSettlement{settlement},
+			}
+			orderedTitles = append(orderedTitles, r.Title)
+		}
 	}
+
+	var res []PreorderGroupResponse
+	for _, title := range orderedTitles {
+		res = append(res, *groupsMap[title])
+	}
+
 	return res, total, nil
 }
 
@@ -111,29 +134,25 @@ func (s *service) InvoiceSettlement(ctx context.Context, id string) (*Settlement
 	res := toResponse(*st)
 
 	// Trigger email in background
+	settlementID := id
+	customerEmail := st.CustomerEmail
+	itemTitle := st.Title
+	balanceAmount := st.BalanceAmount
+	var dueDateStr string
+	if st.DueDate != nil {
+		dueDateStr = st.DueDate.Format("2006-01-02")
+	}
+
 	go func() {
 		bgCtx := context.Background()
-		// Re-fetch using ListSettlements to get joined data for email
-		rows, _, err := s.store.ListSettlements(bgCtx, SettlementFilter{})
-		if err == nil {
-			for _, r := range rows {
-				if r.ID == id {
-					var dueDateStr string
-					if r.DueDate != nil {
-						dueDateStr = r.DueDate.Format("2006-01-02")
-					}
-					emailData := email.SettlementEmailData{
-						CustomerName:  "Customer",
-						ItemTitle:     r.Title,
-						BalanceAmount: fmt.Sprintf("$%.2f", r.BalanceAmount),
-						DueDate:       dueDateStr,
-						PaymentLink:   "https://momiji-home.com/checkout/settlement/" + id,
-					}
-					_ = s.emailService.SendInvoice(bgCtx, r.CustomerEmail, emailData)
-					break
-				}
-			}
+		emailData := email.SettlementEmailData{
+			CustomerName:  "Customer",
+			ItemTitle:     itemTitle,
+			BalanceAmount: fmt.Sprintf("$%.2f", balanceAmount),
+			DueDate:       dueDateStr,
+			PaymentLink:   s.feURL + "/checkout/settlement/" + settlementID,
 		}
+		_ = s.emailService.SendInvoice(bgCtx, customerEmail, emailData)
 	}()
 
 	return &res, nil
@@ -172,23 +191,18 @@ func (s *service) MarkSettlementPaid(ctx context.Context, id string) (*Settlemen
 	res := toResponse(*st)
 
 	// Trigger email in background
+	customerEmail := st.CustomerEmail
+	itemTitle := st.Title
+	balanceAmount := st.BalanceAmount
+
 	go func() {
 		bgCtx := context.Background()
-		// Re-fetch using ListSettlements to get joined data for email
-		rows, _, err := s.store.ListSettlements(bgCtx, SettlementFilter{})
-		if err == nil {
-			for _, r := range rows {
-				if r.ID == id {
-					emailData := email.SettlementEmailData{
-						CustomerName:  "Customer",
-						ItemTitle:     r.Title,
-						BalanceAmount: fmt.Sprintf("$%.2f", r.BalanceAmount),
-					}
-					_ = s.emailService.SendSettlementPaid(bgCtx, r.CustomerEmail, emailData)
-					break
-				}
-			}
+		emailData := email.SettlementEmailData{
+			CustomerName:  "Customer",
+			ItemTitle:     itemTitle,
+			BalanceAmount: fmt.Sprintf("$%.2f", balanceAmount),
 		}
+		_ = s.emailService.SendSettlementPaid(bgCtx, customerEmail, emailData)
 	}()
 
 	return &res, nil
@@ -245,7 +259,7 @@ func (s *service) ProcessReminders(ctx context.Context) error {
 			_ = s.emailService.SendReminder(ctx, r.CustomerEmail, emailData)
 		}
 	}
-	
+
 	// D+7 Expired
 	rowsD7, err := s.store.GetSettlementsForReminder(ctx, 7)
 	if err == nil {
@@ -291,7 +305,7 @@ func toResponse(st Settlement) SettlementResponse {
 }
 
 func (s *service) ExportPreordersToExcel(ctx context.Context, filter SettlementFilter) ([]byte, error) {
-	rows, _, err := s.ListSettlements(ctx, filter)
+	groups, _, err := s.ListSettlements(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -299,24 +313,27 @@ func (s *service) ExportPreordersToExcel(ctx context.Context, filter SettlementF
 	f := excelize.NewFile()
 	sheetName := "Preorder List"
 	f.SetSheetName("Sheet1", sheetName)
-	
+
 	headers := []string{"Order ID", "Order Number", "Product Name", "Customer Email", "Quantity", "Balance Due", "Status", "Due Date", "Batch Label"}
 	for i, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		f.SetCellValue(sheetName, cell, h)
 	}
 
-	for rowIdx, r := range rows {
-		rowNum := rowIdx + 2
-		f.SetCellValue(sheetName, fmt.Sprintf("A%d", rowNum), r.OrderID)
-		f.SetCellValue(sheetName, fmt.Sprintf("B%d", rowNum), r.OrderNumber)
-		f.SetCellValue(sheetName, fmt.Sprintf("C%d", rowNum), r.Title)
-		f.SetCellValue(sheetName, fmt.Sprintf("D%d", rowNum), r.CustomerEmail)
-		f.SetCellValue(sheetName, fmt.Sprintf("E%d", rowNum), r.Quantity)
-		f.SetCellValue(sheetName, fmt.Sprintf("F%d", rowNum), r.BalanceDue)
-		f.SetCellValue(sheetName, fmt.Sprintf("G%d", rowNum), r.SettlementStatus)
-		f.SetCellValue(sheetName, fmt.Sprintf("H%d", rowNum), r.DueDate)
-		f.SetCellValue(sheetName, fmt.Sprintf("I%d", rowNum), r.BatchLabel)
+	rowNum := 2
+	for _, group := range groups {
+		for _, r := range group.Settlements {
+			f.SetCellValue(sheetName, fmt.Sprintf("A%d", rowNum), r.OrderID)
+			f.SetCellValue(sheetName, fmt.Sprintf("B%d", rowNum), r.OrderNumber)
+			f.SetCellValue(sheetName, fmt.Sprintf("C%d", rowNum), group.ProductName)
+			f.SetCellValue(sheetName, fmt.Sprintf("D%d", rowNum), r.CustomerEmail)
+			f.SetCellValue(sheetName, fmt.Sprintf("E%d", rowNum), r.Quantity)
+			f.SetCellValue(sheetName, fmt.Sprintf("F%d", rowNum), r.BalanceDue)
+			f.SetCellValue(sheetName, fmt.Sprintf("G%d", rowNum), r.SettlementStatus)
+			f.SetCellValue(sheetName, fmt.Sprintf("H%d", rowNum), r.DueDate)
+			f.SetCellValue(sheetName, fmt.Sprintf("I%d", rowNum), r.BatchLabel)
+			rowNum++
+		}
 	}
 
 	var buf bytes.Buffer

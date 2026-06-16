@@ -23,8 +23,10 @@ func (s *postgresStore) CreateSettlement(ctx context.Context, settlement *Settle
 func (s *postgresStore) GetSettlementByID(ctx context.Context, id string) (*Settlement, error) {
 	var settlement Settlement
 	if err := s.db.WithContext(ctx).
-		Select("preorder_settlements.*, order_line_items.order_id").
-		Joins("LEFT JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
+		Select("preorder_settlements.*, order_line_items.order_id, order_line_items.title, users.email as customer_email").
+		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
+		Joins("JOIN orders ON orders.id = order_line_items.order_id").
+		Joins("JOIN users ON users.id = orders.customer_id").
 		Where("preorder_settlements.id = ?", id).
 		First(&settlement).Error; err != nil {
 		return nil, err
@@ -33,9 +35,38 @@ func (s *postgresStore) GetSettlementByID(ctx context.Context, id string) (*Sett
 }
 
 func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderRow, int64, error) {
-	var rows []PreorderRow
-	var total int64
+	baseQuery := s.db.WithContext(ctx).Table("preorder_settlements").
+		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
+		Joins("LEFT JOIN product_variants ON product_variants.shopify_variant_id = order_line_items.shopify_variant_id")
 
+	if filter.Status != "" {
+		baseQuery = baseQuery.Where("preorder_settlements.status = ?", filter.Status)
+	}
+	if filter.BatchLabel != "" {
+		baseQuery = baseQuery.Where("product_variants.preorder_batch_label = ?", filter.BatchLabel)
+	}
+
+	var total int64
+	if err := baseQuery.Select("COUNT(DISTINCT order_line_items.title)").Row().Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	page := filter.Page
+	if page < 1 { page = 1 }
+	limit := filter.Limit
+	if limit < 1 { limit = 20 }
+	offset := (page - 1) * limit
+
+	var titles []string
+	if err := baseQuery.Select("DISTINCT order_line_items.title").Order("order_line_items.title ASC").Limit(limit).Offset(offset).Pluck("order_line_items.title", &titles).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if len(titles) == 0 {
+		return nil, total, nil
+	}
+
+	var rows []PreorderRow
 	query := s.db.WithContext(ctx).Table("preorder_settlements").
 		Select(`
 			preorder_settlements.id,
@@ -54,7 +85,8 @@ func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFi
 		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
 		Joins("JOIN orders ON orders.id = order_line_items.order_id").
 		Joins("JOIN users ON users.id = orders.customer_id").
-		Joins("LEFT JOIN product_variants ON product_variants.shopify_variant_id = order_line_items.shopify_variant_id")
+		Joins("LEFT JOIN product_variants ON product_variants.shopify_variant_id = order_line_items.shopify_variant_id").
+		Where("order_line_items.title IN ?", titles)
 
 	if filter.Status != "" {
 		query = query.Where("preorder_settlements.status = ?", filter.Status)
@@ -63,17 +95,7 @@ func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFi
 		query = query.Where("product_variants.preorder_batch_label = ?", filter.BatchLabel)
 	}
 
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
-	page := filter.Page
-	if page < 1 { page = 1 }
-	limit := filter.Limit
-	if limit < 1 { limit = 20 }
-	offset := (page - 1) * limit
-
-	if err := query.Order("preorder_settlements.created_at DESC").Limit(limit).Offset(offset).Find(&rows).Error; err != nil {
+	if err := query.Order("order_line_items.title ASC, preorder_settlements.created_at DESC").Find(&rows).Error; err != nil {
 		return nil, 0, err
 	}
 

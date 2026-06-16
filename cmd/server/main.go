@@ -111,7 +111,7 @@ func main() {
 	productService := product.NewProductService(productStore, shopifyClient)
 	cartService := cart.NewCartService(cartStore, productService)
 	orderService := order.NewOrderService(orderStore, cartService, authStore, shopifyClient, preorderStore, notificationService)
-	preorderService := preorder.NewPreorderService(preorderStore, orderStore, notificationService, shopifyClient)
+	preorderService := preorder.NewPreorderService(preorderStore, orderStore, notificationService, shopifyClient, cfg.App.FrontendURL)
 	customerService := customer.NewCustomerService(customerStore)
 	stockLockService := checkout.NewStockLockService(stockLockStore, productService, shopifyClient)
 	webhookService := webhook.NewWebhookService(orderStore, authStore, productStore, shopifyClient, preorderStore, notificationService, stockLockService, customerStore)

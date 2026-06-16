@@ -19,6 +19,10 @@ type Settlement struct {
 	PaidAt          *time.Time
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+
+	// Joined fields (read-only)
+	Title         string `gorm:"->"`
+	CustomerEmail string `gorm:"->"`
 }
 
 func (Settlement) TableName() string {

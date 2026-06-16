@@ -599,6 +599,38 @@ definitions:
     required:
     - fulfillment_step
     type: object
+  preorder.PreorderGroupResponse:
+    properties:
+      product_name:
+        type: string
+      settlements:
+        items:
+          $ref: '#/definitions/preorder.PreorderGroupSettlement'
+        type: array
+      total_quantity:
+        type: integer
+    type: object
+  preorder.PreorderGroupSettlement:
+    properties:
+      balance_due:
+        type: string
+      batch_label:
+        type: string
+      customer_email:
+        type: string
+      due_date:
+        type: string
+      order_id:
+        type: string
+      order_number:
+        type: string
+      quantity:
+        type: integer
+      settlement_id:
+        type: string
+      settlement_status:
+        type: string
+    type: object
   preorder.SettlementResponse:
     properties:
       balance_amount:
@@ -1666,9 +1698,14 @@ paths:
             - $ref: '#/definitions/response.Envelope'
             - properties:
                 data:
-                  items:
-                    $ref: '#/definitions/preorder.SettlementResponse'
-                  type: array
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      preorders:
+                        items:
+                          $ref: '#/definitions/preorder.PreorderGroupResponse'
+                        type: array
+                    type: object
               type: object
       security:
       - BearerAuth: []
