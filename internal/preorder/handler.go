@@ -38,7 +38,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 // @Param status query string false "Filter by status (pending|invoiced|paid)"
 // @Param page   query int    false "Page number (default 1)"
 // @Param limit  query int    false "Items per page (default 20)"
-// @Success 200 {object} response.Envelope{data=[]SettlementResponse}
+// @Success 200 {object} response.Envelope{data=response.PaginatedData{preorders=[]PreorderGroupResponse}}
 // @Router /preorders [get]
 func (h *Handler) ListSettlements(c *fiber.Ctx) error {
 	var q ListSettlementsQuery

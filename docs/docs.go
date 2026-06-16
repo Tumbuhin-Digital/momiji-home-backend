@@ -1442,10 +1442,22 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/definitions/preorder.SettlementResponse"
-                                            }
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PaginatedData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "preorders": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/preorder.PreorderGroupResponse"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
                                         }
                                     }
                                 }
@@ -3149,6 +3161,55 @@ const docTemplate = `{
                     "type": "integer",
                     "maximum": 4,
                     "minimum": 1
+                }
+            }
+        },
+        "preorder.PreorderGroupResponse": {
+            "type": "object",
+            "properties": {
+                "product_name": {
+                    "type": "string"
+                },
+                "settlements": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/preorder.PreorderGroupSettlement"
+                    }
+                },
+                "total_quantity": {
+                    "type": "integer"
+                }
+            }
+        },
+        "preorder.PreorderGroupSettlement": {
+            "type": "object",
+            "properties": {
+                "balance_due": {
+                    "type": "string"
+                },
+                "batch_label": {
+                    "type": "string"
+                },
+                "customer_email": {
+                    "type": "string"
+                },
+                "due_date": {
+                    "type": "string"
+                },
+                "order_id": {
+                    "type": "string"
+                },
+                "order_number": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "integer"
+                },
+                "settlement_id": {
+                    "type": "string"
+                },
+                "settlement_status": {
+                    "type": "string"
                 }
             }
         },
