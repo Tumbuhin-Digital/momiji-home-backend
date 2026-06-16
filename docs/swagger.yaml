@@ -125,6 +125,10 @@ definitions:
       total_quantity:
         minimum: 0
         type: integer
+      variant_id:
+        type: string
+    required:
+    - variant_id
     type: object
   cart.UpdateCartItemRequest:
     properties:
@@ -1112,17 +1116,12 @@ paths:
       summary: Update item quantity
       tags:
       - Cart
-  /cart/items/variant/{variant_id}:
+  /cart/items/variant:
     patch:
       consumes:
       - application/json
       parameters:
-      - description: Shopify Variant GID
-        in: path
-        name: variant_id
-        required: true
-        type: string
-      - description: Total Quantity
+      - description: Variant ID and Total Quantity
         in: body
         name: request
         required: true

@@ -410,7 +410,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/cart/items/variant/{variant_id}": {
+        "/cart/items/variant": {
             "patch": {
                 "consumes": [
                     "application/json"
@@ -421,14 +421,7 @@ const docTemplate = `{
                 "summary": "Set total quantity for a variant (auto-splits ship_ready vs pre_order)",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Shopify Variant GID",
-                        "name": "variant_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Total Quantity",
+                        "description": "Variant ID and Total Quantity",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -2430,10 +2423,16 @@ const docTemplate = `{
         },
         "cart.SetVariantQuantityRequest": {
             "type": "object",
+            "required": [
+                "variant_id"
+            ],
             "properties": {
                 "total_quantity": {
                     "type": "integer",
                     "minimum": 0
+                },
+                "variant_id": {
+                    "type": "string"
                 }
             }
         },
