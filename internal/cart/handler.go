@@ -28,6 +28,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	optAuth.Get("/", h.GetCart)
 	optAuth.Get("/summary", h.GetSummary)
 	optAuth.Post("/items", h.AddItem)
+	optAuth.Patch("/items/variant/:variant_id", h.SetVariantQuantity)
 	optAuth.Patch("/items/:id", h.UpdateItem)
 	optAuth.Delete("/items/:id", h.RemoveItem)
 	optAuth.Delete("/", h.ClearCart)
@@ -210,4 +211,30 @@ func (h *Handler) MergeCart(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Cart merged", nil)
+}
+
+// SetVariantQuantity godoc
+// @Summary Set total quantity for a variant (auto-splits ship_ready vs pre_order)
+// @Tags Cart
+// @Accept json
+// @Param variant_id path string true "Shopify Variant GID"
+// @Param request body SetVariantQuantityRequest true "Total Quantity"
+// @Success 200 {object} response.Envelope
+// @Router /cart/items/variant/{variant_id} [patch]
+func (h *Handler) SetVariantQuantity(c *fiber.Ctx) error {
+	uid, sid := h.extractAuth(c)
+	variantID := c.Params("variant_id")
+
+	var req SetVariantQuantityRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	if err := h.service.SetVariantQuantity(c.Context(), uid, sid, variantID, req.TotalQuantity); err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Cart updated", nil)
 }

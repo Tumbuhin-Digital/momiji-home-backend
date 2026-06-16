@@ -108,3 +108,47 @@ func (s *PostgresCartStore) MergeCarts(ctx context.Context, sourceCartID, target
 		return tx.Model(&Cart{}).Where("id = ?", sourceCartID).Update("status", "merged").Error
 	})
 }
+
+func (s *PostgresCartStore) GetVariantItemsInCart(ctx context.Context, cartID string, variantID string) ([]CartItemModel, error) {
+	var items []CartItemModel
+	err := s.db.WithContext(ctx).Where("cart_id = ? AND shopify_variant_id = ?", cartID, variantID).Find(&items).Error
+	return items, err
+}
+
+func (s *PostgresCartStore) UpsertVariantItems(ctx context.Context, cartID, variantID string, shipReadyQty, preOrderQty int, unitPrice float64) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		types := []struct {
+			ft  string
+			qty int
+		}{
+			{"ship_ready", shipReadyQty},
+			{"pre_order", preOrderQty},
+		}
+
+		for _, t := range types {
+			var existing CartItemModel
+			err := tx.Where("cart_id = ? AND shopify_variant_id = ? AND fulfillment_type = ?",
+				cartID, variantID, t.ft).First(&existing).Error
+
+			if t.qty == 0 {
+				// Delete if exists
+				if err == nil {
+					tx.Delete(&existing)
+				}
+			} else if errors.Is(err, gorm.ErrRecordNotFound) {
+				// Insert new
+				tx.Create(&CartItemModel{
+					CartID:           cartID,
+					ShopifyVariantID: variantID,
+					FulfillmentType:  t.ft,
+					Quantity:         t.qty,
+					UnitPrice:        unitPrice,
+				})
+			} else {
+				// Update existing
+				tx.Model(&existing).Update("quantity", t.qty)
+			}
+		}
+		return nil
+	})
+}

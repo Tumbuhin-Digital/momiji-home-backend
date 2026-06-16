@@ -19,6 +19,7 @@ type CartService interface {
 	RemoveItem(ctx context.Context, userID, sessionID *string, itemID string) error
 	ClearCart(ctx context.Context, userID, sessionID *string) error
 	MergeCarts(ctx context.Context, userID string, guestSessionID string) error
+	SetVariantQuantity(ctx context.Context, userID, sessionID *string, variantID string, totalQty int) error
 }
 
 type service struct {
@@ -222,4 +223,41 @@ func (s *service) MergeCarts(ctx context.Context, userID string, guestSessionID 
 	}
 
 	return s.store.MergeCarts(ctx, guestCart.ID, userCart.ID)
+}
+
+func (s *service) SetVariantQuantity(ctx context.Context, userID, sessionID *string, variantID string, totalQty int) error {
+	variant, err := s.productService.GetVariantByID(ctx, variantID)
+	if err != nil {
+		return apierror.ErrNotFound
+	}
+
+	cart, err := s.getOrCreateCart(ctx, userID, sessionID)
+	if err != nil {
+		return err
+	}
+
+	var shipReadyQty, preOrderQty int
+
+	if totalQty == 0 {
+		shipReadyQty = 0
+		preOrderQty = 0
+	} else if string(variant.FulfillmentType) == string(product.FulfillmentTypePreOrder) {
+		// Admin has force-flagged this as pre_order — ALL units go to pre_order
+		shipReadyQty = 0
+		preOrderQty = totalQty
+	} else {
+		// Calculate split
+		if totalQty <= variant.InventoryQuantity {
+			shipReadyQty = totalQty
+			preOrderQty = 0
+		} else {
+			shipReadyQty = variant.InventoryQuantity
+			preOrderQty = totalQty - variant.InventoryQuantity
+		}
+	}
+
+	var price float64
+	fmt.Sscanf(variant.WSPrice, "%f", &price)
+
+	return s.store.UpsertVariantItems(ctx, cart.ID, variantID, shipReadyQty, preOrderQty, price)
 }

@@ -120,6 +120,12 @@ definitions:
     required:
     - guest_session_id
     type: object
+  cart.SetVariantQuantityRequest:
+    properties:
+      total_quantity:
+        minimum: 0
+        type: integer
+    type: object
   cart.UpdateCartItemRequest:
     properties:
       quantity:
@@ -147,8 +153,6 @@ definitions:
         type: integer
       shipping_method:
         type: string
-    required:
-    - shipping_method
     type: object
   checkout.CheckoutSummaryResponse:
     properties:
@@ -228,8 +232,6 @@ definitions:
         type: string
       zip:
         type: string
-    required:
-    - shipping_method
     type: object
   checkout.InitiateCheckoutResponse:
     properties:
@@ -469,8 +471,6 @@ definitions:
         $ref: '#/definitions/order.GuestInfo'
       shipping_method:
         type: string
-    required:
-    - shipping_method
     type: object
   order.CustomerDTO:
     properties:
@@ -522,6 +522,8 @@ definitions:
       fulfillment_step:
         type: integer
       id:
+        type: string
+      image_src:
         type: string
       item_status:
         type: string
@@ -1108,6 +1110,30 @@ paths:
       - BearerAuth: []
       - SessionAuth: []
       summary: Update item quantity
+      tags:
+      - Cart
+  /cart/items/variant/{variant_id}:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Shopify Variant GID
+        in: path
+        name: variant_id
+        required: true
+        type: string
+      - description: Total Quantity
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/cart.SetVariantQuantityRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      summary: Set total quantity for a variant (auto-splits ship_ready vs pre_order)
       tags:
       - Cart
   /cart/merge:

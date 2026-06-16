@@ -47,3 +47,7 @@ type UpdateCartItemRequest struct {
 type MergeCartRequest struct {
 	GuestSessionID string `json:"guest_session_id" validate:"required"`
 }
+
+type SetVariantQuantityRequest struct {
+	TotalQuantity int `json:"total_quantity" validate:"min=0"`
+}

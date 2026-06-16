@@ -40,4 +40,6 @@ type CartStore interface {
 	RemoveItem(ctx context.Context, itemID string) error
 	ClearCart(ctx context.Context, cartID string) error
 	MergeCarts(ctx context.Context, sourceCartID, targetCartID string) error
+	GetVariantItemsInCart(ctx context.Context, cartID string, variantID string) ([]CartItemModel, error)
+	UpsertVariantItems(ctx context.Context, cartID string, variantID string, shipReadyQty int, preOrderQty int, unitPrice float64) error
 }

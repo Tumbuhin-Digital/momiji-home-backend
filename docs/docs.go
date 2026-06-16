@@ -410,6 +410,43 @@ const docTemplate = `{
                 }
             }
         },
+        "/cart/items/variant/{variant_id}": {
+            "patch": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cart"
+                ],
+                "summary": "Set total quantity for a variant (auto-splits ship_ready vs pre_order)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Shopify Variant GID",
+                        "name": "variant_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Total Quantity",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/cart.SetVariantQuantityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
         "/cart/items/{id}": {
             "delete": {
                 "security": [
@@ -2315,6 +2352,15 @@ const docTemplate = `{
                 }
             }
         },
+        "cart.SetVariantQuantityRequest": {
+            "type": "object",
+            "properties": {
+                "total_quantity": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
         "cart.UpdateCartItemRequest": {
             "type": "object",
             "properties": {
@@ -2349,9 +2395,6 @@ const docTemplate = `{
         },
         "checkout.CheckoutSummaryRequest": {
             "type": "object",
-            "required": [
-                "shipping_method"
-            ],
             "properties": {
                 "address_id": {
                     "type": "integer"
@@ -2447,9 +2490,6 @@ const docTemplate = `{
         },
         "checkout.InitiateCheckoutRequest": {
             "type": "object",
-            "required": [
-                "shipping_method"
-            ],
             "properties": {
                 "address1": {
                     "type": "string"
@@ -2843,9 +2883,6 @@ const docTemplate = `{
         },
         "order.CreateOrderRequest": {
             "type": "object",
-            "required": [
-                "shipping_method"
-            ],
             "properties": {
                 "guest_info": {
                     "$ref": "#/definitions/order.GuestInfo"
@@ -2930,6 +2967,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "id": {
+                    "type": "string"
+                },
+                "image_src": {
                     "type": "string"
                 },
                 "item_status": {
