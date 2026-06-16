@@ -49,5 +49,6 @@ type MergeCartRequest struct {
 }
 
 type SetVariantQuantityRequest struct {
-	TotalQuantity int `json:"total_quantity" validate:"min=0"`
+	VariantID     string `json:"variant_id" validate:"required"`
+	TotalQuantity int    `json:"total_quantity" validate:"min=0"`
 }

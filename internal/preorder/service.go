@@ -1,6 +1,7 @@
 package preorder
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/email"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
+	"github.com/xuri/excelize/v2"
 )
 
 // OrderUpdater allows preorder service to update order status without circular imports.
@@ -23,6 +25,7 @@ type PreorderService interface {
 	InvoiceSettlement(ctx context.Context, id string) (*SettlementResponse, error)
 	MarkSettlementPaid(ctx context.Context, id string) (*SettlementResponse, error)
 	ProcessReminders(ctx context.Context) error
+	ExportPreordersToExcel(ctx context.Context, filter SettlementFilter) ([]byte, error)
 }
 
 type service struct {
@@ -285,4 +288,40 @@ func toResponse(st Settlement) SettlementResponse {
 		PaidAt:          st.PaidAt,
 		CreatedAt:       st.CreatedAt,
 	}
+}
+
+func (s *service) ExportPreordersToExcel(ctx context.Context, filter SettlementFilter) ([]byte, error) {
+	rows, _, err := s.ListSettlements(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	f := excelize.NewFile()
+	sheetName := "Preorder List"
+	f.SetSheetName("Sheet1", sheetName)
+	
+	headers := []string{"Order ID", "Order Number", "Product Name", "Customer Email", "Quantity", "Balance Due", "Status", "Due Date", "Batch Label"}
+	for i, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheetName, cell, h)
+	}
+
+	for rowIdx, r := range rows {
+		rowNum := rowIdx + 2
+		f.SetCellValue(sheetName, fmt.Sprintf("A%d", rowNum), r.OrderID)
+		f.SetCellValue(sheetName, fmt.Sprintf("B%d", rowNum), r.OrderNumber)
+		f.SetCellValue(sheetName, fmt.Sprintf("C%d", rowNum), r.Title)
+		f.SetCellValue(sheetName, fmt.Sprintf("D%d", rowNum), r.CustomerEmail)
+		f.SetCellValue(sheetName, fmt.Sprintf("E%d", rowNum), r.Quantity)
+		f.SetCellValue(sheetName, fmt.Sprintf("F%d", rowNum), r.BalanceDue)
+		f.SetCellValue(sheetName, fmt.Sprintf("G%d", rowNum), r.SettlementStatus)
+		f.SetCellValue(sheetName, fmt.Sprintf("H%d", rowNum), r.DueDate)
+		f.SetCellValue(sheetName, fmt.Sprintf("I%d", rowNum), r.BatchLabel)
+	}
+
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		return nil, fmt.Errorf("failed to write excel file: %w", err)
+	}
+	return buf.Bytes(), nil
 }

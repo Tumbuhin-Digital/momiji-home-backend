@@ -410,7 +410,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/cart/items/variant/{variant_id}": {
+        "/cart/items/variant": {
             "patch": {
                 "consumes": [
                     "application/json"
@@ -421,14 +421,7 @@ const docTemplate = `{
                 "summary": "Set total quantity for a variant (auto-splits ship_ready vs pre_order)",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Shopify Variant GID",
-                        "name": "variant_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Total Quantity",
+                        "description": "Variant ID and Total Quantity",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1074,6 +1067,44 @@ const docTemplate = `{
                 }
             }
         },
+        "/orders/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ],
+                "tags": [
+                    "Order"
+                ],
+                "summary": "Export orders to Excel (Admin only)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search by order number or customer email",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "sales_report.xlsx",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
         "/orders/{id}": {
             "get": {
                 "security": [
@@ -1419,6 +1450,44 @@ const docTemplate = `{
                                     }
                                 }
                             ]
+                        }
+                    }
+                }
+            }
+        },
+        "/preorders/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ],
+                "tags": [
+                    "Preorder"
+                ],
+                "summary": "Export preorder list to Excel (Admin only)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by batch label",
+                        "name": "batch_label",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "preorder_list.xlsx",
+                        "schema": {
+                            "type": "file"
                         }
                     }
                 }
@@ -2354,10 +2423,16 @@ const docTemplate = `{
         },
         "cart.SetVariantQuantityRequest": {
             "type": "object",
+            "required": [
+                "variant_id"
+            ],
             "properties": {
                 "total_quantity": {
                     "type": "integer",
                     "minimum": 0
+                },
+                "variant_id": {
+                    "type": "string"
                 }
             }
         },
