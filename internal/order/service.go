@@ -118,6 +118,7 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 				Title:            &title,
 				UnitPrice:        &unitPrice,
 				AmountCharged:    &price,
+				ImageSrc:         item.ImageSrc,
 			})
 		}
 
@@ -173,6 +174,7 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 				UnitPrice:        &unitPrice,
 				AmountCharged:    &dep,
 				BalanceDue:       &bal,
+				ImageSrc:         item.ImageSrc,
 			})
 		}
 
@@ -263,6 +265,7 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 			UnitPrice:       unitPrice,
 			AmountCharged:   amountCharged,
 			BalanceDue:      balanceDue,
+			ImageSrc:        it.ImageSrc,
 		}
 		if it.DpAmount != nil {
 			val := fmt.Sprintf("%.2f", *it.DpAmount)
@@ -438,6 +441,7 @@ func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery
 				UnitPrice:       unitPrice,
 				AmountCharged:   amountCharged,
 				BalanceDue:      balanceDue,
+				ImageSrc:        it.ImageSrc,
 			}
 			if it.DpAmount != nil {
 				val := fmt.Sprintf("%.2f", *it.DpAmount)
@@ -567,6 +571,7 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 			UnitPrice:       unitPrice,
 			AmountCharged:   amountCharged,
 			BalanceDue:      balanceDue,
+			ImageSrc:        it.ImageSrc,
 		}
 		if it.DpAmount != nil {
 			val := fmt.Sprintf("%.2f", *it.DpAmount)
@@ -696,6 +701,7 @@ func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string
 			UnitPrice:       unitPrice,
 			AmountCharged:   amountCharged,
 			BalanceDue:      balanceDue,
+			ImageSrc:        it.ImageSrc,
 		}
 		if it.DpAmount != nil {
 			val := fmt.Sprintf("%.2f", *it.DpAmount)
