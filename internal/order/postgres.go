@@ -20,6 +20,32 @@ func (s *PostgresStore) CreateOrder(ctx context.Context, order *Order) error {
 	return s.db.WithContext(ctx).Create(order).Error
 }
 
+func (s *PostgresStore) fillItemImages(ctx context.Context, items []*OrderItem) {
+	if len(items) == 0 {
+		return
+	}
+	var variantIDs []string
+	for _, it := range items {
+		variantIDs = append(variantIDs, it.ShopifyVariantID)
+	}
+	var variants []struct {
+		ShopifyVariantID string
+		ImageSrc         string
+	}
+	if err := s.db.WithContext(ctx).Table("product_variants").
+		Select("shopify_variant_id, image_src").
+		Where("shopify_variant_id IN ?", variantIDs).
+		Find(&variants).Error; err == nil {
+		variantMap := make(map[string]string)
+		for _, v := range variants {
+			variantMap[v.ShopifyVariantID] = v.ImageSrc
+		}
+		for i := range items {
+			items[i].ImageSrc = variantMap[items[i].ShopifyVariantID]
+		}
+	}
+}
+
 func (s *PostgresStore) GetOrder(ctx context.Context, orderID, customerID string) (*Order, error) {
 	var order Order
 	query := s.db.WithContext(ctx).Preload("Items").Preload("Customer").Preload("ShippingAddress").Where("id = ?", orderID)
@@ -33,6 +59,13 @@ func (s *PostgresStore) GetOrder(ctx context.Context, orderID, customerID string
 		}
 		return nil, err
 	}
+
+	var ptrItems []*OrderItem
+	for i := range order.Items {
+		ptrItems = append(ptrItems, &order.Items[i])
+	}
+	s.fillItemImages(ctx, ptrItems)
+
 	return &order, nil
 }
 
@@ -50,6 +83,13 @@ func (s *PostgresStore) GetOrderByShopifyID(ctx context.Context, shopifyOrderID 
 		}
 		return nil, err
 	}
+
+	var ptrItems []*OrderItem
+	for i := range order.Items {
+		ptrItems = append(ptrItems, &order.Items[i])
+	}
+	s.fillItemImages(ctx, ptrItems)
+
 	return &order, nil
 }
 
@@ -85,7 +125,19 @@ func (s *PostgresStore) GetOrdersByCustomer(ctx context.Context, customerID stri
 	offset := (page - 1) * limit
 
 	err := query.Preload("Items").Preload("Customer").Preload("ShippingAddress").Order("created_at DESC").Offset(offset).Limit(limit).Find(&orders).Error
-	return orders, total, err
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var ptrItems []*OrderItem
+	for i := range orders {
+		for j := range orders[i].Items {
+			ptrItems = append(ptrItems, &orders[i].Items[j])
+		}
+	}
+	s.fillItemImages(ctx, ptrItems)
+
+	return orders, total, nil
 }
 
 func (s *PostgresStore) UpdateOrderStatus(ctx context.Context, orderID, financialStatus, fulfillmentStatus string) error {

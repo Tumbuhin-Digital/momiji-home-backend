@@ -55,6 +55,7 @@ type OrderItem struct {
 	ItemsReceived    int
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	ImageSrc         string `gorm:"-"`
 }
 
 func (OrderItem) TableName() string {

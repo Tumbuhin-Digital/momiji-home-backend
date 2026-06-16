@@ -70,6 +70,7 @@ type OrderItemDetail struct {
 	BalanceDue      *string `json:"balance_due,omitempty"`
 	FulfillmentStep int     `json:"fulfillment_step"`
 	ItemsReceived   int     `json:"items_received"`
+	ImageSrc        string  `json:"image_src"`
 }
 
 type AcceptOrderRequest struct {
