@@ -1,6 +1,7 @@
 package order
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
+	"github.com/xuri/excelize/v2"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -27,6 +29,7 @@ type OrderService interface {
 	UpdateFulfillmentStep(ctx context.Context, userID, orderID, itemID string, step int) error
 	UpdateItemsReceived(ctx context.Context, userID, orderID, itemID string, count int) error
 	AddTrackingNumber(ctx context.Context, userID, orderID, itemID, trackingNumber, trackingURL string) error
+	ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]byte, error)
 }
 
 type service struct {
@@ -874,4 +877,62 @@ func (s *service) AddTrackingNumber(ctx context.Context, userID, orderID, itemID
 	}()
 
 	return nil
+}
+
+func (s *service) ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]byte, error) {
+	// Override limit for export
+	query.Page = 1
+	query.Limit = 1000000 
+	
+	// "" as customerID means we fetch all orders (admin view)
+	orders, _, err := s.GetOrders(ctx, "", query)
+	if err != nil {
+		return nil, err
+	}
+
+	f := excelize.NewFile()
+	sheetName := "Sales Report"
+	f.SetSheetName("Sheet1", sheetName)
+	
+	headers := []string{"Order ID", "Date", "Customer Name", "Customer Email", "Ship Ready Items", "Pre-Order Items", "Total Price", "Financial Status", "Fulfillment Status"}
+	for i, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheetName, cell, h)
+	}
+
+	for rowIdx, o := range orders {
+		shipReadyQty := 0
+		preOrderQty := 0
+		for _, item := range o.LineItems.ShipReady {
+			shipReadyQty += item.Quantity
+		}
+		for _, item := range o.LineItems.PreOrder {
+			preOrderQty += item.Quantity
+		}
+
+		rowNum := rowIdx + 2
+		f.SetCellValue(sheetName, fmt.Sprintf("A%d", rowNum), o.OrderNumber)
+		f.SetCellValue(sheetName, fmt.Sprintf("B%d", rowNum), o.OrderDate)
+		
+		customerName := ""
+		customerEmail := ""
+		if o.Customer != nil {
+			customerName = o.Customer.FirstName + " " + o.Customer.LastName
+			customerEmail = o.Customer.Email
+		}
+		f.SetCellValue(sheetName, fmt.Sprintf("C%d", rowNum), customerName)
+		f.SetCellValue(sheetName, fmt.Sprintf("D%d", rowNum), customerEmail)
+		
+		f.SetCellValue(sheetName, fmt.Sprintf("E%d", rowNum), shipReadyQty)
+		f.SetCellValue(sheetName, fmt.Sprintf("F%d", rowNum), preOrderQty)
+		f.SetCellValue(sheetName, fmt.Sprintf("G%d", rowNum), o.TotalPrice)
+		f.SetCellValue(sheetName, fmt.Sprintf("H%d", rowNum), o.FinancialStatus)
+		f.SetCellValue(sheetName, fmt.Sprintf("I%d", rowNum), o.FulfillmentStatus)
+	}
+
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		return nil, fmt.Errorf("failed to write excel file: %w", err)
+	}
+	return buf.Bytes(), nil
 }

@@ -1619,6 +1619,29 @@ paths:
       summary: Add tracking number to an item
       tags:
       - Order
+  /orders/export:
+    get:
+      parameters:
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - description: Search by order number or customer email
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      responses:
+        "200":
+          description: sales_report.xlsx
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: Export orders to Excel (Admin only)
+      tags:
+      - Order
   /preorders:
     get:
       parameters:
@@ -1651,6 +1674,29 @@ paths:
       security:
       - BearerAuth: []
       summary: List pre-order settlements
+      tags:
+      - Preorder
+  /preorders/export:
+    get:
+      parameters:
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - description: Filter by batch label
+        in: query
+        name: batch_label
+        type: string
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      responses:
+        "200":
+          description: preorder_list.xlsx
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: Export preorder list to Excel (Admin only)
       tags:
       - Preorder
   /preorders/settlements/{id}:

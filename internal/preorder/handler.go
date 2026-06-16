@@ -24,6 +24,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	)
 
 	group.Get("/", h.ListSettlements)
+	group.Get("/export", h.ExportPreorders)
 	group.Get("/settlements/:id", h.GetSettlement)
 	group.Patch("/settlements/:id/invoice", h.InvoiceSettlement)
 	group.Patch("/settlements/:id/paid", h.MarkSettlementPaid)
@@ -126,4 +127,34 @@ func (h *Handler) MarkSettlementPaid(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Settlement marked as paid", st)
+}
+
+// ExportPreorders godoc
+// @Summary Export preorder list to Excel (Admin only)
+// @Tags Preorder
+// @Produce application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Security BearerAuth
+// @Param status query string false "Filter by status"
+// @Param batch_label query string false "Filter by batch label"
+// @Success 200 {file} file "preorder_list.xlsx"
+// @Router /preorders/export [get]
+func (h *Handler) ExportPreorders(c *fiber.Ctx) error {
+	var q ListSettlementsQuery
+	if err := c.QueryParser(&q); err != nil {
+		return response.Error(c, err)
+	}
+
+	filter := SettlementFilter{
+		Status:     q.Status,
+		BatchLabel: q.BatchLabel,
+	}
+
+	excelBytes, err := h.service.ExportPreordersToExcel(c.Context(), filter)
+	if err != nil {
+		return response.Error(c, err)
+	}
+
+	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Set("Content-Disposition", `attachment; filename="preorder_list.xlsx"`)
+	return c.Send(excelBytes)
 }

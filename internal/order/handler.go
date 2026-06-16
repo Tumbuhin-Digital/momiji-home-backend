@@ -35,6 +35,10 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	authGrp.Patch("/:id/items/:itemId/step", h.UpdateFulfillmentStep)
 	authGrp.Patch("/:id/items/:itemId/received", h.UpdateItemsReceived)
 	authGrp.Patch("/:id/items/:itemId/tracking", h.AddTrackingNumber)
+	
+	// Admin routes
+	adminGrp := group.Group("/", middleware.Auth(h.jwtSecret), middleware.RBAC("admin"))
+	adminGrp.Get("/export", h.ExportOrders)
 }
 
 // CreateOrder godoc
@@ -281,4 +285,29 @@ func (h *Handler) AddTrackingNumber(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Tracking number added", nil)
+}
+
+// ExportOrders godoc
+// @Summary Export orders to Excel (Admin only)
+// @Tags Order
+// @Produce application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Security BearerAuth
+// @Param status query string false "Filter by status"
+// @Param search query string false "Search by order number or customer email"
+// @Success 200 {file} file "sales_report.xlsx"
+// @Router /orders/export [get]
+func (h *Handler) ExportOrders(c *fiber.Ctx) error {
+	var query OrderQuery
+	if err := c.QueryParser(&query); err != nil {
+		return response.Error(c, apierror.ErrBadRequest)
+	}
+
+	excelBytes, err := h.service.ExportOrdersToExcel(c.Context(), query)
+	if err != nil {
+		return response.Error(c, err)
+	}
+
+	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Set("Content-Disposition", `attachment; filename="sales_report.xlsx"`)
+	return c.Send(excelBytes)
 }
