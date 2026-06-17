@@ -95,6 +95,11 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 	var totalBalanceDue float64
 	var totalChargedNow float64
 
+	var shippingCost float64
+	if req.ShippingPrice != "" {
+		shippingCost, _ = strconv.ParseFloat(req.ShippingPrice, 64)
+	}
+
 	// 3. Process ShipReady (Storefront Checkout)
 	if len(cartRes.ShipReady) > 0 {
 		var sfItems []shopify.CartLineInput
@@ -187,6 +192,14 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 		if req.GuestInfo != nil {
 			draftInput.Email = req.GuestInfo.Email
 		}
+		if req.ShippingTitle != "" && req.ShippingPrice != "" {
+			draftInput.ShippingLine = &shopify.ShippingLineInput{
+				Title: req.ShippingTitle,
+				Price: req.ShippingPrice,
+			}
+			total += shippingCost
+			totalChargedNow += shippingCost
+		}
 
 		draftRes, draftErr := s.shopClient.CreateDraftOrder(ctx, draftInput)
 		if draftErr != nil {
@@ -197,6 +210,11 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 
 	// 5. Save Order
 	orderNumber := fmt.Sprintf("ORD-%s", uuid.NewString()[:8])
+	var shipMethodPtr *string
+	if req.ShippingMethod != "" {
+		shipMethodPtr = &req.ShippingMethod
+	}
+
 	order := &Order{
 		OrderNumber:       orderNumber,
 		CustomerID:        customerID,
@@ -208,6 +226,8 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 		TotalDepositPaid:  totalDepositPaid,
 		TotalBalanceDue:   totalBalanceDue,
 		TotalChargedNow:   totalChargedNow,
+		ShippingMethod:    shipMethodPtr,
+		ShippingCost:      shippingCost,
 		Currency:          "USD",
 		Items:             orderItems,
 	}
