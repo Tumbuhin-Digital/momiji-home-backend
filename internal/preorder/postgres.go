@@ -35,19 +35,22 @@ func (s *postgresStore) GetSettlementByID(ctx context.Context, id string) (*Sett
 }
 
 func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderRow, int64, error) {
-	baseQuery := s.db.WithContext(ctx).Table("preorder_settlements").
-		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
-		Joins("LEFT JOIN product_variants ON product_variants.shopify_variant_id = order_line_items.shopify_variant_id")
+	buildQuery := func() *gorm.DB {
+		q := s.db.WithContext(ctx).Table("preorder_settlements").
+			Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
+			Joins("LEFT JOIN product_variants ON product_variants.shopify_variant_id = order_line_items.shopify_variant_id")
 
-	if filter.Status != "" {
-		baseQuery = baseQuery.Where("preorder_settlements.status = ?", filter.Status)
-	}
-	if filter.BatchLabel != "" {
-		baseQuery = baseQuery.Where("product_variants.preorder_batch_label = ?", filter.BatchLabel)
+		if filter.Status != "" {
+			q = q.Where("preorder_settlements.status = ?", filter.Status)
+		}
+		if filter.BatchLabel != "" {
+			q = q.Where("product_variants.preorder_batch_label = ?", filter.BatchLabel)
+		}
+		return q
 	}
 
 	var total int64
-	if err := baseQuery.Select("COUNT(DISTINCT order_line_items.title)").Row().Scan(&total); err != nil {
+	if err := buildQuery().Select("COUNT(DISTINCT order_line_items.title)").Row().Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -58,7 +61,7 @@ func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFi
 	offset := (page - 1) * limit
 
 	var titles []string
-	if err := baseQuery.Select("DISTINCT order_line_items.title").Order("order_line_items.title ASC").Limit(limit).Offset(offset).Pluck("order_line_items.title", &titles).Error; err != nil {
+	if err := buildQuery().Select("DISTINCT order_line_items.title").Order("order_line_items.title ASC").Limit(limit).Offset(offset).Pluck("order_line_items.title", &titles).Error; err != nil {
 		return nil, 0, err
 	}
 
