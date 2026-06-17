@@ -6,6 +6,7 @@ type FulfillmentType string
 const (
 	FulfillmentTypeShipReady FulfillmentType = "ship_ready"
 	FulfillmentTypePreOrder  FulfillmentType = "pre_order"
+	FulfillmentTypeInactive  FulfillmentType = "inactive"
 )
 
 type VariantDTO struct {
@@ -53,6 +54,7 @@ type ProductQuery struct {
 	Search          string `query:"search"`
 	Sort            string `query:"sort"`
 	FulfillmentType string `query:"fulfillment_type"`
+	ExcludeInactive bool   `query:"-"`
 }
 
 type UpdateProductStatusRequest struct {

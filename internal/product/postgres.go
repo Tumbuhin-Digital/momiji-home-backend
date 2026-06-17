@@ -34,6 +34,10 @@ func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Prod
 			Group("products.id")
 	}
 
+	if q.ExcludeInactive {
+		query = query.Where("products.id NOT IN (SELECT product_id FROM product_variants WHERE fulfillment_type = ?)", "inactive")
+	}
+
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}

@@ -1715,6 +1715,69 @@ const docTemplate = `{
                 }
             }
         },
+        "/products/catalog": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Product"
+                ],
+                "summary": "List catalog products excluding inactive ones",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit per page",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search by title or description",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order (e.g. price_asc, price_desc, name_asc, created_at, stock_asc, stock_desc)",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by fulfillment type (ship_ready, pre_order)",
+                        "name": "fulfillment_type",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Envelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.PaginatedData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/products/sync": {
             "post": {
                 "security": [
@@ -2931,6 +2994,12 @@ const docTemplate = `{
                 },
                 "shipping_method": {
                     "type": "string"
+                },
+                "shipping_price": {
+                    "type": "string"
+                },
+                "shipping_title": {
+                    "type": "string"
                 }
             }
         },
@@ -3204,11 +3273,13 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "ship_ready",
-                "pre_order"
+                "pre_order",
+                "inactive"
             ],
             "x-enum-varnames": [
                 "FulfillmentTypeShipReady",
-                "FulfillmentTypePreOrder"
+                "FulfillmentTypePreOrder",
+                "FulfillmentTypeInactive"
             ]
         },
         "product.ProductDTO": {

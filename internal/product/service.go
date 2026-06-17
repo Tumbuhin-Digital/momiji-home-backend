@@ -225,14 +225,14 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 									} `json:"node"`
 								} `json:"edges"`
 							} `json:"images"`
-							Variants        struct {
+							Variants struct {
 								Edges []struct {
 									Node struct {
-										ID                string  `json:"id"`
-										Title             string  `json:"title"`
-										Sku               string  `json:"sku"`
-										Price             string  `json:"price"`
-										InventoryQuantity int     `json:"inventoryQuantity"`
+										ID                string `json:"id"`
+										Title             string `json:"title"`
+										Sku               string `json:"sku"`
+										Price             string `json:"price"`
+										InventoryQuantity int    `json:"inventoryQuantity"`
 										Image             struct {
 											Url string `json:"url"`
 										} `json:"image"`
@@ -309,10 +309,10 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 			for _, vEdge := range pNode.Variants.Edges {
 				vNode := vEdge.Node
 				price, _ := strconv.ParseFloat(vNode.Price, 64)
-				
+
 				wVal := vNode.InventoryItem.Measurement.Weight.Value
 				wUnit := vNode.InventoryItem.Measurement.Weight.Unit
-				
+
 				weightKg := wVal
 				if wUnit == "GRAMS" {
 					weightKg = wVal / 1000.0
@@ -381,8 +381,8 @@ func (s *service) GetVariantsByProductID(ctx context.Context, productID string) 
 }
 
 func (s *service) UpdateProductStatus(ctx context.Context, productID string, fulfillmentType string) (*ProductDTO, error) {
-	if fulfillmentType != "ship_ready" && fulfillmentType != "pre_order" {
-		return nil, apierror.New(400, "validation_error", "fulfillment_type must be ship_ready or pre_order")
+	if fulfillmentType != "ship_ready" && fulfillmentType != "pre_order" && fulfillmentType != "inactive" {
+		return nil, apierror.New(400, "validation_error", "fulfillment_type must be ship_ready, pre_order, or inactive")
 	}
 
 	if fulfillmentType == "ship_ready" {
@@ -392,7 +392,7 @@ func (s *service) UpdateProductStatus(ctx context.Context, productID string, ful
 		}
 		for _, v := range variants {
 			if v.InventoryQuantity <= 0 {
-				return nil, apierror.New(400, "inventory_error", "Cannot set status to ship_ready. Variant '" + v.Title + "' has 0 inventory.")
+				return nil, apierror.New(400, "inventory_error", "Cannot set status to ship_ready. Variant '"+v.Title+"' has 0 inventory.")
 			}
 		}
 	}
