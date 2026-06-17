@@ -880,12 +880,7 @@ func (s *service) AddTrackingNumber(ctx context.Context, userID, orderID, itemID
 }
 
 func (s *service) ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]byte, error) {
-	// Override limit for export
-	query.Page = 1
-	query.Limit = 1000000 
-	
-	// "" as customerID means we fetch all orders (admin view)
-	orders, _, err := s.GetOrders(ctx, "", query)
+	orders, err := s.store.GetAllOrdersForExport(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -903,29 +898,27 @@ func (s *service) ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]
 	for rowIdx, o := range orders {
 		shipReadyQty := 0
 		preOrderQty := 0
-		for _, item := range o.LineItems.ShipReady {
-			shipReadyQty += item.Quantity
-		}
-		for _, item := range o.LineItems.PreOrder {
-			preOrderQty += item.Quantity
+		for _, item := range o.Items {
+			if item.Type == "ship_ready" {
+				shipReadyQty += item.Quantity
+			} else if item.Type == "pre_order" {
+				preOrderQty += item.Quantity
+			}
 		}
 
 		rowNum := rowIdx + 2
 		f.SetCellValue(sheetName, fmt.Sprintf("A%d", rowNum), o.OrderNumber)
-		f.SetCellValue(sheetName, fmt.Sprintf("B%d", rowNum), o.OrderDate)
-		
-		customerName := ""
-		customerEmail := ""
+		f.SetCellValue(sheetName, fmt.Sprintf("B%d", rowNum), o.CreatedAt.Format("2006-01-02"))
 		if o.Customer != nil {
-			customerName = o.Customer.FirstName + " " + o.Customer.LastName
-			customerEmail = o.Customer.Email
+			var fname, lname string
+			if o.Customer.FirstName != nil { fname = *o.Customer.FirstName }
+			if o.Customer.LastName != nil { lname = *o.Customer.LastName }
+			f.SetCellValue(sheetName, fmt.Sprintf("C%d", rowNum), fname+" "+lname)
+			f.SetCellValue(sheetName, fmt.Sprintf("D%d", rowNum), o.Customer.Email)
 		}
-		f.SetCellValue(sheetName, fmt.Sprintf("C%d", rowNum), customerName)
-		f.SetCellValue(sheetName, fmt.Sprintf("D%d", rowNum), customerEmail)
-		
 		f.SetCellValue(sheetName, fmt.Sprintf("E%d", rowNum), shipReadyQty)
 		f.SetCellValue(sheetName, fmt.Sprintf("F%d", rowNum), preOrderQty)
-		f.SetCellValue(sheetName, fmt.Sprintf("G%d", rowNum), o.TotalPrice)
+		f.SetCellValue(sheetName, fmt.Sprintf("G%d", rowNum), fmt.Sprintf("%.2f", o.TotalPrice))
 		f.SetCellValue(sheetName, fmt.Sprintf("H%d", rowNum), o.FinancialStatus)
 		f.SetCellValue(sheetName, fmt.Sprintf("I%d", rowNum), o.FulfillmentStatus)
 	}
