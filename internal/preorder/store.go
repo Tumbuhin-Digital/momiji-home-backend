@@ -58,6 +58,7 @@ type PreorderStore interface {
 	CreateSettlement(ctx context.Context, s *Settlement) error
 	GetSettlementByID(ctx context.Context, id string) (*Settlement, error)
 	ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderRow, int64, error)
+	GetAllSettlementsForExport(ctx context.Context, filter SettlementFilter) ([]PreorderRow, error)
 	UpdateSettlementStatus(ctx context.Context, id, status string, ts *time.Time) error
 	AllSettlementsPaid(ctx context.Context, orderID string) (bool, error)
 	GetSettlementsForReminder(ctx context.Context, daysSinceInvoiced int) ([]PreorderRow, error)
