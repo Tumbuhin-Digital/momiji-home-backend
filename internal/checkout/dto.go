@@ -2,25 +2,7 @@ package checkout
 
 import "github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
 
-type ShippingMethod struct {
-	ID               string `json:"id"`
-	Label            string `json:"label"`
-	EstimatedArrival string `json:"estimated_arrival"`
-	Cost             string `json:"cost"`
-}
 
-type ShippingMethodsResponse struct {
-	Methods  []ShippingMethod `json:"methods"`
-	Currency string           `json:"currency"`
-}
-
-type CalculateShippingRequest struct {
-	ShippingMethod string `json:"shipping_method" validate:"required"`
-	AddressID      int    `json:"address_id,omitempty"`
-	Country        string `json:"country,omitempty"`
-	Province       string `json:"province,omitempty"`
-	Zip            string `json:"zip,omitempty"`
-}
 
 type CheckoutSummaryRequest struct {
 	ShippingMethod string `json:"shipping_method,omitempty"`
@@ -75,9 +57,27 @@ type InitiateCheckoutResponse struct {
 	CheckoutReference string `json:"checkout_reference"`
 }
 
+type ShippingRatesRequest struct {
+	Name     string `json:"name,omitempty"`
+	Phone    string `json:"phone,omitempty"`
+	Address1 string `json:"address1,omitempty"`
+	City     string `json:"city,omitempty"`
+	State    string `json:"state,omitempty"`
+	Zip      string `json:"zip" validate:"required"`
+	Country  string `json:"country" validate:"required"`
+}
+
 type ValidateAddressRequest struct {
 	Country string `json:"country" validate:"required"`
 	State   string `json:"state" validate:"required"`
 	City    string `json:"city" validate:"required"`
 	Zip     string `json:"zip" validate:"required"`
+}
+
+type ShippingRateDTO struct {
+	ServiceCode  string `json:"service_code"`
+	Label        string `json:"label"`
+	Cost         string `json:"cost"`
+	Currency     string `json:"currency"`
+	DeliveryDays *int   `json:"delivery_days,omitempty"`
 }

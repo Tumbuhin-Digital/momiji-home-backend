@@ -27,8 +27,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	// Shipping routes (authenticated)
 	shipping := router.Group("/shipping")
 	shipping.Use(middleware.OptionalAuth(h.jwtSecret))
-	shipping.Get("/methods", h.GetShippingMethods)
-	shipping.Post("/calculate", h.CalculateShipping)
+	shipping.Post("/rates", h.GetShippingRates)
 	shipping.Post("/validate-address", h.ValidateAddress)
 
 	// Checkout routes (authenticated)
@@ -49,52 +48,39 @@ func (h *Handler) extractIdentity(c *fiber.Ctx) (userID *string, sessionID *stri
 	return
 }
 
-// GetShippingMethods godoc
-// @Summary List shipping methods
+
+// GetShippingRates godoc
+// @Summary List live shipping rates via ShipStation
 // @Tags Shipping
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} response.Envelope{data=ShippingMethodsResponse}
-// @Router /shipping/methods [get]
-func (h *Handler) GetShippingMethods(c *fiber.Ctx) error {
-	// Mock response
-	res := &ShippingMethodsResponse{
-		Methods: []ShippingMethod{
-			{ID: "ground", Label: "Ground", EstimatedArrival: "5-7 Business Days", Cost: "20.00"},
-			{ID: "expedited", Label: "Expedited", EstimatedArrival: "2-3 Business Days", Cost: "35.00"},
-		},
-		Currency: "USD",
+// @Param zip query string true "Destination ZIP"
+// @Param country query string false "Destination Country (default: US)"
+// @Success 200 {object} response.Envelope{data=[]ShippingRateDTO}
+// @Router /shipping/rates [get]
+func (h *Handler) GetShippingRates(c *fiber.Ctx) error {
+	uid, sid := h.extractIdentity(c)
+	
+	var req ShippingRatesRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, apierror.New(400, "invalid_request", "invalid request body"))
 	}
-	return response.Success(c, fiber.StatusOK, "Shipping methods retrieved", res)
+	
+	if req.Zip == "" {
+		return response.Error(c, apierror.New(400, "invalid_request", "zip code is required"))
+	}
+	if req.Country == "" {
+		req.Country = "US"
+	}
+
+	rates, err := h.checkoutService.GetShippingRates(c.Context(), uid, sid, req)
+	if err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Shipping rates retrieved", rates)
 }
 
-// CalculateShipping godoc
-// @Summary Calculate shipping cost
-// @Tags Shipping
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Security SessionAuth
-// @Param request body CalculateShippingRequest true "Calculate Request"
-// @Success 200 {object} response.Envelope
-// @Router /shipping/calculate [post]
-func (h *Handler) CalculateShipping(c *fiber.Ctx) error {
-	var req CalculateShippingRequest
-	if err := c.BodyParser(&req); err != nil {
-		return response.Error(c, err)
-	}
-	if err := validator.ValidateStruct(&req); err != nil {
-		return response.Error(c, err)
-	}
-	
-	// Mock implementation
-	cost := "20.00"
-	if req.ShippingMethod == "expedited" {
-		cost = "35.00"
-	}
-	
-	return response.Success(c, fiber.StatusOK, "Shipping calculated", fiber.Map{"cost": cost, "currency": "USD"})
-}
+
 
 // GetCheckoutSummary godoc
 // @Summary Get checkout summary
@@ -116,7 +102,7 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 	}
 
 	uid, sid := h.extractIdentity(c)
-	
+
 	cartRes, err := h.cartService.GetCartResponse(c.Context(), uid, sid)
 	if err != nil {
 		return response.Error(c, err)
@@ -135,11 +121,11 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 	res := &CheckoutSummaryResponse{}
 	res.ShipReady.Items = cartRes.ShipReady
 	res.ShipReady.Subtotal = cartRes.Summary.TotalShipReady
-	
+
 	res.PreOrder.Items = cartRes.PreOrder
 	res.PreOrder.DepositSubtotal = cartRes.Summary.TotalDeposit
 	res.PreOrder.BalanceSubtotal = cartRes.Summary.TotalBalanceDue
-	
+
 	res.Shipping.Method = req.ShippingMethod
 	res.Shipping.Cost = fmt.Sprintf("%.2f", shippingCost)
 	res.Shipping.EstimatedArrival = "5-7 Business Days"
@@ -149,13 +135,13 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 	res.DueNow.Shipping = res.Shipping.Cost
 	res.DueNow.PreorderDeposit = cartRes.Summary.TotalDeposit
 	res.DueNow.Total = fmt.Sprintf("%.2f", dueNowTotal)
-	
+
 	// Preorder balance assumes a flat shipping rate or free later
 	shippingPreorder := 10.00
 	if len(cartRes.PreOrder) == 0 {
 		shippingPreorder = 0
 	}
-	
+
 	dueAugustTotal := preorderBalance + shippingPreorder
 	res.DueAugust.PreorderBalance = cartRes.Summary.TotalBalanceDue
 	res.DueAugust.ShippingPreorder = fmt.Sprintf("%.2f", shippingPreorder)
@@ -186,7 +172,7 @@ func (h *Handler) InitiateCheckout(c *fiber.Ctx) error {
 	}
 
 	uid, sid := h.extractIdentity(c)
-	
+
 	// Guest must provide email if not logged in
 	if uid == nil && req.Email == "" {
 		return response.Error(c, apierror.New(400, "validation_error", "email is required for guest checkout"))
@@ -217,7 +203,7 @@ func (h *Handler) GetCheckoutConfirm(c *fiber.Ctx) error {
 	if orderID == "" {
 		return response.Error(c, apierror.New(400, "bad_request", "checkout_reference is required"))
 	}
-	
+
 	// Fetch from OrderService
 	orderRes, err := h.orderService.GetOrderByShopifyID(c.Context(), orderID)
 	if err != nil {
@@ -258,16 +244,16 @@ func (h *Handler) GetCheckoutConfirm(c *fiber.Ctx) error {
 	}
 
 	return response.Success(c, fiber.StatusOK, "Order confirmed", fiber.Map{
-		"order_id":             orderRes.ID,
-		"order_number":         orderRes.OrderNumber,
-		"order_date":           orderRes.OrderDate,
-		"customer_email":       customerEmail,
-		"financial_status":     orderRes.FinancialStatus,
-		"total_price":          orderRes.TotalPrice,
-		"total_charged_now":    orderRes.TotalChargedNow,
-		"total_balance_due":    orderRes.TotalBalanceDue,
-		"currency":             orderRes.Currency,
-		"items":                items,
+		"order_id":          orderRes.ID,
+		"order_number":      orderRes.OrderNumber,
+		"order_date":        orderRes.OrderDate,
+		"customer_email":    customerEmail,
+		"financial_status":  orderRes.FinancialStatus,
+		"total_price":       orderRes.TotalPrice,
+		"total_charged_now": orderRes.TotalChargedNow,
+		"total_balance_due": orderRes.TotalBalanceDue,
+		"currency":          orderRes.Currency,
+		"items":             items,
 	})
 }
 

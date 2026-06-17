@@ -2142,6 +2142,60 @@ const docTemplate = `{
                 }
             }
         },
+        "/shipping/rates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Shipping"
+                ],
+                "summary": "List live shipping rates via ShipStation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Destination ZIP",
+                        "name": "zip",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Destination Country (default: US)",
+                        "name": "country",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Envelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/checkout.ShippingRateDTO"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/shipping/validate-address": {
             "post": {
                 "security": [
@@ -2320,6 +2374,9 @@ const docTemplate = `{
                 "deposit_amount": {
                     "type": "string"
                 },
+                "height": {
+                    "type": "number"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -2328,6 +2385,9 @@ const docTemplate = `{
                 },
                 "inventory_quantity": {
                     "type": "integer"
+                },
+                "length": {
+                    "type": "number"
                 },
                 "quantity": {
                     "type": "integer"
@@ -2345,6 +2405,12 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "weight": {
+                    "type": "number"
+                },
+                "weight_unit": {
+                    "type": "string"
+                },
+                "width": {
                     "type": "number"
                 }
             }
@@ -2652,6 +2718,26 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/checkout.ShippingMethod"
                     }
+                }
+            }
+        },
+        "checkout.ShippingRateDTO": {
+            "type": "object",
+            "properties": {
+                "cost": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "delivery_days": {
+                    "type": "integer"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "service_code": {
+                    "type": "string"
                 }
             }
         },
@@ -3372,6 +3458,9 @@ const docTemplate = `{
                 "fulfillment_type": {
                     "$ref": "#/definitions/product.FulfillmentType"
                 },
+                "height_cm": {
+                    "type": "number"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -3380,6 +3469,9 @@ const docTemplate = `{
                 },
                 "inventory_quantity": {
                     "type": "integer"
+                },
+                "length_cm": {
+                    "type": "number"
                 },
                 "retail_price": {
                     "type": "string"
@@ -3391,6 +3483,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "weight_kg": {
+                    "type": "number"
+                },
+                "width_cm": {
                     "type": "number"
                 },
                 "ws_price": {

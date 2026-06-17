@@ -7,16 +7,20 @@ import (
 	"strconv"
 	"strings"
 
+	"log/slog"
+
 	"github.com/google/uuid"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/config"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
-	"log/slog"
 )
 
 type CheckoutService interface {
 	InitiateCheckout(ctx context.Context, userID, sessionID *string, req InitiateCheckoutRequest) (*InitiateCheckoutResponse, error)
 	ValidateAddress(ctx context.Context, req ValidateAddressRequest) map[string]string
+	GetShippingRates(ctx context.Context, userID, sessionID *string, req ShippingRatesRequest) ([]ShippingRateDTO, error)
 }
 
 type service struct {
@@ -25,10 +29,20 @@ type service struct {
 	stockLockService StockLockService
 	store            StockLockStore
 	feURL            string
+	shipstationCli   shipstation.Client
+	shipstationCfg   config.ShipStationConfig
 }
 
-func NewCheckoutService(cartService cart.CartService, shopifyCli shopify.Client, stockLockService StockLockService, store StockLockStore, feURL string) CheckoutService {
-	return &service{cartService: cartService, shopifyCli: shopifyCli, stockLockService: stockLockService, store: store, feURL: feURL}
+func NewCheckoutService(cartService cart.CartService, shopifyCli shopify.Client, stockLockService StockLockService, store StockLockStore, feURL string, shipstationCli shipstation.Client, shipstationCfg config.ShipStationConfig) CheckoutService {
+	return &service{
+		cartService:      cartService,
+		shopifyCli:       shopifyCli,
+		stockLockService: stockLockService,
+		store:            store,
+		feURL:            feURL,
+		shipstationCli:   shipstationCli,
+		shipstationCfg:   shipstationCfg,
+	}
 }
 
 func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *string, req InitiateCheckoutRequest) (*InitiateCheckoutResponse, error) {
@@ -99,7 +113,7 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	}
 
 	checkoutRef := uuid.NewString()
-	
+
 	slog.InfoContext(ctx, "Initiating checkout", slog.String("checkout_reference", checkoutRef), slog.Int("ship_ready_items", len(cartRes.ShipReady)), slog.Int("pre_order_items", len(cartRes.PreOrder)))
 
 	draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
@@ -130,7 +144,7 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		slog.ErrorContext(ctx, "Failed to create shopify draft order", slog.Any("error", err), slog.String("checkout_reference", checkoutRef))
 		return nil, fmt.Errorf("failed to create shopify draft order: %w", err)
 	}
-	
+
 	slog.InfoContext(ctx, "Shopify draft order created", slog.String("checkout_reference", checkoutRef), slog.String("invoice_url", res.InvoiceUrl))
 
 	checkoutUrl := res.InvoiceUrl
@@ -169,4 +183,118 @@ func (s *service) ValidateAddress(ctx context.Context, req ValidateAddressReques
 	}
 
 	return nil
+}
+
+func (s *service) GetShippingRates(ctx context.Context, userID, sessionID *string, rateReq ShippingRatesRequest) ([]ShippingRateDTO, error) {
+	cartRes, err := s.cartService.GetCartResponse(ctx, userID, sessionID)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+
+	if len(cartRes.PreOrder) == 0 {
+		return []ShippingRateDTO{}, nil
+	}
+
+	totalWeight := 0.0
+	var maxLen, maxWid, maxHt float64
+	for _, item := range cartRes.PreOrder {
+		wt := item.Weight
+		if item.WeightUnit == "KILOGRAMS" {
+			wt = wt * 2.20462
+		} else if item.WeightUnit == "GRAMS" {
+			wt = wt * 0.00220462
+		}
+		totalWeight += (wt * float64(item.Quantity))
+
+		if item.Length > maxLen {
+			maxLen = item.Length
+		}
+		if item.Width > maxWid {
+			maxWid = item.Width
+		}
+		if item.Height > maxHt {
+			maxHt = item.Height
+		}
+	}
+
+	if totalWeight == 0 {
+		totalWeight = 1.0 // default 1 lb
+	}
+
+	// Default fallback for required recipient details
+	if rateReq.Name == "" {
+		rateReq.Name = "Recipient"
+	}
+	if rateReq.Phone == "" {
+		rateReq.Phone = "555-555-5555"
+	}
+	if rateReq.Address1 == "" {
+		rateReq.Address1 = "123 Unknown St"
+	}
+
+	req := shipstation.RateRequest{
+		RateOptions: shipstation.RateOptions{
+			CarrierIDs: s.shipstationCfg.CarrierCodes,
+		},
+		Shipment: shipstation.Shipment{
+			ValidateAddress: "no_validation",
+			ShipFrom: shipstation.Address{
+				Name:          s.shipstationCfg.WarehouseName,
+				Phone:         s.shipstationCfg.WarehousePhone,
+				AddressLine1:  s.shipstationCfg.WarehouseAddress1,
+				CityLocality:  s.shipstationCfg.WarehouseCity,
+				StateProvince: s.shipstationCfg.WarehouseState,
+				PostalCode:    s.shipstationCfg.WarehouseZip,
+				CountryCode:   s.shipstationCfg.WarehouseCountry,
+			},
+			ShipTo: shipstation.Address{
+				Name:          rateReq.Name,
+				Phone:         rateReq.Phone,
+				AddressLine1:  rateReq.Address1,
+				CityLocality:  rateReq.City,
+				StateProvince: rateReq.State,
+				PostalCode:    rateReq.Zip,
+				CountryCode:   rateReq.Country,
+			},
+			Packages: []shipstation.Package{
+				{
+					Weight: shipstation.Weight{
+						Value: totalWeight,
+						Unit:  "pound",
+					},
+					Dimensions: &shipstation.Dimensions{
+						Unit:   "inch",
+						Length: maxLen,
+						Width:  maxWid,
+						Height: maxHt,
+					},
+				},
+			},
+		},
+	}
+
+	rates, err := s.shipstationCli.GetRates(ctx, req)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get shipping rates from shipstation", "error", err)
+		return nil, apierror.New(500, "shipping_rate_error", "Failed to fetch shipping rates from carriers")
+	}
+
+	slog.InfoContext(ctx, "shipstation rates response", "count", len(rates), "rates", rates)
+
+	var dtos []ShippingRateDTO
+	for _, r := range rates {
+		dtos = append(dtos, ShippingRateDTO{
+			ServiceCode:  r.ServiceCode,
+			Label:        r.ServiceType,
+			Cost:         fmt.Sprintf("%.2f", r.ShippingAmount.Amount),
+			Currency:     r.ShippingAmount.Currency,
+			DeliveryDays: r.DeliveryDays,
+		})
+	}
+
+	if len(dtos) == 0 {
+		return nil, apierror.New(500, "shipping_rate_error", "Failed to fetch shipping rates from carriers")
+	}
+
+	return dtos, nil
 }
