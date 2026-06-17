@@ -18,6 +18,9 @@ type VariantDTO struct {
 	FulfillmentType   FulfillmentType `json:"fulfillment_type"`
 	InventoryQuantity int             `json:"inventory_quantity"`
 	WeightKg          float64         `json:"weight_kg"`
+	LengthCm          float64         `json:"length_cm"`
+	WidthCm           float64         `json:"width_cm"`
+	HeightCm          float64         `json:"height_cm"`
 }
 
 type ProductImageDTO struct {

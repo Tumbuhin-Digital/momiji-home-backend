@@ -33,6 +33,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/email"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/scheduler"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
@@ -128,8 +129,9 @@ func main() {
 
 	cartHandler := cart.NewCartHandler(cartService, cfg.Auth.Secret)
 	cartHandler.SetupRoutes(api)
+	shipstationClient := shipstation.NewClient(cfg.ShipStation.APIKey, cfg.ShipStation.Sandbox)
 
-	checkoutService := checkout.NewCheckoutService(cartService, shopifyClient, stockLockService, stockLockStore, cfg.App.FrontendURL)
+	checkoutService := checkout.NewCheckoutService(cartService, shopifyClient, stockLockService, stockLockStore, cfg.App.FrontendURL, shipstationClient, cfg.ShipStation)
 	checkoutHandler := checkout.NewCheckoutHandler(cartService, checkoutService, orderService, cfg.Auth.Secret)
 	checkoutHandler.SetupRoutes(api)
 

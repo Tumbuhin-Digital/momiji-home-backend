@@ -153,15 +153,18 @@ func mapVariantToDTO(variant *ProductVariant) *VariantDTO {
 		FulfillmentType:   FulfillmentType(ft),
 		InventoryQuantity: variant.InventoryQuantity,
 		WeightKg:          variant.WeightKg,
+		LengthCm:          variant.DepthCm, // Mapping Depth to Length
+		WidthCm:           variant.WidthCm,
+		HeightCm:          variant.HeightCm,
 	}
 }
 
-const shopifySyncPageCap = 10
+const shopifySyncPageCap = 50
 
 func (s *service) SyncFromShopify(ctx context.Context) error {
 	query := `
 		query($cursor: String) {
-		  products(first: 50, after: $cursor) {
+		  products(first: 50, after: $cursor, sortKey: CREATED_AT, reverse: true) {
 			pageInfo { hasNextPage endCursor }
 			edges {
 			  node {
@@ -173,7 +176,15 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 				}
 				variants(first: 10) {
 				  edges {
-					node { id title sku price weight weightUnit inventoryQuantity image { url } inventoryItem { id } }
+					node { 
+						id title sku price inventoryQuantity image { url } 
+						inventoryItem { 
+							id 
+							measurement { 
+								weight { value unit } 
+							} 
+						} 
+					}
 				  }
 				}
 			  }
@@ -190,6 +201,7 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("shopify graphql query failed (page %d): %w", page+1, err)
 		}
+		fmt.Printf("Shopify response (page %d): %s\n", page, string(resBytes))
 
 		var res struct {
 			Data struct {
@@ -220,14 +232,18 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 										Title             string  `json:"title"`
 										Sku               string  `json:"sku"`
 										Price             string  `json:"price"`
-										Weight            float64 `json:"weight"`
-										WeightUnit        string  `json:"weightUnit"`
 										InventoryQuantity int     `json:"inventoryQuantity"`
 										Image             struct {
 											Url string `json:"url"`
 										} `json:"image"`
 										InventoryItem struct {
-											ID string `json:"id"`
+											ID          string `json:"id"`
+											Measurement struct {
+												Weight struct {
+													Value float64 `json:"value"`
+													Unit  string  `json:"unit"`
+												} `json:"weight"`
+											} `json:"measurement"`
 										} `json:"inventoryItem"`
 									} `json:"node"`
 								} `json:"edges"`
@@ -240,6 +256,16 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 
 		if err := json.Unmarshal(resBytes, &res); err != nil {
 			return fmt.Errorf("failed to parse shopify response (page %d): %w", page+1, err)
+		}
+
+		// Also check for GraphQL errors
+		var errRes struct {
+			Errors []struct {
+				Message string `json:"message"`
+			} `json:"errors"`
+		}
+		if err := json.Unmarshal(resBytes, &errRes); err == nil && len(errRes.Errors) > 0 {
+			return fmt.Errorf("shopify graphql returned error: %s", errRes.Errors[0].Message)
 		}
 
 		for _, pEdge := range res.Data.Products.Edges {
@@ -283,13 +309,17 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 			for _, vEdge := range pNode.Variants.Edges {
 				vNode := vEdge.Node
 				price, _ := strconv.ParseFloat(vNode.Price, 64)
-				weightKg := vNode.Weight
-				if vNode.WeightUnit == "GRAMS" {
-					weightKg = vNode.Weight / 1000.0
-				} else if vNode.WeightUnit == "OUNCES" {
-					weightKg = vNode.Weight * 0.0283495
-				} else if vNode.WeightUnit == "POUNDS" {
-					weightKg = vNode.Weight * 0.453592
+				
+				wVal := vNode.InventoryItem.Measurement.Weight.Value
+				wUnit := vNode.InventoryItem.Measurement.Weight.Unit
+				
+				weightKg := wVal
+				if wUnit == "GRAMS" {
+					weightKg = wVal / 1000.0
+				} else if wUnit == "OUNCES" {
+					weightKg = wVal * 0.0283495
+				} else if wUnit == "POUNDS" {
+					weightKg = wVal * 0.453592
 				}
 
 				variant := &ProductVariant{

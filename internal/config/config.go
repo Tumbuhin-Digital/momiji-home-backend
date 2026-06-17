@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
@@ -12,8 +13,9 @@ type Config struct {
 	App      AppConfig
 	Database DatabaseConfig
 	Auth     AuthConfig
-	Shopify  ShopifyConfig
-	Email    EmailConfig
+	Shopify     ShopifyConfig
+	Email       EmailConfig
+	ShipStation ShipStationConfig
 }
 
 type AppConfig struct {
@@ -62,6 +64,19 @@ type EmailConfig struct {
 	SMTPUser     string
 	SMTPPassword string
 	From         string
+}
+
+type ShipStationConfig struct {
+	APIKey       string
+	Sandbox      bool
+	WarehouseZip string
+	WarehouseCountry string
+	WarehouseName string
+	WarehousePhone string
+	WarehouseAddress1 string
+	WarehouseCity string
+	WarehouseState string
+	CarrierCodes []string
 }
 
 func Load() (*Config, error) {
@@ -123,6 +138,23 @@ func Load() (*Config, error) {
 	cfg.Email.SMTPUser = os.Getenv("SMTP_USER")
 	cfg.Email.SMTPPassword = os.Getenv("SMTP_PASS")
 	cfg.Email.From = os.Getenv("EMAIL_FROM")
+
+	cfg.ShipStation.APIKey = os.Getenv("SHIPSTATION_SANDBOX_API_KEY")
+	cfg.ShipStation.Sandbox = cfg.App.Env != "production"
+	cfg.ShipStation.WarehouseZip = os.Getenv("WAREHOUSE_ZIP")
+	cfg.ShipStation.WarehouseCountry = os.Getenv("WAREHOUSE_COUNTRY")
+	cfg.ShipStation.WarehouseName = os.Getenv("WAREHOUSE_NAME")
+	cfg.ShipStation.WarehousePhone = os.Getenv("WAREHOUSE_PHONE")
+	cfg.ShipStation.WarehouseAddress1 = os.Getenv("WAREHOUSE_ADDRESS1")
+	cfg.ShipStation.WarehouseCity = os.Getenv("WAREHOUSE_CITY")
+	cfg.ShipStation.WarehouseState = os.Getenv("WAREHOUSE_STATE")
+
+	carrierCodesStr := os.Getenv("SHIPSTATION_CARRIER_CODES")
+	if carrierCodesStr != "" {
+		for _, code := range strings.Split(carrierCodesStr, ",") {
+			cfg.ShipStation.CarrierCodes = append(cfg.ShipStation.CarrierCodes, strings.TrimSpace(code))
+		}
+	}
 
 	return cfg, nil
 }

@@ -108,18 +108,27 @@ func (s *PostgresStore) GetVariantByInventoryItemID(ctx context.Context, itemID 
 }
 
 func (s *PostgresStore) UpsertProduct(ctx context.Context, product *Product) error {
+	// Ensure ID is not set — let Postgres generate the UUID on insert.
+	// If ID were an empty string, GORM would try INSERT with id='' which fails on UUID column.
+	product.ID = ""
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "shopify_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"title", "description", "status", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{
+			"title", "description", "status",
+			"handle", "vendor", "product_type", "tags", "body_html",
+			"updated_at",
+		}),
 	}).Create(product).Error
 }
 
 func (s *PostgresStore) UpsertVariant(ctx context.Context, variant *ProductVariant) error {
+	// Clear ID so Postgres generates a fresh UUID on insert (avoids empty-string UUID error).
+	variant.ID = ""
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "shopify_variant_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"title", "sku", "price", "image_src",
-			"inventory_quantity", "shopify_inventory_item_id", "updated_at",
+			"inventory_quantity", "shopify_inventory_item_id", "weight_kg", "updated_at",
 		}),
 	}).Create(variant).Error
 }

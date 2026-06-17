@@ -46,12 +46,16 @@ definitions:
         type: string
       deposit_amount:
         type: string
+      height:
+        type: number
       id:
         type: string
       image_src:
         type: string
       inventory_quantity:
         type: integer
+      length:
+        type: number
       quantity:
         type: integer
       subtotal:
@@ -63,6 +67,10 @@ definitions:
       variant_id:
         type: string
       weight:
+        type: number
+      weight_unit:
+        type: string
+      width:
         type: number
     type: object
   cart.CartItemRequest:
@@ -263,6 +271,19 @@ definitions:
         items:
           $ref: '#/definitions/checkout.ShippingMethod'
         type: array
+    type: object
+  checkout.ShippingRateDTO:
+    properties:
+      cost:
+        type: string
+      currency:
+        type: string
+      delivery_days:
+        type: integer
+      label:
+        type: string
+      service_code:
+        type: string
     type: object
   checkout.ValidateAddressRequest:
     properties:
@@ -736,12 +757,16 @@ definitions:
     properties:
       fulfillment_type:
         $ref: '#/definitions/product.FulfillmentType'
+      height_cm:
+        type: number
       id:
         type: string
       image_src:
         type: string
       inventory_quantity:
         type: integer
+      length_cm:
+        type: number
       retail_price:
         type: string
       sku:
@@ -749,6 +774,8 @@ definitions:
       title:
         type: string
       weight_kg:
+        type: number
+      width_cm:
         type: number
       ws_price:
         type: string
@@ -2101,6 +2128,37 @@ paths:
       security:
       - BearerAuth: []
       summary: List shipping methods
+      tags:
+      - Shipping
+  /shipping/rates:
+    get:
+      parameters:
+      - description: Destination ZIP
+        in: query
+        name: zip
+        required: true
+        type: string
+      - description: 'Destination Country (default: US)'
+        in: query
+        name: country
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/checkout.ShippingRateDTO'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: List live shipping rates via ShipStation
       tags:
       - Shipping
   /shipping/validate-address:

@@ -102,6 +102,42 @@ func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFi
 	return rows, total, nil
 }
 
+func (s *postgresStore) GetAllSettlementsForExport(ctx context.Context, filter SettlementFilter) ([]PreorderRow, error) {
+	var rows []PreorderRow
+	query := s.db.WithContext(ctx).Table("preorder_settlements").
+		Select(`
+			preorder_settlements.id,
+			orders.id as order_id,
+			orders.order_number,
+			users.email as customer_email,
+			order_line_items.id as order_line_item_id,
+			order_line_items.title,
+			order_line_items.quantity,
+			preorder_settlements.balance_amount,
+			product_variants.preorder_batch_label as batch_label,
+			preorder_settlements.status as settlement_status,
+			preorder_settlements.due_date,
+			orders.shopify_order_id
+		`).
+		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
+		Joins("JOIN orders ON orders.id = order_line_items.order_id").
+		Joins("JOIN users ON users.id = orders.customer_id").
+		Joins("LEFT JOIN product_variants ON product_variants.shopify_variant_id = order_line_items.shopify_variant_id")
+
+	if filter.Status != "" {
+		query = query.Where("preorder_settlements.status = ?", filter.Status)
+	}
+	if filter.BatchLabel != "" {
+		query = query.Where("product_variants.preorder_batch_label = ?", filter.BatchLabel)
+	}
+
+	if err := query.Order("order_line_items.title ASC, preorder_settlements.created_at DESC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	return rows, nil
+}
+
 func (s *postgresStore) UpdateSettlementStatus(ctx context.Context, id, status string, ts *time.Time) error {
 	updates := map[string]interface{}{
 		"status":     status,

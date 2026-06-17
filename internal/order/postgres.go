@@ -140,6 +140,36 @@ func (s *PostgresStore) GetOrdersByCustomer(ctx context.Context, customerID stri
 	return orders, total, nil
 }
 
+func (s *PostgresStore) GetAllOrdersForExport(ctx context.Context, q OrderQuery) ([]Order, error) {
+	var orders []Order
+	query := s.db.WithContext(ctx).Model(&Order{})
+
+	if q.Status != "" {
+		query = query.Where("aggregate_status = ? OR financial_status = ? OR fulfillment_status = ?", q.Status, q.Status, q.Status)
+	}
+
+	if q.Search != "" {
+		searchPattern := "%" + q.Search + "%"
+		query = query.Joins("JOIN users ON users.id = orders.customer_id").
+			Where("orders.order_number ILIKE ? OR users.email ILIKE ?", searchPattern, searchPattern)
+	}
+
+	err := query.Preload("Items").Preload("Customer").Preload("ShippingAddress").Order("created_at DESC").Find(&orders).Error
+	if err != nil {
+		return nil, err
+	}
+
+	var ptrItems []*OrderItem
+	for i := range orders {
+		for j := range orders[i].Items {
+			ptrItems = append(ptrItems, &orders[i].Items[j])
+		}
+	}
+	s.fillItemImages(ctx, ptrItems)
+
+	return orders, nil
+}
+
 func (s *PostgresStore) UpdateOrderStatus(ctx context.Context, orderID, financialStatus, fulfillmentStatus string) error {
 	return s.db.WithContext(ctx).Model(&Order{}).Where("id = ?", orderID).Updates(map[string]interface{}{
 		"financial_status": financialStatus,

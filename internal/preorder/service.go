@@ -305,7 +305,7 @@ func toResponse(st Settlement) SettlementResponse {
 }
 
 func (s *service) ExportPreordersToExcel(ctx context.Context, filter SettlementFilter) ([]byte, error) {
-	groups, _, err := s.ListSettlements(ctx, filter)
+	rows, err := s.store.GetAllSettlementsForExport(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +313,7 @@ func (s *service) ExportPreordersToExcel(ctx context.Context, filter SettlementF
 	f := excelize.NewFile()
 	sheetName := "Preorder List"
 	f.SetSheetName("Sheet1", sheetName)
-
+	
 	headers := []string{"Order ID", "Order Number", "Product Name", "Customer Email", "Quantity", "Balance Due", "Status", "Due Date", "Batch Label"}
 	for i, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
@@ -321,19 +321,21 @@ func (s *service) ExportPreordersToExcel(ctx context.Context, filter SettlementF
 	}
 
 	rowNum := 2
-	for _, group := range groups {
-		for _, r := range group.Settlements {
-			f.SetCellValue(sheetName, fmt.Sprintf("A%d", rowNum), r.OrderID)
-			f.SetCellValue(sheetName, fmt.Sprintf("B%d", rowNum), r.OrderNumber)
-			f.SetCellValue(sheetName, fmt.Sprintf("C%d", rowNum), group.ProductName)
-			f.SetCellValue(sheetName, fmt.Sprintf("D%d", rowNum), r.CustomerEmail)
-			f.SetCellValue(sheetName, fmt.Sprintf("E%d", rowNum), r.Quantity)
-			f.SetCellValue(sheetName, fmt.Sprintf("F%d", rowNum), r.BalanceDue)
-			f.SetCellValue(sheetName, fmt.Sprintf("G%d", rowNum), r.SettlementStatus)
-			f.SetCellValue(sheetName, fmt.Sprintf("H%d", rowNum), r.DueDate)
-			f.SetCellValue(sheetName, fmt.Sprintf("I%d", rowNum), r.BatchLabel)
-			rowNum++
+	for _, r := range rows {
+		var dueDateStr string
+		if r.DueDate != nil {
+			dueDateStr = r.DueDate.Format("2006-01-02")
 		}
+		f.SetCellValue(sheetName, fmt.Sprintf("A%d", rowNum), r.OrderID)
+		f.SetCellValue(sheetName, fmt.Sprintf("B%d", rowNum), r.OrderNumber)
+		f.SetCellValue(sheetName, fmt.Sprintf("C%d", rowNum), r.Title)
+		f.SetCellValue(sheetName, fmt.Sprintf("D%d", rowNum), r.CustomerEmail)
+		f.SetCellValue(sheetName, fmt.Sprintf("E%d", rowNum), r.Quantity)
+		f.SetCellValue(sheetName, fmt.Sprintf("F%d", rowNum), fmt.Sprintf("%.2f", r.BalanceAmount))
+		f.SetCellValue(sheetName, fmt.Sprintf("G%d", rowNum), r.SettlementStatus)
+		f.SetCellValue(sheetName, fmt.Sprintf("H%d", rowNum), dueDateStr)
+		f.SetCellValue(sheetName, fmt.Sprintf("I%d", rowNum), r.BatchLabel)
+		rowNum++
 	}
 
 	var buf bytes.Buffer

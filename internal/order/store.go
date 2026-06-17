@@ -67,6 +67,7 @@ type Store interface {
 	GetOrder(ctx context.Context, orderID, customerID string) (*Order, error)
 	GetOrderByShopifyID(ctx context.Context, shopifyOrderID string) (*Order, error)
 	GetOrdersByCustomer(ctx context.Context, customerID string, query OrderQuery) ([]Order, int64, error)
+	GetAllOrdersForExport(ctx context.Context, query OrderQuery) ([]Order, error)
 	UpdateOrderStatus(ctx context.Context, orderID string, financialStatus, fulfillmentStatus string) error
 	UpdateOrderItemStep(ctx context.Context, itemID string, step int) error
 	UpdateOrderItemTracking(ctx context.Context, itemID, trackingNumber, trackingURL string, shippedAt *time.Time) error
