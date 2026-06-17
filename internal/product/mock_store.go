@@ -173,6 +173,10 @@ func (m *MockShopifyClient) GetVariantsInventory(ctx context.Context, variantIDs
 	return m.GetVariantsInventoryResponse, m.GetVariantsInventoryErr
 }
 
+func (m *MockShopifyClient) CreateFulfillment(ctx context.Context, shopifyOrderID string) error {
+	return nil
+}
+
 type MockShopifyClientFunc struct {
 	QueryAdminGraphQLFn      func(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error)
 	CreateDraftOrderFn       func(ctx context.Context, input shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error)
@@ -208,4 +212,8 @@ func (m *MockShopifyClientFunc) GetVariantsInventory(ctx context.Context, varian
 		return m.GetVariantsInventoryFunc(ctx, variantIDs)
 	}
 	return make(map[string]int), nil
+}
+
+func (m *MockShopifyClientFunc) CreateFulfillment(ctx context.Context, shopifyOrderID string) error {
+	return nil
 }

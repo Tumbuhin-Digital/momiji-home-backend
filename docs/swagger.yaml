@@ -250,6 +250,26 @@ definitions:
       service_code:
         type: string
     type: object
+  checkout.ShippingRatesRequest:
+    properties:
+      address1:
+        type: string
+      city:
+        type: string
+      country:
+        type: string
+      name:
+        type: string
+      phone:
+        type: string
+      state:
+        type: string
+      zip:
+        type: string
+    required:
+    - country
+    - zip
+    type: object
   checkout.ValidateAddressRequest:
     properties:
       city:
@@ -2098,17 +2118,16 @@ paths:
       tags:
       - Admin/Product
   /shipping/rates:
-    get:
+    post:
+      consumes:
+      - application/json
       parameters:
-      - description: Destination ZIP
-        in: query
-        name: zip
+      - description: Shipping Rates Request
+        in: body
+        name: request
         required: true
-        type: string
-      - description: 'Destination Country (default: US)'
-        in: query
-        name: country
-        type: string
+        schema:
+          $ref: '#/definitions/checkout.ShippingRatesRequest'
       produces:
       - application/json
       responses:

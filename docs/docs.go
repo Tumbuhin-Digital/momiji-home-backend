@@ -2129,11 +2129,14 @@ const docTemplate = `{
             }
         },
         "/shipping/rates": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -2144,17 +2147,13 @@ const docTemplate = `{
                 "summary": "List live shipping rates via ShipStation",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Destination ZIP",
-                        "name": "zip",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Destination Country (default: US)",
-                        "name": "country",
-                        "in": "query"
+                        "description": "Shipping Rates Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/checkout.ShippingRatesRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -2669,6 +2668,36 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "service_code": {
+                    "type": "string"
+                }
+            }
+        },
+        "checkout.ShippingRatesRequest": {
+            "type": "object",
+            "required": [
+                "country",
+                "zip"
+            ],
+            "properties": {
+                "address1": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "country": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "zip": {
                     "type": "string"
                 }
             }
