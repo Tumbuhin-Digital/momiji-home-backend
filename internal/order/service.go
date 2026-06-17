@@ -807,6 +807,16 @@ func (s *service) AcceptOrder(ctx context.Context, userID, orderID, fulfillmentT
 	if err := s.store.UpdateOrderStatus(ctx, orderID, "on_progress", "in_progress"); err != nil {
 		return apierror.ErrInternal
 	}
+
+	// NEW: If ship_ready, push to Shopify fulfillment dashboard
+	if fulfillmentType == "ship_ready" && o.ShopifyOrderID != nil && *o.ShopifyOrderID != "" {
+		go func() {
+			if err := s.shopClient.CreateFulfillment(context.Background(), *o.ShopifyOrderID); err != nil {
+				slog.Error("failed to push order to shopify fulfillment", "order_id", orderID, "error", err)
+			}
+		}()
+	}
+
 	return nil
 }
 

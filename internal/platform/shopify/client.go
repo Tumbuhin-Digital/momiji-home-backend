@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 type Client interface {
@@ -15,6 +16,7 @@ type Client interface {
 	CreateStorefrontCart(ctx context.Context, input CartCreateInput) (*CartCreateResponse, error)
 	CreateRefund(ctx context.Context, shopifyOrderID string, amount float64, currency string, reason string) error
 	GetVariantsInventory(ctx context.Context, variantIDs []string) (map[string]int, error)
+	CreateFulfillment(ctx context.Context, shopifyOrderID string) error
 }
 
 type clientImpl struct {
@@ -362,4 +364,101 @@ func (c *clientImpl) GetVariantsInventory(ctx context.Context, variantIDs []stri
 	}
 
 	return inventoryMap, nil
+}
+
+func (c *clientImpl) CreateFulfillment(ctx context.Context, shopifyOrderID string) error {
+	// Ensure global ID format
+	if !strings.HasPrefix(shopifyOrderID, "gid://") {
+		shopifyOrderID = "gid://shopify/Order/" + shopifyOrderID
+	}
+
+	// Step 1: Get the fulfillment order IDs
+	query := `
+		query($orderId: ID!) {
+		  order(id: $orderId) {
+			fulfillmentOrders(first: 10) {
+			  edges {
+				node {
+				  id
+				  status
+				}
+			  }
+			}
+		  }
+		}
+	`
+	vars := map[string]interface{}{"orderId": shopifyOrderID}
+	
+	resBytes, err := c.QueryAdminGraphQL(ctx, query, vars)
+	if err != nil {
+		return err
+	}
+
+	var res struct {
+		Data struct {
+			Order struct {
+				FulfillmentOrders struct {
+					Edges []struct {
+						Node struct {
+							ID     string `json:"id"`
+							Status string `json:"status"`
+						} `json:"node"`
+					} `json:"edges"`
+				} `json:"fulfillmentOrders"`
+			} `json:"order"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resBytes, &res); err != nil {
+		return fmt.Errorf("failed to parse fulfillment orders: %w", err)
+	}
+
+	// Step 2: Create fulfillment for OPEN fulfillment orders
+	for _, edge := range res.Data.Order.FulfillmentOrders.Edges {
+		if edge.Node.Status == "OPEN" {
+			mut := `
+				mutation fulfillmentCreateV2($fulfillment: FulfillmentV2Input!) {
+				  fulfillmentCreateV2(fulfillment: $fulfillment) {
+					fulfillment {
+					  id
+					}
+					userErrors {
+					  message
+					}
+				  }
+				}
+			`
+			mutVars := map[string]interface{}{
+				"fulfillment": map[string]interface{}{
+					"lineItemsByFulfillmentOrder": []map[string]interface{}{
+						{
+							"fulfillmentOrderId": edge.Node.ID,
+						},
+					},
+				},
+			}
+			
+			mutRes, mutErr := c.QueryAdminGraphQL(ctx, mut, mutVars)
+			if mutErr != nil {
+				return mutErr
+			}
+			
+			var mRes struct {
+				Data struct {
+					FulfillmentCreateV2 struct {
+						UserErrors []struct {
+							Message string `json:"message"`
+						} `json:"userErrors"`
+					} `json:"fulfillmentCreateV2"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(mutRes, &mRes); err == nil {
+				if len(mRes.Data.FulfillmentCreateV2.UserErrors) > 0 {
+					return fmt.Errorf("shopify fulfillment error: %s", mRes.Data.FulfillmentCreateV2.UserErrors[0].Message)
+				}
+			}
+		}
+	}
+
+	return nil
 }
