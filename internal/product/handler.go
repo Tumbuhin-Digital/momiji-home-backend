@@ -27,6 +27,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 
 	// Public endpoints
 	group.Get("/", h.GetProducts)
+	group.Get("/catalog", h.GetCatalogProducts)
 	group.Get("/:id/variants", h.GetProductVariants)
 	group.Get("/:id", h.GetProductByID)
 
@@ -88,6 +89,56 @@ func (h *Handler) GetProducts(c *fiber.Ctx) error {
 	}
 
 	return response.Success(c, fiber.StatusOK, "Products retrieved", paginatedData)
+}
+
+// GetCatalogProducts godoc
+// @Summary List catalog products excluding inactive ones
+// @Tags Product
+// @Produce json
+// @Param page query int false "Page number"
+// @Param limit query int false "Limit per page"
+// @Param search query string false "Search by title or description"
+// @Param sort query string false "Sort order (e.g. price_asc, price_desc, name_asc, created_at, stock_asc, stock_desc)"
+// @Param fulfillment_type query string false "Filter by fulfillment type (ship_ready, pre_order)"
+// @Success 200 {object} response.Envelope{data=response.PaginatedData}
+// @Router /products/catalog [get]
+func (h *Handler) GetCatalogProducts(c *fiber.Ctx) error {
+	var query ProductQuery
+	if err := c.QueryParser(&query); err != nil {
+		return response.Error(c, apierror.ErrBadRequest)
+	}
+
+	query.ExcludeInactive = true
+
+	products, total, err := h.service.GetProducts(c.Context(), query)
+	if err != nil {
+		return response.Error(c, err)
+	}
+
+	limit := query.Limit
+	if limit < 1 {
+		limit = 20
+	}
+	page := query.Page
+	if page < 1 {
+		page = 1
+	}
+	totalPages := int((total + int64(limit) - 1) / int64(limit))
+
+	paginatedData := response.PaginatedData{
+		Page:       page,
+		Limit:      limit,
+		Total:      total,
+		TotalPages: totalPages,
+		ItemsKey:   "products",
+		Items:      products,
+		Extra: map[string]interface{}{
+			"sort":   query.Sort,
+			"search": query.Search,
+		},
+	}
+
+	return response.Success(c, fiber.StatusOK, "Catalog products retrieved", paginatedData)
 }
 
 // SyncProducts godoc

@@ -8,6 +8,8 @@ type GuestInfo struct {
 
 type CreateOrderRequest struct {
 	ShippingMethod string     `json:"shipping_method,omitempty"`
+	ShippingTitle  string     `json:"shipping_title,omitempty"`
+	ShippingPrice  string     `json:"shipping_price,omitempty"`
 	GuestInfo      *GuestInfo `json:"guest_info,omitempty"`
 }
 

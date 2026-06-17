@@ -461,6 +461,10 @@ definitions:
         $ref: '#/definitions/order.GuestInfo'
       shipping_method:
         type: string
+      shipping_price:
+        type: string
+      shipping_title:
+        type: string
     type: object
   order.CustomerDTO:
     properties:
@@ -642,10 +646,12 @@ definitions:
     enum:
     - ship_ready
     - pre_order
+    - inactive
     type: string
     x-enum-varnames:
     - FulfillmentTypeShipReady
     - FulfillmentTypePreOrder
+    - FulfillmentTypeInactive
   product.ProductDTO:
     properties:
       body_html:
@@ -1981,6 +1987,45 @@ paths:
                   type: array
               type: object
       summary: Get variants for a product
+      tags:
+      - Product
+  /products/catalog:
+    get:
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Limit per page
+        in: query
+        name: limit
+        type: integer
+      - description: Search by title or description
+        in: query
+        name: search
+        type: string
+      - description: Sort order (e.g. price_asc, price_desc, name_asc, created_at,
+          stock_asc, stock_desc)
+        in: query
+        name: sort
+        type: string
+      - description: Filter by fulfillment type (ship_ready, pre_order)
+        in: query
+        name: fulfillment_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.PaginatedData'
+              type: object
+      summary: List catalog products excluding inactive ones
       tags:
       - Product
   /products/sync:

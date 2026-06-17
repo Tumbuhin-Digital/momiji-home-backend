@@ -25,6 +25,10 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	createGrp.Use(middleware.OptionalAuth(h.jwtSecret))
 	createGrp.Post("/", h.CreateOrder)
 
+	// Admin routes (must be defined before /:id)
+	adminGrp := group.Group("/", middleware.Auth(h.jwtSecret), middleware.RBAC("admin"))
+	adminGrp.Get("/export", h.ExportOrders)
+
 	// List Orders (Auth Only)
 	authGrp := group.Group("/")
 	authGrp.Use(middleware.Auth(h.jwtSecret))
@@ -35,10 +39,6 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	authGrp.Patch("/:id/items/:itemId/step", h.UpdateFulfillmentStep)
 	authGrp.Patch("/:id/items/:itemId/received", h.UpdateItemsReceived)
 	authGrp.Patch("/:id/items/:itemId/tracking", h.AddTrackingNumber)
-	
-	// Admin routes
-	adminGrp := group.Group("/", middleware.Auth(h.jwtSecret), middleware.RBAC("admin"))
-	adminGrp.Get("/export", h.ExportOrders)
 }
 
 // CreateOrder godoc
