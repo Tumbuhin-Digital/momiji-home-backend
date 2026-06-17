@@ -52,12 +52,12 @@ func (h *Handler) extractIdentity(c *fiber.Ctx) (userID *string, sessionID *stri
 // GetShippingRates godoc
 // @Summary List live shipping rates via ShipStation
 // @Tags Shipping
+// @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param zip query string true "Destination ZIP"
-// @Param country query string false "Destination Country (default: US)"
+// @Param request body ShippingRatesRequest true "Shipping Rates Request"
 // @Success 200 {object} response.Envelope{data=[]ShippingRateDTO}
-// @Router /shipping/rates [get]
+// @Router /shipping/rates [post]
 func (h *Handler) GetShippingRates(c *fiber.Ctx) error {
 	uid, sid := h.extractIdentity(c)
 	
