@@ -2065,83 +2065,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/shipping/calculate": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    },
-                    {
-                        "SessionAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Shipping"
-                ],
-                "summary": "Calculate shipping cost",
-                "parameters": [
-                    {
-                        "description": "Calculate Request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/checkout.CalculateShippingRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/response.Envelope"
-                        }
-                    }
-                }
-            }
-        },
-        "/shipping/methods": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Shipping"
-                ],
-                "summary": "List shipping methods",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/response.Envelope"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/checkout.ShippingMethodsResponse"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                }
-            }
-        },
         "/shipping/rates": {
             "get": {
                 "security": [
@@ -2523,29 +2446,6 @@ const docTemplate = `{
                 }
             }
         },
-        "checkout.CalculateShippingRequest": {
-            "type": "object",
-            "required": [
-                "shipping_method"
-            ],
-            "properties": {
-                "address_id": {
-                    "type": "integer"
-                },
-                "country": {
-                    "type": "string"
-                },
-                "province": {
-                    "type": "string"
-                },
-                "shipping_method": {
-                    "type": "string"
-                },
-                "zip": {
-                    "type": "string"
-                }
-            }
-        },
         "checkout.CheckoutSummaryRequest": {
             "type": "object",
             "properties": {
@@ -2687,37 +2587,6 @@ const docTemplate = `{
                 },
                 "checkout_url": {
                     "type": "string"
-                }
-            }
-        },
-        "checkout.ShippingMethod": {
-            "type": "object",
-            "properties": {
-                "cost": {
-                    "type": "string"
-                },
-                "estimated_arrival": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "label": {
-                    "type": "string"
-                }
-            }
-        },
-        "checkout.ShippingMethodsResponse": {
-            "type": "object",
-            "properties": {
-                "currency": {
-                    "type": "string"
-                },
-                "methods": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/checkout.ShippingMethod"
-                    }
                 }
             }
         },

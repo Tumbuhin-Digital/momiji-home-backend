@@ -144,21 +144,6 @@ definitions:
         minimum: 0
         type: integer
     type: object
-  checkout.CalculateShippingRequest:
-    properties:
-      address_id:
-        type: integer
-      country:
-        type: string
-      province:
-        type: string
-      shipping_method:
-        type: string
-      zip:
-        type: string
-    required:
-    - shipping_method
-    type: object
   checkout.CheckoutSummaryRequest:
     properties:
       address_id:
@@ -251,26 +236,6 @@ definitions:
         type: string
       checkout_url:
         type: string
-    type: object
-  checkout.ShippingMethod:
-    properties:
-      cost:
-        type: string
-      estimated_arrival:
-        type: string
-      id:
-        type: string
-      label:
-        type: string
-    type: object
-  checkout.ShippingMethodsResponse:
-    properties:
-      currency:
-        type: string
-      methods:
-        items:
-          $ref: '#/definitions/checkout.ShippingMethod'
-        type: array
     type: object
   checkout.ShippingRateDTO:
     properties:
@@ -2087,49 +2052,6 @@ paths:
       summary: Download product dimension CSV template
       tags:
       - Admin/Product
-  /shipping/calculate:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: Calculate Request
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/checkout.CalculateShippingRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/response.Envelope'
-      security:
-      - BearerAuth: []
-      - SessionAuth: []
-      summary: Calculate shipping cost
-      tags:
-      - Shipping
-  /shipping/methods:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.Envelope'
-            - properties:
-                data:
-                  $ref: '#/definitions/checkout.ShippingMethodsResponse'
-              type: object
-      security:
-      - BearerAuth: []
-      summary: List shipping methods
-      tags:
-      - Shipping
   /shipping/rates:
     get:
       parameters:
