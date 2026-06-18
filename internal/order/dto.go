@@ -73,6 +73,10 @@ type OrderItemDetail struct {
 	FulfillmentStep int     `json:"fulfillment_step"`
 	ItemsReceived   int     `json:"items_received"`
 	ImageSrc        string  `json:"image_src"`
+	TrackingNumber    *string `json:"tracking_number,omitempty"`
+	TrackingURL       *string `json:"tracking_url,omitempty"`
+	TrackingCompany   *string `json:"tracking_company,omitempty"`
+	TrackingLastEvent *string `json:"tracking_last_event,omitempty"`
 }
 
 type AcceptOrderRequest struct {

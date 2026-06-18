@@ -181,13 +181,15 @@ func (s *PostgresStore) UpdateOrderItemStep(ctx context.Context, itemID string, 
 	return s.db.WithContext(ctx).Model(&OrderItem{}).Where("id = ?", itemID).Update("fulfillment_step", step).Error
 }
 
-func (s *PostgresStore) UpdateOrderItemTracking(ctx context.Context, itemID, trackingNumber, trackingURL string, shippedAt *time.Time) error {
+func (s *PostgresStore) UpdateOrderItemTracking(ctx context.Context, itemID, trackingNumber, trackingURL, trackingCompany, trackingLastEvent string, shippedAt *time.Time) error {
 	return s.db.WithContext(ctx).Model(&OrderItem{}).Where("id = ?", itemID).Updates(map[string]interface{}{
-		"tracking_number": trackingNumber,
-		"tracking_url":    trackingURL,
-		"shipped_at":      shippedAt,
-		"item_status":     "shipped",
-		"fulfillment_step": 3,
+		"tracking_number":     trackingNumber,
+		"tracking_url":        trackingURL,
+		"tracking_company":    trackingCompany,
+		"tracking_last_event": trackingLastEvent,
+		"shipped_at":          shippedAt,
+		"item_status":         "shipped",
+		"fulfillment_step":    3,
 	}).Error
 }
 

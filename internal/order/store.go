@@ -48,8 +48,10 @@ type OrderItem struct {
 	AmountCharged    *float64
 	BalanceDue       *float64
 	ShopifyOrderID   *string
-	TrackingNumber   *string
-	TrackingURL      *string
+	TrackingNumber    *string
+	TrackingURL       *string
+	TrackingCompany   *string
+	TrackingLastEvent *string
 	ShippedAt        *time.Time
 	FulfillmentStep  int
 	ItemsReceived    int
@@ -70,6 +72,6 @@ type Store interface {
 	GetAllOrdersForExport(ctx context.Context, query OrderQuery) ([]Order, error)
 	UpdateOrderStatus(ctx context.Context, orderID string, financialStatus, fulfillmentStatus string) error
 	UpdateOrderItemStep(ctx context.Context, itemID string, step int) error
-	UpdateOrderItemTracking(ctx context.Context, itemID, trackingNumber, trackingURL string, shippedAt *time.Time) error
+	UpdateOrderItemTracking(ctx context.Context, itemID, trackingNumber, trackingURL, trackingCompany, trackingLastEvent string, shippedAt *time.Time) error
 	UpdateOrderItemReceived(ctx context.Context, itemID string, count int) error
 }

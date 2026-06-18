@@ -25,6 +25,8 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	webhooks.Use(h.verifyShopifyHMAC)
 	webhooks.Post("/orders/paid", h.HandleOrderPaid)
 	webhooks.Post("/inventory_levels/update", h.HandleInventoryUpdate)
+	webhooks.Post("/fulfillments/create", h.HandleFulfillment)
+	webhooks.Post("/fulfillments/update", h.HandleFulfillment)
 }
 
 func (h *Handler) verifyShopifyHMAC(c *fiber.Ctx) error {
@@ -89,5 +91,25 @@ func (h *Handler) HandleInventoryUpdate(c *fiber.Ctx) error {
 	if err := h.service.HandleInventoryUpdate(c.Context(), payload); err != nil {
 		return response.Error(c, err)
 	}
+	return c.SendStatus(fiber.StatusOK)
+}
+
+// @Summary Handle Shopify Fulfillment Webhook
+// @Tags Webhooks
+// @Accept json
+// @Router /webhooks/shopify/fulfillments/create [post]
+// @Router /webhooks/shopify/fulfillments/update [post]
+func (h *Handler) HandleFulfillment(c *fiber.Ctx) error {
+	var payload ShopifyFulfillmentWebhook
+	if err := c.BodyParser(&payload); err != nil {
+		slog.ErrorContext(c.Context(), "Failed to parse fulfillment webhook", slog.Any("error", err))
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid payload"})
+	}
+
+	if err := h.service.HandleFulfillment(c.Context(), payload); err != nil {
+		slog.ErrorContext(c.Context(), "Failed to process fulfillment webhook", slog.Any("error", err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server error"})
+	}
+
 	return c.SendStatus(fiber.StatusOK)
 }

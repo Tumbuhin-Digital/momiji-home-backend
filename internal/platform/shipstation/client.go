@@ -17,6 +17,16 @@ const (
 type Client interface {
 	GetRates(ctx context.Context, req RateRequest) ([]Rate, error)
 	ListCarriers(ctx context.Context) ([]Carrier, error)
+	TrackShipment(ctx context.Context, carrierCode, trackingNumber string) (*TrackingResponse, error)
+}
+
+type TrackingResponse struct {
+	TrackingNumber string `json:"trackingNumber"`
+	StatusCode     string `json:"statusCode"`
+	StatusDescription string `json:"statusDescription"`
+	CarrierCode    string `json:"carrierCode"`
+	ShipDate       string `json:"shipDate"`
+	EstimatedDeliveryDate string `json:"estimatedDeliveryDate"`
 }
 
 type client struct {
@@ -76,4 +86,13 @@ func (c *client) do(ctx context.Context, method, path string, body interface{}, 
 	}
 
 	return json.NewDecoder(res.Body).Decode(out)
+}
+
+func (c *client) TrackShipment(ctx context.Context, carrierCode, trackingNumber string) (*TrackingResponse, error) {
+	path := fmt.Sprintf("/tracking?carrierCode=%s&trackingNumber=%s", carrierCode, trackingNumber)
+	var res TrackingResponse
+	if err := c.do(ctx, http.MethodGet, path, nil, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
