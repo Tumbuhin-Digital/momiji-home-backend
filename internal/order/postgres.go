@@ -33,8 +33,8 @@ func (s *PostgresStore) fillItemImages(ctx context.Context, items []*OrderItem) 
 		ImageSrc         string
 	}
 	if err := s.db.WithContext(ctx).Table("product_variants").
-		Select("shopify_variant_id, image_src").
-		Where("shopify_variant_id IN ?", variantIDs).
+		Select("product_variants.shopify_variant_id, COALESCE(NULLIF(product_variants.image_src, ''), (SELECT src FROM product_images WHERE product_images.product_id = product_variants.product_id ORDER BY position ASC LIMIT 1)) AS image_src").
+		Where("product_variants.shopify_variant_id IN ?", variantIDs).
 		Find(&variants).Error; err == nil {
 		variantMap := make(map[string]string)
 		for _, v := range variants {
