@@ -1345,6 +1345,44 @@ const docTemplate = `{
             }
         },
         "/orders/{id}/items/{itemId}/tracking": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orders"
+                ],
+                "summary": "Get live tracking status for an item",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Item ID",
+                        "name": "itemId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Envelope"
+                        }
+                    }
+                }
+            },
             "patch": {
                 "security": [
                     {
@@ -2226,6 +2264,30 @@ const docTemplate = `{
                         }
                     }
                 }
+            }
+        },
+        "/webhooks/shopify/fulfillments/create": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Handle Shopify Fulfillment Webhook",
+                "responses": {}
+            }
+        },
+        "/webhooks/shopify/fulfillments/update": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Handle Shopify Fulfillment Webhook",
+                "responses": {}
             }
         },
         "/webhooks/shopify/inventory_levels/update": {
@@ -3128,6 +3190,18 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "title": {
+                    "type": "string"
+                },
+                "tracking_company": {
+                    "type": "string"
+                },
+                "tracking_last_event": {
+                    "type": "string"
+                },
+                "tracking_number": {
+                    "type": "string"
+                },
+                "tracking_url": {
                     "type": "string"
                 },
                 "type": {

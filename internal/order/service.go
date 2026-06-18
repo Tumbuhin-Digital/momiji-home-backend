@@ -12,6 +12,9 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/auth"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/email"
+	"strings"
+
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
@@ -29,26 +32,33 @@ type OrderService interface {
 	UpdateFulfillmentStep(ctx context.Context, userID, orderID, itemID string, step int) error
 	UpdateItemsReceived(ctx context.Context, userID, orderID, itemID string, count int) error
 	AddTrackingNumber(ctx context.Context, userID, orderID, itemID, trackingNumber, trackingURL string) error
+	GetItemTracking(ctx context.Context, userID, orderID, itemID string) (*shipstation.TrackingResponse, error)
 	ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]byte, error)
 }
 
 type service struct {
-	store         Store
-	cartService   cart.CartService
-	authStore     auth.AuthStore
-	shopClient    shopify.Client
-	preorderStore preorder.PreorderStore
-	emailService  email.NotificationService
+	store             Store
+	cartService       cart.CartService
+	authStore         auth.AuthStore
+	shopClient        shopify.Client
+	shipstationClient shipstation.Client
+	preorderStore     preorder.PreorderStore
+	emailService      email.NotificationService
 }
 
-func NewOrderService(store Store, cartService cart.CartService, authStore auth.AuthStore, shopClient shopify.Client, preorderStore preorder.PreorderStore, emailService email.NotificationService) OrderService {
+func NewOrderService(store Store, cartService cart.CartService, authStore auth.AuthStore, shopClient shopify.Client,
+	preorderStore preorder.PreorderStore,
+	notificationService email.NotificationService,
+	shipstationClient shipstation.Client,
+) OrderService {
 	return &service{
-		store:         store,
-		cartService:   cartService,
-		authStore:     authStore,
-		shopClient:    shopClient,
-		preorderStore: preorderStore,
-		emailService:  emailService,
+		store:             store,
+		cartService:       cartService,
+		authStore:         authStore,
+		shopClient:        shopClient,
+		shipstationClient: shipstationClient,
+		preorderStore:     preorderStore,
+		emailService:      notificationService,
 	}
 }
 
@@ -289,6 +299,10 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 			AmountCharged:   amountCharged,
 			BalanceDue:      balanceDue,
 			ImageSrc:        it.ImageSrc,
+			TrackingNumber:  it.TrackingNumber,
+			TrackingURL:     it.TrackingURL,
+			TrackingCompany: it.TrackingCompany,
+			TrackingLastEvent: it.TrackingLastEvent,
 		}
 		if it.DpAmount != nil {
 			val := fmt.Sprintf("%.2f", *it.DpAmount)
@@ -465,6 +479,10 @@ func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery
 				AmountCharged:   amountCharged,
 				BalanceDue:      balanceDue,
 				ImageSrc:        it.ImageSrc,
+				TrackingNumber:  it.TrackingNumber,
+				TrackingURL:     it.TrackingURL,
+				TrackingCompany: it.TrackingCompany,
+				TrackingLastEvent: it.TrackingLastEvent,
 			}
 			if it.DpAmount != nil {
 				val := fmt.Sprintf("%.2f", *it.DpAmount)
@@ -595,6 +613,10 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 			AmountCharged:   amountCharged,
 			BalanceDue:      balanceDue,
 			ImageSrc:        it.ImageSrc,
+			TrackingNumber:  it.TrackingNumber,
+			TrackingURL:     it.TrackingURL,
+			TrackingCompany: it.TrackingCompany,
+			TrackingLastEvent: it.TrackingLastEvent,
 		}
 		if it.DpAmount != nil {
 			val := fmt.Sprintf("%.2f", *it.DpAmount)
@@ -725,6 +747,10 @@ func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string
 			AmountCharged:   amountCharged,
 			BalanceDue:      balanceDue,
 			ImageSrc:        it.ImageSrc,
+			TrackingNumber:  it.TrackingNumber,
+			TrackingURL:     it.TrackingURL,
+			TrackingCompany: it.TrackingCompany,
+			TrackingLastEvent: it.TrackingLastEvent,
 		}
 		if it.DpAmount != nil {
 			val := fmt.Sprintf("%.2f", *it.DpAmount)
@@ -886,7 +912,8 @@ func (s *service) AddTrackingNumber(ctx context.Context, userID, orderID, itemID
 	}
 
 	now := time.Now()
-	if err := s.store.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, &now); err != nil {
+	// When adding tracking manually via admin panel, we don't know company/event yet.
+	if err := s.store.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, "", "", &now); err != nil {
 		return apierror.ErrInternal
 	}
 
@@ -958,4 +985,66 @@ func (s *service) ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]
 		return nil, fmt.Errorf("failed to write excel file: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+func (s *service) GetItemTracking(ctx context.Context, userID, orderID, itemID string) (*shipstation.TrackingResponse, error) {
+	o, err := s.store.GetOrder(ctx, orderID, userID)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	if o == nil {
+		return nil, apierror.ErrNotFound
+	}
+
+	var targetItem *OrderItem
+	for _, it := range o.Items {
+		if it.ID == itemID {
+			targetItem = &it
+			break
+		}
+	}
+
+	if targetItem == nil {
+		return nil, apierror.ErrNotFound
+	}
+
+	if targetItem.TrackingNumber == nil || *targetItem.TrackingNumber == "" {
+		return nil, apierror.ErrNotFound
+	}
+
+	// For pre_order, fetch live tracking via ShipStation
+	if targetItem.Type == "pre_order" {
+		carrierCode := ""
+		if targetItem.TrackingCompany != nil {
+			carrierCode = strings.ToLower(*targetItem.TrackingCompany)
+		}
+		
+		if carrierCode != "" {
+			res, err := s.shipstationClient.TrackShipment(ctx, carrierCode, *targetItem.TrackingNumber)
+			if err == nil {
+				return res, nil
+			}
+			// If error, fall through and return DB record
+		}
+	}
+
+	// For ship_ready or if ShipStation fails, return the DB record
+	res := &shipstation.TrackingResponse{
+		TrackingNumber: *targetItem.TrackingNumber,
+	}
+	if targetItem.TrackingLastEvent != nil {
+		res.StatusDescription = *targetItem.TrackingLastEvent
+	} else {
+		res.StatusDescription = "Package departed from facility"
+	}
+
+	if targetItem.TrackingCompany != nil {
+		res.CarrierCode = *targetItem.TrackingCompany
+	}
+	
+	if targetItem.ShippedAt != nil {
+		res.ShipDate = targetItem.ShippedAt.Format(time.RFC3339)
+	}
+
+	return res, nil
 }

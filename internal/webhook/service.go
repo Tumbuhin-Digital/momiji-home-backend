@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/auth"
@@ -23,6 +24,7 @@ import (
 type WebhookService interface {
 	HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebhook) error
 	HandleInventoryUpdate(ctx context.Context, payload ShopifyInventoryLevelWebhook) error
+	HandleFulfillment(ctx context.Context, payload ShopifyFulfillmentWebhook) error
 }
 
 type service struct {
@@ -344,6 +346,83 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 
 	// Release stock locks associated with this customer
 	_ = s.stockLockService.ReleaseLocks(ctx, &customerID, nil)
+
+	return nil
+}
+
+func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillmentWebhook) error {
+	slog.InfoContext(ctx, "Processing Shopify Fulfillment webhook", slog.Int64("fulfillment_id", payload.ID), slog.Int64("order_id", payload.OrderID))
+
+	// Find the order by Shopify ID
+	shopOrderID := fmt.Sprintf("%d", payload.OrderID)
+	o, err := s.orderStore.GetOrderByShopifyID(ctx, shopOrderID)
+	if err != nil {
+		slog.ErrorContext(ctx, "Order not found for fulfillment", slog.String("shopify_order_id", shopOrderID))
+		return nil // Return 200 so Shopify stops retrying
+	}
+
+	trackingNumber := payload.TrackingNumber
+	if trackingNumber == "" && len(payload.TrackingNumbers) > 0 {
+		trackingNumber = payload.TrackingNumbers[0]
+	}
+
+	trackingURL := ""
+	if len(payload.TrackingURLs) > 0 {
+		trackingURL = payload.TrackingURLs[0]
+	}
+
+	// Map shipment status to human readable last event
+	var lastEvent string
+	switch payload.ShipmentStatus {
+	case "label_printed":
+		lastEvent = "Shipping label printed"
+	case "label_purchased":
+		lastEvent = "Shipping label purchased"
+	case "attempted_delivery":
+		lastEvent = "Delivery attempted"
+	case "ready_for_pickup":
+		lastEvent = "Ready for pickup"
+	case "picked_up":
+		lastEvent = "Package picked up"
+	case "in_transit":
+		lastEvent = "Package in transit"
+	case "out_for_delivery":
+		lastEvent = "Out for delivery"
+	case "delivered":
+		lastEvent = "Delivered"
+	case "failure":
+		lastEvent = "Delivery failed"
+	default:
+		lastEvent = "Package departed from facility"
+	}
+
+	if trackingNumber == "" {
+		slog.InfoContext(ctx, "Fulfillment has no tracking number, skipping tracking update")
+		return nil
+	}
+
+	now := time.Now()
+
+	// Update all items in this fulfillment
+	for _, li := range payload.LineItems {
+		// Find matching item in our DB
+		var itemID string
+		for _, dbItem := range o.Items {
+			if dbItem.ShopifyVariantID == fmt.Sprintf("gid://shopify/ProductVariant/%d", li.VariantID) {
+				itemID = dbItem.ID
+				break
+			}
+		}
+
+		if itemID != "" {
+			err := s.orderStore.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, payload.TrackingCompany, lastEvent, &now)
+			if err != nil {
+				slog.ErrorContext(ctx, "Failed to update item tracking", slog.String("item_id", itemID), slog.Any("error", err))
+			} else {
+				slog.InfoContext(ctx, "Updated tracking for item", slog.String("item_id", itemID), slog.String("tracking_number", trackingNumber))
+			}
+		}
+	}
 
 	return nil
 }

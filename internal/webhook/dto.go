@@ -51,3 +51,15 @@ type ShopifyInventoryLevelWebhook struct {
 	InventoryItemID int64 `json:"inventory_item_id"`
 	Available       int   `json:"available"`
 }
+
+type ShopifyFulfillmentWebhook struct {
+	ID              int64                  `json:"id"`
+	OrderID         int64                  `json:"order_id"`
+	Status          string                 `json:"status"`
+	TrackingCompany string                 `json:"tracking_company"`
+	TrackingNumber  string                 `json:"tracking_number"`
+	TrackingNumbers []string               `json:"tracking_numbers"`
+	TrackingURLs    []string               `json:"tracking_urls"`
+	ShipmentStatus  string                 `json:"shipment_status"`
+	LineItems       []ShopifyOrderLineItem `json:"line_items"`
+}

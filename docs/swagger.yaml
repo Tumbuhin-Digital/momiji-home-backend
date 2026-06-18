@@ -551,6 +551,14 @@ definitions:
         type: integer
       title:
         type: string
+      tracking_company:
+        type: string
+      tracking_last_event:
+        type: string
+      tracking_number:
+        type: string
+      tracking_url:
+        type: string
       type:
         type: string
       unit_price:
@@ -1640,6 +1648,30 @@ paths:
       tags:
       - Order
   /orders/{id}/items/{itemId}/tracking:
+    get:
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Item ID
+        in: path
+        name: itemId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Get live tracking status for an item
+      tags:
+      - Orders
     patch:
       consumes:
       - application/json
@@ -2179,6 +2211,22 @@ paths:
       summary: Validate shipping address
       tags:
       - Shipping
+  /webhooks/shopify/fulfillments/create:
+    post:
+      consumes:
+      - application/json
+      responses: {}
+      summary: Handle Shopify Fulfillment Webhook
+      tags:
+      - Webhooks
+  /webhooks/shopify/fulfillments/update:
+    post:
+      consumes:
+      - application/json
+      responses: {}
+      summary: Handle Shopify Fulfillment Webhook
+      tags:
+      - Webhooks
   /webhooks/shopify/inventory_levels/update:
     post:
       consumes:
