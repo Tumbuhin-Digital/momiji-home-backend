@@ -184,6 +184,12 @@ func (s *PostgresStore) UpdateItemStatusByType(ctx context.Context, orderID, ite
 		Update("item_status", status).Error
 }
 
+func (s *PostgresStore) UpdateItemStepByType(ctx context.Context, orderID, itemType string, step int) error {
+	return s.db.WithContext(ctx).Model(&OrderItem{}).
+		Where("order_id = ? AND type = ?", orderID, itemType).
+		Update("fulfillment_step", step).Error
+}
+
 func (s *PostgresStore) UpdateOrderItemStep(ctx context.Context, itemID string, step int) error {
 	return s.db.WithContext(ctx).Model(&OrderItem{}).Where("id = ?", itemID).Update("fulfillment_step", step).Error
 }

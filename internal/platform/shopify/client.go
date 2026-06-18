@@ -422,6 +422,10 @@ func (c *clientImpl) CreateFulfillment(ctx context.Context, shopifyOrderID strin
 		return fmt.Errorf("failed to parse fulfillment orders: %w", err)
 	}
 
+	if len(res.Data.Order.FulfillmentOrders.Edges) == 0 {
+		return fmt.Errorf("no fulfillment orders found for order %s. raw response: %s", shopifyOrderID, string(resBytes))
+	}
+
 	// Step 2: Create fulfillment for OPEN fulfillment orders
 	for _, edge := range res.Data.Order.FulfillmentOrders.Edges {
 		if edge.Node.Status == "OPEN" {

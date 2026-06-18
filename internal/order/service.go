@@ -859,6 +859,11 @@ func (s *service) AcceptOrder(ctx context.Context, userID, orderID, fulfillmentT
 		return apierror.ErrInternal
 	}
 
+	// Update the fulfillment step to 2 (Processing/Accepted)
+	if err := s.store.UpdateItemStepByType(ctx, orderID, fulfillmentType, 2); err != nil {
+		return apierror.ErrInternal
+	}
+
 	// NEW: If ship_ready, push to Shopify fulfillment dashboard
 	if fulfillmentType == "ship_ready" && o.ShopifyOrderID != nil && *o.ShopifyOrderID != "" {
 		go func() {

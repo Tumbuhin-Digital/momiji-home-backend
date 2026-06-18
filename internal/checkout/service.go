@@ -304,7 +304,7 @@ func (s *service) GetShippingRates(ctx context.Context, userID, sessionID *strin
 				Phone:         s.shipstationCfg.WarehousePhone,
 				AddressLine1:  s.shipstationCfg.WarehouseAddress1,
 				CityLocality:  s.shipstationCfg.WarehouseCity,
-				StateProvince: s.shipstationCfg.WarehouseState,
+				StateProvince: s.getStateAbbr(ctx, s.shipstationCfg.WarehouseCountry, s.shipstationCfg.WarehouseZip, s.shipstationCfg.WarehouseState),
 				PostalCode:    s.shipstationCfg.WarehouseZip,
 				CountryCode:   s.shipstationCfg.WarehouseCountry,
 			},
@@ -313,7 +313,7 @@ func (s *service) GetShippingRates(ctx context.Context, userID, sessionID *strin
 				Phone:         rateReq.Phone,
 				AddressLine1:  rateReq.Address1,
 				CityLocality:  rateReq.City,
-				StateProvince: rateReq.State,
+				StateProvince: s.getStateAbbr(ctx, rateReq.Country, rateReq.Zip, rateReq.State),
 				PostalCode:    rateReq.Zip,
 				CountryCode:   rateReq.Country,
 			},
@@ -321,10 +321,10 @@ func (s *service) GetShippingRates(ctx context.Context, userID, sessionID *strin
 				{
 					Weight: shipstation.Weight{
 						Value: totalWeight,
-						Unit:  "pound",
+						Unit:  "kilogram",
 					},
 					Dimensions: &shipstation.Dimensions{
-						Unit:   "inch",
+						Unit:   "centimeter",
 						Length: maxLen,
 						Width:  maxWid,
 						Height: maxHt,
@@ -358,4 +358,23 @@ func (s *service) GetShippingRates(ctx context.Context, userID, sessionID *strin
 	}
 
 	return dtos, nil
+}
+
+func (s *service) getStateAbbr(ctx context.Context, country, zip, defaultState string) string {
+	if !strings.EqualFold(country, "US") && !strings.EqualFold(country, "United States") {
+		return defaultState
+	}
+	cleanZip := strings.TrimSpace(zip)
+	zipDetails, err := s.store.GetUSZipCodeDetails(ctx, cleanZip)
+	if err == nil && zipDetails != nil && zipDetails.StateAbbr != "" {
+		return zipDetails.StateAbbr
+	}
+	if len(cleanZip) > 5 {
+		zip5 := cleanZip[:5]
+		zipDetails, err = s.store.GetUSZipCodeDetails(ctx, zip5)
+		if err == nil && zipDetails != nil && zipDetails.StateAbbr != "" {
+			return zipDetails.StateAbbr
+		}
+	}
+	return defaultState
 }
