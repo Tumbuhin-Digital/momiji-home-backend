@@ -844,13 +844,18 @@ func (s *service) AcceptOrder(ctx context.Context, userID, orderID, fulfillmentT
 
 	// Orders created via webhook are set to "processing" (paid).
 	// Orders created manually (local flow) are "pending_payment".
-	validStatuses := map[string]bool{"pending": true, "pending_payment": true, "processing": true}
+	validStatuses := map[string]bool{"pending": true, "pending_payment": true, "processing": true, "on_progress": true}
 	if !validStatuses[o.AggregateStatus] {
 		return apierror.New(400, "invalid_transition", fmt.Sprintf("Order cannot be accepted from status: %s", o.AggregateStatus))
 	}
 
-	// Update order status logic - simplified
+	// Update the overall order status
 	if err := s.store.UpdateOrderStatus(ctx, orderID, "on_progress", o.FinancialStatus, "in_progress"); err != nil {
+		return apierror.ErrInternal
+	}
+
+	// Update the item status for the specifically accepted type
+	if err := s.store.UpdateItemStatusByType(ctx, orderID, fulfillmentType, "on_progress"); err != nil {
 		return apierror.ErrInternal
 	}
 
@@ -875,9 +880,24 @@ func (s *service) CancelOrder(ctx context.Context, userID, orderID, fulfillmentT
 		return apierror.ErrNotFound
 	}
 
-	// TODO: log refund note
-	if err := s.store.UpdateOrderStatus(ctx, orderID, "cancelled", "refunded", "cancelled"); err != nil {
+	// Update the item status for the specifically cancelled type
+	if err := s.store.UpdateItemStatusByType(ctx, orderID, fulfillmentType, "cancelled"); err != nil {
 		return apierror.ErrInternal
+	}
+
+	// Check if ALL items are cancelled, if so, cancel the whole order
+	allCancelled := true
+	for _, it := range o.Items {
+		if it.Type != fulfillmentType && it.ItemStatus != "cancelled" {
+			allCancelled = false
+			break
+		}
+	}
+
+	if allCancelled {
+		if err := s.store.UpdateOrderStatus(ctx, orderID, "cancelled", "refunded", "cancelled"); err != nil {
+			return apierror.ErrInternal
+		}
 	}
 	return nil
 }
