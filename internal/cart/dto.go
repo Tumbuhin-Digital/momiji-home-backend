@@ -20,6 +20,7 @@ type CartItem struct {
 	Quantity          int    `json:"quantity"`
 	InventoryQuantity int    `json:"inventory_quantity"`
 	UnitPrice         string `json:"unit_price"`
+	RetailPrice       string `json:"retail_price,omitempty"`
 	DepositAmount     string `json:"deposit_amount,omitempty"`
 	BalanceDue        string `json:"balance_due,omitempty"`
 	Subtotal          string  `json:"subtotal"`

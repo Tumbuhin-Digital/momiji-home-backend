@@ -109,6 +109,7 @@ func (s *service) GetCartResponse(ctx context.Context, userID, sessionID *string
 			Quantity:          item.Quantity,
 			InventoryQuantity: variant.InventoryQuantity,
 			UnitPrice:         fmt.Sprintf("%.2f", item.UnitPrice),
+			RetailPrice:       variant.RetailPrice,
 			Subtotal:          fmt.Sprintf("%.2f", subtotal),
 			Weight:            variant.WeightKg,
 			WeightUnit:        "KILOGRAMS",

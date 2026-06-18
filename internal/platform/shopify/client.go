@@ -88,6 +88,15 @@ type DraftOrderLineItem struct {
 	RequiresShipping  *bool                         `json:"requiresShipping,omitempty"`
 	CustomAttributes  []AttributeInput              `json:"customAttributes,omitempty"`
 	Weight            *DraftOrderLineItemWeightInput `json:"weight,omitempty"`
+	AppliedDiscount   *DraftOrderAppliedDiscountInput `json:"appliedDiscount,omitempty"`
+}
+
+type DraftOrderAppliedDiscountInput struct {
+	Title       string  `json:"title,omitempty"`
+	Description string  `json:"description,omitempty"`
+	Value       float64 `json:"value"`
+	ValueType   string  `json:"valueType"`
+	Amount      float64 `json:"amount"`
 }
 
 type DraftOrderLineItemWeightInput struct {

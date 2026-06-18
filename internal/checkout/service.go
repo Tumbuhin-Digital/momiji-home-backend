@@ -59,10 +59,27 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	var lockReqs []LockRequest
 
 	for _, item := range cartRes.ShipReady {
+		var discount *shopify.DraftOrderAppliedDiscountInput
+		if item.RetailPrice != "" {
+			retailPrice, err1 := strconv.ParseFloat(item.RetailPrice, 64)
+			wsPrice, err2 := strconv.ParseFloat(item.UnitPrice, 64)
+			if err1 == nil && err2 == nil && retailPrice > wsPrice {
+				discountPerUnit := retailPrice - wsPrice
+				totalDiscount := discountPerUnit * float64(item.Quantity)
+				discount = &shopify.DraftOrderAppliedDiscountInput{
+					Title:     "Wholesale Pricing",
+					Value:     totalDiscount,
+					ValueType: "FIXED_AMOUNT",
+					Amount:    totalDiscount,
+				}
+			}
+		}
+
 		draftLines = append(draftLines, shopify.DraftOrderLineItem{
 			VariantID:         item.VariantID,
 			Quantity:          item.Quantity,
 			OriginalUnitPrice: item.UnitPrice,
+			AppliedDiscount:   discount,
 		})
 		lockReqs = append(lockReqs, LockRequest{
 			ShopifyVariantID: item.VariantID,
