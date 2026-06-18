@@ -23,10 +23,11 @@ func (s *postgresStore) CreateSettlement(ctx context.Context, settlement *Settle
 func (s *postgresStore) GetSettlementByID(ctx context.Context, id string) (*Settlement, error) {
 	var settlement Settlement
 	if err := s.db.WithContext(ctx).
-		Select("preorder_settlements.*, order_line_items.order_id, order_line_items.title, users.email as customer_email").
+		Select("preorder_settlements.*, order_line_items.order_id, order_line_items.title, users.email as customer_email, COALESCE(customers.first_name, 'Customer') as customer_name").
 		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
 		Joins("JOIN orders ON orders.id = order_line_items.order_id").
 		Joins("JOIN users ON users.id = orders.customer_id").
+		Joins("LEFT JOIN customers ON customers.id = orders.customer_id").
 		Where("preorder_settlements.id = ?", id).
 		First(&settlement).Error; err != nil {
 		return nil, err
@@ -76,6 +77,7 @@ func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFi
 			orders.id as order_id,
 			orders.order_number,
 			users.email as customer_email,
+			COALESCE(customers.first_name, 'Customer') as customer_name,
 			order_line_items.id as order_line_item_id,
 			order_line_items.title,
 			order_line_items.quantity,
@@ -88,6 +90,7 @@ func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFi
 		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
 		Joins("JOIN orders ON orders.id = order_line_items.order_id").
 		Joins("JOIN users ON users.id = orders.customer_id").
+		Joins("LEFT JOIN customers ON customers.id = orders.customer_id").
 		Joins("LEFT JOIN product_variants ON product_variants.shopify_variant_id = order_line_items.shopify_variant_id").
 		Where("order_line_items.title IN ?", titles)
 
@@ -113,6 +116,7 @@ func (s *postgresStore) GetAllSettlementsForExport(ctx context.Context, filter S
 			orders.id as order_id,
 			orders.order_number,
 			users.email as customer_email,
+			COALESCE(customers.first_name, 'Customer') as customer_name,
 			order_line_items.id as order_line_item_id,
 			order_line_items.title,
 			order_line_items.quantity,
@@ -125,6 +129,7 @@ func (s *postgresStore) GetAllSettlementsForExport(ctx context.Context, filter S
 		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
 		Joins("JOIN orders ON orders.id = order_line_items.order_id").
 		Joins("JOIN users ON users.id = orders.customer_id").
+		Joins("LEFT JOIN customers ON customers.id = orders.customer_id").
 		Joins("LEFT JOIN product_variants ON product_variants.shopify_variant_id = order_line_items.shopify_variant_id")
 
 	if filter.Status != "" {
@@ -189,6 +194,7 @@ func (s *postgresStore) GetSettlementsForReminder(ctx context.Context, daysSince
 			orders.id as order_id,
 			orders.order_number,
 			users.email as customer_email,
+			COALESCE(customers.first_name, 'Customer') as customer_name,
 			order_line_items.id as order_line_item_id,
 			order_line_items.title,
 			order_line_items.quantity,
@@ -201,6 +207,7 @@ func (s *postgresStore) GetSettlementsForReminder(ctx context.Context, daysSince
 		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
 		Joins("JOIN orders ON orders.id = order_line_items.order_id").
 		Joins("JOIN users ON users.id = orders.customer_id").
+		Joins("LEFT JOIN customers ON customers.id = orders.customer_id").
 		Joins("LEFT JOIN product_variants ON product_variants.shopify_variant_id = order_line_items.shopify_variant_id").
 		Where("preorder_settlements.status = ?", "invoiced").
 		Where("preorder_settlements.invoiced_at >= ? AND preorder_settlements.invoiced_at < ?", startOfDay, endOfDay)

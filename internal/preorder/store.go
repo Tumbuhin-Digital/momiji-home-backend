@@ -23,6 +23,7 @@ type Settlement struct {
 	// Joined fields (read-only)
 	Title         string `gorm:"->"`
 	CustomerEmail string `gorm:"->"`
+	CustomerName  string `gorm:"->"`
 }
 
 func (Settlement) TableName() string {
@@ -35,6 +36,7 @@ type PreorderRow struct {
 	OrderID          string
 	OrderNumber      string
 	CustomerEmail    string
+	CustomerName     string
 	OrderLineItemID  string
 	Title            string
 	Quantity         int

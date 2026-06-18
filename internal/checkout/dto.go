@@ -7,6 +7,8 @@ import "github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
 type CheckoutSummaryRequest struct {
 	ShippingMethod string `json:"shipping_method,omitempty"`
 	AddressID      int    `json:"address_id,omitempty"`
+	Zip            string `json:"zip,omitempty"`
+	Country        string `json:"country,omitempty"`
 }
 
 type CheckoutSummaryResponse struct {
