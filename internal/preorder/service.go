@@ -146,7 +146,7 @@ func (s *service) InvoiceSettlement(ctx context.Context, id string) (*Settlement
 	go func() {
 		bgCtx := context.Background()
 		emailData := email.SettlementEmailData{
-			CustomerName:  "Customer",
+			CustomerName:  st.CustomerName,
 			ItemTitle:     itemTitle,
 			BalanceAmount: fmt.Sprintf("$%.2f", balanceAmount),
 			DueDate:       dueDateStr,
@@ -198,7 +198,7 @@ func (s *service) MarkSettlementPaid(ctx context.Context, id string) (*Settlemen
 	go func() {
 		bgCtx := context.Background()
 		emailData := email.SettlementEmailData{
-			CustomerName:  "Customer",
+			CustomerName:  st.CustomerName,
 			ItemTitle:     itemTitle,
 			BalanceAmount: fmt.Sprintf("$%.2f", balanceAmount),
 		}
@@ -231,7 +231,7 @@ func (s *service) ProcessReminders(ctx context.Context) error {
 				dueDateStr = r.DueDate.Format("2006-01-02")
 			}
 			emailData := email.SettlementEmailData{
-				CustomerName:  "Customer",
+				CustomerName:  r.CustomerName,
 				ItemTitle:     r.Title,
 				BalanceAmount: fmt.Sprintf("$%.2f", r.BalanceAmount),
 				DueDate:       dueDateStr,
@@ -250,7 +250,7 @@ func (s *service) ProcessReminders(ctx context.Context) error {
 				dueDateStr = r.DueDate.Format("2006-01-02")
 			}
 			emailData := email.SettlementEmailData{
-				CustomerName:  "Customer",
+				CustomerName:  r.CustomerName,
 				ItemTitle:     r.Title,
 				BalanceAmount: fmt.Sprintf("$%.2f", r.BalanceAmount),
 				DueDate:       dueDateStr,
@@ -268,7 +268,7 @@ func (s *service) ProcessReminders(ctx context.Context) error {
 			now := time.Now()
 			if err := s.store.UpdateSettlementStatus(ctx, r.ID, "expired", &now); err == nil {
 				emailData := email.SettlementEmailData{
-					CustomerName:  "Customer",
+					CustomerName:  r.CustomerName,
 					ItemTitle:     r.Title,
 					BalanceAmount: fmt.Sprintf("$%.2f", r.BalanceAmount),
 				}

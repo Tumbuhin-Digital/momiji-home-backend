@@ -2,6 +2,7 @@ package checkout
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
@@ -109,8 +110,42 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 	}
 
 	shippingCost := 20.00
-	if req.ShippingMethod == "expedited" {
+	estimatedArrival := "5-7 Business Days"
+
+	// Fetch dynamic shipping rates from ShipStation if zip code is provided
+	if req.Zip != "" {
+		ratesReq := ShippingRatesRequest{
+			Zip:     req.Zip,
+			Country: req.Country,
+		}
+		if ratesReq.Country == "" {
+			ratesReq.Country = "US"
+		}
+		rates, rateErr := h.checkoutService.GetShippingRates(c.Context(), uid, sid, ratesReq)
+		if rateErr == nil && len(rates) > 0 {
+			// Find matching service code, or fallback to the first rate if method not found
+			var matchedRate *ShippingRateDTO
+			for _, r := range rates {
+				if r.ServiceCode == req.ShippingMethod {
+					matchedRate = &r
+					break
+				}
+			}
+			if matchedRate == nil && req.ShippingMethod == "" {
+				matchedRate = &rates[0] // default to first available
+			}
+			if matchedRate != nil {
+				if cost, err := strconv.ParseFloat(matchedRate.Cost, 64); err == nil {
+					shippingCost = cost
+				}
+				if matchedRate.DeliveryDays != nil {
+					estimatedArrival = fmt.Sprintf("%d Days", *matchedRate.DeliveryDays)
+				}
+			}
+		}
+	} else if req.ShippingMethod == "expedited" {
 		shippingCost = 35.00
+		estimatedArrival = "2-3 Business Days"
 	}
 
 	var totalShipReady, preorderDeposit, preorderBalance float64
@@ -128,7 +163,7 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 
 	res.Shipping.Method = req.ShippingMethod
 	res.Shipping.Cost = fmt.Sprintf("%.2f", shippingCost)
-	res.Shipping.EstimatedArrival = "5-7 Business Days"
+	res.Shipping.EstimatedArrival = estimatedArrival
 
 	dueNowTotal := totalShipReady + shippingCost + preorderDeposit
 	res.DueNow.ShipReadyTotal = cartRes.Summary.TotalShipReady
