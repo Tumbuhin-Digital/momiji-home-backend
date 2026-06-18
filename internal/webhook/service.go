@@ -369,7 +369,7 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 	// Find the order by Shopify ID
 	shopOrderID := fmt.Sprintf("%d", payload.OrderID)
 	o, err := s.orderStore.GetOrderByShopifyID(ctx, shopOrderID)
-	if err != nil {
+	if err != nil || o == nil {
 		slog.ErrorContext(ctx, "Order not found for fulfillment", slog.String("shopify_order_id", shopOrderID))
 		return nil // Return 200 so Shopify stops retrying
 	}
@@ -410,8 +410,7 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 	}
 
 	if trackingNumber == "" {
-		slog.InfoContext(ctx, "Fulfillment has no tracking number, skipping tracking update")
-		return nil
+		slog.InfoContext(ctx, "Fulfillment has no tracking number, but updating fulfillment status anyway")
 	}
 
 	now := time.Now()
