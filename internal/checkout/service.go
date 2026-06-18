@@ -3,6 +3,7 @@ package checkout
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -65,12 +66,12 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 			wsPrice, err2 := strconv.ParseFloat(item.UnitPrice, 64)
 			if err1 == nil && err2 == nil && retailPrice > wsPrice {
 				discountPerUnit := retailPrice - wsPrice
-				totalDiscount := discountPerUnit * float64(item.Quantity)
+				discountPerUnit = math.Round(discountPerUnit*100) / 100
 				discount = &shopify.DraftOrderAppliedDiscountInput{
 					Title:     "Wholesale Pricing",
-					Value:     totalDiscount,
+					Value:     discountPerUnit,
 					ValueType: "FIXED_AMOUNT",
-					Amount:    totalDiscount,
+					Amount:    discountPerUnit,
 				}
 			}
 		}
