@@ -188,9 +188,11 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 			continue
 		}
 
-		price, _ := strconv.ParseFloat(item.Price, 64)
-		total += price
-		totalChargedNow += price
+		unitPriceFromShopify, _ := strconv.ParseFloat(item.Price, 64)
+		lineTotalFromShopify := unitPriceFromShopify * float64(item.Quantity)
+		
+		total += lineTotalFromShopify
+		totalChargedNow += lineTotalFromShopify
 
 		isPreorder := variant.FulfillmentType == "pre_order"
 
@@ -207,23 +209,29 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 
 		if isPreorder {
 			hasPreOrder = true
-			totalDepositPaid += price
+			totalDepositPaid += lineTotalFromShopify
 			
-			fullPrice := price * 2
+			fullUnitPrice := unitPriceFromShopify * 2 // Default to 2x DP
 			for _, prop := range item.Properties {
 				if prop.Name == "full_price" {
 					if valStr, ok := prop.Value.(string); ok {
 						if p, err := strconv.ParseFloat(valStr, 64); err == nil {
-							fullPrice = p
+							fullUnitPrice = p
 						}
 					}
 				}
 			}
 
-			bal := fullPrice - price
+			bal := (fullUnitPrice - unitPriceFromShopify) * float64(item.Quantity)
 			totalBalanceDue += bal
 
 			title := item.Title
+			
+			unitPrice := fullUnitPrice
+			finalAmount := fullUnitPrice * float64(item.Quantity)
+			amountCharged := lineTotalFromShopify
+			dpAmount := lineTotalFromShopify
+			balanceDue := bal
 			
 			orderItems = append(orderItems, order.OrderItem{
 				ShopifyVariantID: variant.ShopifyVariantID,
@@ -231,11 +239,12 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 				Quantity:         item.Quantity,
 				ItemStatus:       "pending_deposit",
 				FulfillmentStep:  1,
-				DpAmount:         &price,
+				FinalAmount:      &finalAmount,
+				DpAmount:         &dpAmount,
 				Title:            &title,
-				UnitPrice:        &price, // this is the 50% price as charged
-				AmountCharged:    &price,
-				BalanceDue:       &bal,
+				UnitPrice:        &unitPrice,
+				AmountCharged:    &amountCharged,
+				BalanceDue:       &balanceDue,
 			})
 			
 			draftItems = append(draftItems, shopify.DraftOrderLineItem{
@@ -243,8 +252,12 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 				Quantity:  item.Quantity,
 			})
 		} else {
-			totalShipReady += price
+			totalShipReady += lineTotalFromShopify
 			title := item.Title
+			
+			unitPrice := unitPriceFromShopify
+			finalAmount := lineTotalFromShopify
+			amountCharged := lineTotalFromShopify
 			
 			orderItems = append(orderItems, order.OrderItem{
 				ShopifyVariantID: variant.ShopifyVariantID,
@@ -252,11 +265,19 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 				Quantity:         item.Quantity,
 				ItemStatus:       "paid", // webhook is orders/paid
 				FulfillmentStep:  1,
-				FinalAmount:      &price,
+				FinalAmount:      &finalAmount,
 				Title:            &title,
-				UnitPrice:        &price,
-				AmountCharged:    &price,
+				UnitPrice:        &unitPrice,
+				AmountCharged:    &amountCharged,
 			})
+		}
+	}
+
+	// Add shipping cost to the overall order totals
+	for _, sl := range payload.ShippingLines {
+		if shipPrice, err := strconv.ParseFloat(sl.Price, 64); err == nil {
+			total += shipPrice
+			totalChargedNow += shipPrice
 		}
 	}
 

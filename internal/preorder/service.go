@@ -74,6 +74,7 @@ func (s *service) ListSettlements(ctx context.Context, filter SettlementFilter) 
 			BatchLabel:       r.BatchLabel,
 			SettlementStatus: r.SettlementStatus,
 			DueDate:          dueDateStr,
+			CreatedAt:        r.CreatedAt.Format(time.RFC3339),
 		}
 
 		if g, exists := groupsMap[r.Title]; exists {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 )
@@ -428,10 +429,11 @@ func (c *clientImpl) CreateFulfillment(ctx context.Context, shopifyOrderID strin
 
 	// Step 2: Create fulfillment for OPEN fulfillment orders
 	for _, edge := range res.Data.Order.FulfillmentOrders.Edges {
+		slog.Info("Shopify FulfillmentOrder found", "id", edge.Node.ID, "status", edge.Node.Status)
 		if edge.Node.Status == "OPEN" {
 			mut := `
-				mutation fulfillmentCreateV2($fulfillment: FulfillmentV2Input!) {
-				  fulfillmentCreateV2(fulfillment: $fulfillment) {
+				mutation fulfillmentCreate($fulfillment: FulfillmentInput!) {
+				  fulfillmentCreate(fulfillment: $fulfillment) {
 					fulfillment {
 					  id
 					}
@@ -458,16 +460,16 @@ func (c *clientImpl) CreateFulfillment(ctx context.Context, shopifyOrderID strin
 			
 			var mRes struct {
 				Data struct {
-					FulfillmentCreateV2 struct {
+					FulfillmentCreate struct {
 						UserErrors []struct {
 							Message string `json:"message"`
 						} `json:"userErrors"`
-					} `json:"fulfillmentCreateV2"`
+					} `json:"fulfillmentCreate"`
 				} `json:"data"`
 			}
 			if err := json.Unmarshal(mutRes, &mRes); err == nil {
-				if len(mRes.Data.FulfillmentCreateV2.UserErrors) > 0 {
-					return fmt.Errorf("shopify fulfillment error: %s", mRes.Data.FulfillmentCreateV2.UserErrors[0].Message)
+				if len(mRes.Data.FulfillmentCreate.UserErrors) > 0 {
+					return fmt.Errorf("shopify fulfillment error: %s", mRes.Data.FulfillmentCreate.UserErrors[0].Message)
 				}
 			}
 		}
