@@ -255,6 +255,12 @@ func (s *PostgresStore) UpdateProductStatus(ctx context.Context, productID strin
 		Updates(map[string]interface{}{"fulfillment_type": fulfillmentType, "updated_at": gorm.Expr("now()")}).Error
 }
 
+func (s *PostgresStore) UpdateVariantFulfillmentType(ctx context.Context, variantID string, fulfillmentType string) error {
+	return s.db.WithContext(ctx).Model(&ProductVariant{}).
+		Where("shopify_variant_id = ?", variantID).
+		Updates(map[string]interface{}{"fulfillment_type": fulfillmentType, "updated_at": gorm.Expr("now()")}).Error
+}
+
 func (s *PostgresStore) UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) error {
 	updates := map[string]interface{}{
 		"preorder_batch_label": batchLabel,

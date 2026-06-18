@@ -330,8 +330,11 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 					fulfillmentType = existing.FulfillmentType
 				}
 
-				if vNode.InventoryQuantity <= 0 {
+				if vNode.InventoryQuantity <= 0 && fulfillmentType == "ship_ready" {
 					fulfillmentType = "pre_order"
+					if existing != nil {
+						s.store.UpdateVariantFulfillmentType(ctx, vNode.ID, "pre_order")
+					}
 				}
 
 				variant := &ProductVariant{
