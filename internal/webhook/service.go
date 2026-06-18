@@ -460,15 +460,17 @@ func (s *service) HandleInventoryUpdate(ctx context.Context, payload ShopifyInve
 	// Update inventory quantity
 	variant.InventoryQuantity = payload.Available
 	
-	// Update fulfillment type dynamically
-	if payload.Available > 0 {
-		variant.FulfillmentType = "ship_ready"
-	} else {
-		variant.FulfillmentType = "pre_order"
-	}
-
 	if err := s.productStore.UpsertVariant(ctx, variant); err != nil {
 		return fmt.Errorf("failed to update variant inventory: %w", err)
+	}
+
+	// Update fulfillment type dynamically only when stock runs out
+	if payload.Available <= 0 && variant.FulfillmentType == "ship_ready" {
+		if err := s.productStore.UpdateVariantFulfillmentType(ctx, variant.ShopifyVariantID, "pre_order"); err != nil {
+			slog.WarnContext(ctx, "failed to update fulfillment type to pre_order", slog.Any("err", err))
+		} else {
+			slog.InfoContext(ctx, "dynamically changed fulfillment type to pre_order due to 0 stock", slog.String("variant_id", variant.ShopifyVariantID))
+		}
 	}
 
 	slog.InfoContext(ctx, "inventory updated", slog.String("variant_id", variant.ShopifyVariantID), slog.Int("qty", payload.Available))
