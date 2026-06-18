@@ -170,9 +170,10 @@ func (s *PostgresStore) GetAllOrdersForExport(ctx context.Context, q OrderQuery)
 	return orders, nil
 }
 
-func (s *PostgresStore) UpdateOrderStatus(ctx context.Context, orderID, financialStatus, fulfillmentStatus string) error {
+func (s *PostgresStore) UpdateOrderStatus(ctx context.Context, orderID, aggregateStatus, financialStatus, fulfillmentStatus string) error {
 	return s.db.WithContext(ctx).Model(&Order{}).Where("id = ?", orderID).Updates(map[string]interface{}{
-		"financial_status": financialStatus,
+		"aggregate_status":   aggregateStatus,
+		"financial_status":   financialStatus,
 		"fulfillment_status": fulfillmentStatus,
 	}).Error
 }

@@ -139,6 +139,49 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		}
 	}
 
+	// Calculate and set shipping cost for Shopify draft order
+	shippingCost := 20.00
+	shippingTitle := "Standard Shipping"
+	if req.Zip != "" {
+		ratesReq := ShippingRatesRequest{
+			Zip:     req.Zip,
+			Country: req.Country,
+		}
+		if ratesReq.Country == "" {
+			ratesReq.Country = "US"
+		}
+		rates, rateErr := s.GetShippingRates(ctx, userID, sessionID, ratesReq)
+		if rateErr == nil && len(rates) > 0 {
+			var matchedRate *ShippingRateDTO
+			for _, r := range rates {
+				if r.ServiceCode == req.ShippingMethod {
+					matchedRate = &r
+					break
+				}
+			}
+			if matchedRate == nil && req.ShippingMethod == "" {
+				matchedRate = &rates[0]
+			}
+			if matchedRate != nil {
+				if cost, err := strconv.ParseFloat(matchedRate.Cost, 64); err == nil {
+					shippingCost = cost
+				}
+				shippingTitle = matchedRate.Label
+			}
+		}
+	} else if req.ShippingMethod == "expedited" {
+		shippingCost = 35.00
+		shippingTitle = "Expedited Shipping"
+	}
+
+	// Only apply shipping line if there is shipping required (e.g. ship ready or pre-order items present)
+	if len(cartRes.ShipReady) > 0 || len(cartRes.PreOrder) > 0 {
+		draftInput.ShippingLine = &shopify.ShippingLineInput{
+			Title: shippingTitle,
+			Price: fmt.Sprintf("%.2f", shippingCost),
+		}
+	}
+
 	res, err := s.shopifyCli.CreateDraftOrder(ctx, draftInput)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to create shopify draft order", slog.Any("error", err), slog.String("checkout_reference", checkoutRef))
