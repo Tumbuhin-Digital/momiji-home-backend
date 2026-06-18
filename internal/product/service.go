@@ -322,6 +322,18 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 					weightKg = wVal * 0.453592
 				}
 
+				fulfillmentType := "ship_ready"
+				
+				// Try to preserve existing fulfillment type from DB if > 0
+				existing, _ := s.store.GetVariantByShopifyID(ctx, vNode.ID)
+				if existing != nil && existing.FulfillmentType != "" {
+					fulfillmentType = existing.FulfillmentType
+				}
+
+				if vNode.InventoryQuantity <= 0 {
+					fulfillmentType = "pre_order"
+				}
+
 				variant := &ProductVariant{
 					ProductID:              p.ID,
 					ShopifyVariantID:       vNode.ID,
@@ -332,6 +344,7 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 					InventoryQuantity:      vNode.InventoryQuantity,
 					ShopifyInventoryItemID: vNode.InventoryItem.ID,
 					WeightKg:               weightKg,
+					FulfillmentType:        fulfillmentType,
 				}
 				if err := s.store.UpsertVariant(ctx, variant); err != nil {
 					return fmt.Errorf("failed to upsert variant %s: %w", variant.ShopifyVariantID, err)
