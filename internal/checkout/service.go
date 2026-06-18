@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -282,6 +283,15 @@ func (s *service) GetShippingRates(ctx context.Context, userID, sessionID *strin
 		totalWeight = 1.0 // default 1 lb
 	}
 
+	dims := []float64{maxLen, maxWid, maxHt}
+	sort.Sort(sort.Reverse(sort.Float64Slice(dims)))
+	pkgLength, pkgWidth, pkgHeight := dims[0], dims[1], dims[2]
+
+	const cmToInch = 0.393701
+	pkgLength = math.Round(pkgLength*cmToInch*100) / 100
+	pkgWidth = math.Round(pkgWidth*cmToInch*100) / 100
+	pkgHeight = math.Round(pkgHeight*cmToInch*100) / 100
+
 	// Default fallback for required recipient details
 	if rateReq.Name == "" {
 		rateReq.Name = "Recipient"
@@ -321,13 +331,13 @@ func (s *service) GetShippingRates(ctx context.Context, userID, sessionID *strin
 				{
 					Weight: shipstation.Weight{
 						Value: totalWeight,
-						Unit:  "kilogram",
+						Unit:  "pound",
 					},
 					Dimensions: &shipstation.Dimensions{
-						Unit:   "centimeter",
-						Length: maxLen,
-						Width:  maxWid,
-						Height: maxHt,
+						Unit:   "inch",
+						Length: pkgLength,
+						Width:  pkgWidth,
+						Height: pkgHeight,
 					},
 				},
 			},
