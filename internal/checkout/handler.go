@@ -280,11 +280,11 @@ func (h *Handler) GetCheckoutConfirm(c *fiber.Ctx) error {
 		"order_number":      orderRes.OrderNumber,
 		"order_date":        orderRes.OrderDate,
 		"customer_email":    customerEmail,
-		"financial_status":  orderRes.FinancialStatus,
 		"total_price":       orderRes.TotalPrice,
 		"total_charged_now": orderRes.TotalChargedNow,
 		"total_balance_due": orderRes.TotalBalanceDue,
 		"currency":          orderRes.Currency,
+		"financial_status":  orderRes.FinancialStatus,
 		"items":             items,
 	})
 }
