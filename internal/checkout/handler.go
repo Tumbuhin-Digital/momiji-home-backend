@@ -49,7 +49,6 @@ func (h *Handler) extractIdentity(c *fiber.Ctx) (userID *string, sessionID *stri
 	return
 }
 
-
 // GetShippingRates godoc
 // @Summary List live shipping rates via ShipStation
 // @Tags Shipping
@@ -61,12 +60,12 @@ func (h *Handler) extractIdentity(c *fiber.Ctx) (userID *string, sessionID *stri
 // @Router /shipping/rates [post]
 func (h *Handler) GetShippingRates(c *fiber.Ctx) error {
 	uid, sid := h.extractIdentity(c)
-	
+
 	var req ShippingRatesRequest
 	if err := c.BodyParser(&req); err != nil {
 		return response.Error(c, apierror.New(400, "invalid_request", "invalid request body"))
 	}
-	
+
 	if req.Zip == "" {
 		return response.Error(c, apierror.New(400, "invalid_request", "zip code is required"))
 	}
@@ -80,8 +79,6 @@ func (h *Handler) GetShippingRates(c *fiber.Ctx) error {
 	}
 	return response.Success(c, fiber.StatusOK, "Shipping rates retrieved", rates)
 }
-
-
 
 // GetCheckoutSummary godoc
 // @Summary Get checkout summary
