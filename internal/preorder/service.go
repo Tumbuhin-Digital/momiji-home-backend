@@ -15,7 +15,7 @@ import (
 
 // OrderUpdater allows preorder service to update order status without circular imports.
 type OrderUpdater interface {
-	UpdateOrderStatus(ctx context.Context, orderID, financialStatus, fulfillmentStatus string) error
+	UpdateOrderStatus(ctx context.Context, orderID, aggregateStatus, financialStatus, fulfillmentStatus string) error
 }
 
 // PreorderService defines the settlement state machine operations.
@@ -216,7 +216,7 @@ func (s *service) checkAndUpdateOrderStatus(ctx context.Context, orderID string)
 		return err
 	}
 	if allPaid {
-		return s.orderStore.UpdateOrderStatus(ctx, orderID, "paid", "pending")
+		return s.orderStore.UpdateOrderStatus(ctx, orderID, "paid", "paid", "pending")
 	}
 	return nil
 }

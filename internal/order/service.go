@@ -850,7 +850,7 @@ func (s *service) AcceptOrder(ctx context.Context, userID, orderID, fulfillmentT
 	}
 
 	// Update order status logic - simplified
-	if err := s.store.UpdateOrderStatus(ctx, orderID, "on_progress", "in_progress"); err != nil {
+	if err := s.store.UpdateOrderStatus(ctx, orderID, "on_progress", o.FinancialStatus, "in_progress"); err != nil {
 		return apierror.ErrInternal
 	}
 
@@ -876,7 +876,7 @@ func (s *service) CancelOrder(ctx context.Context, userID, orderID, fulfillmentT
 	}
 
 	// TODO: log refund note
-	if err := s.store.UpdateOrderStatus(ctx, orderID, "refunded", "cancelled"); err != nil {
+	if err := s.store.UpdateOrderStatus(ctx, orderID, "cancelled", "refunded", "cancelled"); err != nil {
 		return apierror.ErrInternal
 	}
 	return nil
