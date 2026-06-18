@@ -2,8 +2,6 @@ package checkout
 
 import "github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
 
-
-
 type CheckoutSummaryRequest struct {
 	ShippingMethod string `json:"shipping_method,omitempty"`
 	AddressID      int    `json:"address_id,omitempty"`
@@ -27,10 +25,10 @@ type CheckoutSummaryResponse struct {
 		EstimatedArrival string `json:"estimated_arrival"`
 	} `json:"shipping"`
 	DueNow struct {
-		ShipReadyTotal string `json:"ship_ready_total"`
-		Shipping       string `json:"shipping"`
+		ShipReadyTotal  string `json:"ship_ready_total"`
+		Shipping        string `json:"shipping"`
 		PreorderDeposit string `json:"preorder_deposit"`
-		Total          string `json:"total"`
+		Total           string `json:"total"`
 	} `json:"due_now"`
 	DueAugust struct {
 		PreorderBalance  string `json:"preorder_balance"`

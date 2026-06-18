@@ -2514,7 +2514,13 @@ const docTemplate = `{
                 "address_id": {
                     "type": "integer"
                 },
+                "country": {
+                    "type": "string"
+                },
                 "shipping_method": {
+                    "type": "string"
+                },
+                "zip": {
                     "type": "string"
                 }
             }
