@@ -26,6 +26,7 @@ type PreorderGroupSettlement struct {
 	BatchLabel       string `json:"batch_label"`
 	SettlementStatus string `json:"settlement_status"`
 	DueDate          string `json:"due_date,omitempty"`
+	CreatedAt        string `json:"created_at"`
 }
 
 // PreorderGroupResponse represents a product group with its underlying settlements.

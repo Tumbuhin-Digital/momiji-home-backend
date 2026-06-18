@@ -45,6 +45,7 @@ type PreorderRow struct {
 	SettlementStatus string
 	DueDate          *time.Time
 	ShopifyOrderID   *string
+	CreatedAt        time.Time
 }
 
 // SettlementFilter is used for listing settlements with optional filters.
