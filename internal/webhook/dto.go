@@ -11,6 +11,12 @@ type ShopifyOrderWebhook struct {
 	Customer        ShopifyCustomer         `json:"customer"`
 	ShippingAddress *ShopifyAddress         `json:"shipping_address"`
 	NoteAttributes  []ShopifyProperty       `json:"note_attributes"`
+	ShippingLines   []ShopifyShippingLine   `json:"shipping_lines"`
+}
+
+type ShopifyShippingLine struct {
+	Title string `json:"title"`
+	Price string `json:"price"`
 }
 
 type ShopifyAddress struct {
