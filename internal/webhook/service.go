@@ -192,7 +192,20 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		total += price
 		totalChargedNow += price
 
-		if variant.FulfillmentType == "pre_order" {
+		isPreorder := variant.FulfillmentType == "pre_order"
+
+		// Also check line item properties, in case stock changed to 0 but webhook was delayed,
+		// or if checkout specifically marked this line item as a preorder down payment.
+		for _, prop := range item.Properties {
+			if prop.Name == "type" {
+				if valStr, ok := prop.Value.(string); ok && valStr == "preorder_dp" {
+					isPreorder = true
+					break
+				}
+			}
+		}
+
+		if isPreorder {
 			hasPreOrder = true
 			totalDepositPaid += price
 			
