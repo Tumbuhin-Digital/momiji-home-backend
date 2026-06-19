@@ -864,36 +864,18 @@ func (s *service) AcceptOrder(ctx context.Context, userID, orderID, fulfillmentT
 		return apierror.ErrInternal
 	}
 
-	// // NEW: If ship_ready, push to Shopify fulfillment dashboard
-	// if fulfillmentType == "ship_ready" {
-	// 	if o.ShopifyOrderID != nil && *o.ShopifyOrderID != "" {
-	// 		go func() {
-	// 			if err := s.shopClient.CreateFulfillment(context.Background(), *o.ShopifyOrderID); err != nil {
-	// 				slog.Error("failed to push order to shopify fulfillment", "order_id", orderID, "error", err)
-	// 			}
-	// 		}()
-	// 	} else {
-	// 		slog.Warn("Skipping Shopify fulfillment because ShopifyOrderID is empty or nil", "order_id", orderID)
-	// 	}
-	// }
-
+	// NEW: If ship_ready, push to Shopify fulfillment dashboard
 	if fulfillmentType == "ship_ready" {
-	    if o.ShopifyOrderID != nil && *o.ShopifyOrderID != "" {
-	        slog.Info("pushing order to shopify fulfillment", "order_id", orderID, "shopify_order_id", *o.ShopifyOrderID)
-	        ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	        defer cancel()
-	        if err := s.shopClient.CreateFulfillment(ctx, *o.ShopifyOrderID); err != nil {
-	            slog.Error("failed to push order to shopify fulfillment", "order_id", orderID, "error", err)
-	        } else {
-	            slog.Info("shopify fulfillment push succeeded", "order_id", orderID)
-	        }
-	    } else {
-	        slog.Warn("skipping shopify fulfillment: empty ShopifyOrderID", "order_id", orderID)
-	    }
-	} else {
-	    slog.Debug("skipping shopify fulfillment: fulfillment_type is not ship_ready", "order_id", orderID, "fulfillment_type", fulfillmentType)
+		if o.ShopifyOrderID != nil && *o.ShopifyOrderID != "" {
+			go func() {
+				if err := s.shopClient.CreateFulfillment(context.Background(), *o.ShopifyOrderID); err != nil {
+					slog.Error("failed to push order to shopify fulfillment", "order_id", orderID, "error", err)
+				}
+			}()
+		} else {
+			slog.Warn("Skipping Shopify fulfillment because ShopifyOrderID is empty or nil", "order_id", orderID)
+		}
 	}
-
 	return nil
 }
 
