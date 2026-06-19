@@ -191,8 +191,11 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		unitPriceFromShopify, _ := strconv.ParseFloat(item.Price, 64)
 		lineTotalFromShopify := unitPriceFromShopify * float64(item.Quantity)
 		
-		total += lineTotalFromShopify
-		totalChargedNow += lineTotalFromShopify
+		totalDiscount, _ := strconv.ParseFloat(item.TotalDiscount, 64)
+		actualAmountCharged := lineTotalFromShopify - totalDiscount
+		
+		total += actualAmountCharged
+		totalChargedNow += actualAmountCharged
 
 		isPreorder := variant.FulfillmentType == "pre_order"
 
@@ -229,8 +232,8 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 			
 			unitPrice := fullUnitPrice
 			finalAmount := fullUnitPrice * float64(item.Quantity)
-			amountCharged := lineTotalFromShopify
-			dpAmount := lineTotalFromShopify
+			amountCharged := actualAmountCharged
+			dpAmount := actualAmountCharged
 			balanceDue := bal
 			
 			orderItems = append(orderItems, order.OrderItem{
@@ -252,12 +255,14 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 				Quantity:  item.Quantity,
 			})
 		} else {
-			totalShipReady += lineTotalFromShopify
+			totalShipReady += actualAmountCharged
 			title := item.Title
 			
+			// For ship ready, unit price could reflect the discount if we divide, 
+			// but usually unitPrice is the base price.
 			unitPrice := unitPriceFromShopify
-			finalAmount := lineTotalFromShopify
-			amountCharged := lineTotalFromShopify
+			finalAmount := actualAmountCharged
+			amountCharged := actualAmountCharged
 			
 			orderItems = append(orderItems, order.OrderItem{
 				ShopifyVariantID: variant.ShopifyVariantID,
