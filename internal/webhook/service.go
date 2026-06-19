@@ -350,38 +350,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		}
 	}
 
-	// Trigger email notification
-	go func() {
-		bgCtx := context.Background()
-		if payload.Email != "" {
-			var emailItems []email.OrderItemData
-			for _, it := range newOrder.Items {
-				title := ""
-				if it.Title != nil { title = *it.Title }
-				amt := 0.0
-				if it.AmountCharged != nil { amt = *it.AmountCharged }
-				emailItems = append(emailItems, email.OrderItemData{
-					Title:    title,
-					Type:     it.Type,
-					Quantity: it.Quantity,
-					Amount:   fmt.Sprintf("$%.2f", amt),
-				})
-			}
-			emailData := email.OrderEmailData{
-				CustomerName:    payload.Customer.FirstName,
-				OrderNumber:     newOrder.OrderNumber,
-				Items:           emailItems,
-				TotalPaid:       fmt.Sprintf("$%.2f", newOrder.TotalChargedNow),
-				HasBalanceDue:   hasPreOrder,
-				TotalBalanceDue: fmt.Sprintf("$%.2f", newOrder.TotalBalanceDue),
-			}
-			if err := s.emailService.SendOrderConfirmation(bgCtx, payload.Email, emailData); err != nil {
-				slog.ErrorContext(bgCtx, "Failed to send order confirmation email", slog.Any("error", err), slog.String("email", payload.Email))
-			} else {
-				slog.InfoContext(bgCtx, "Order confirmation email successfully sent", slog.String("email", payload.Email), slog.String("order_number", newOrder.OrderNumber))
-			}
-		}
-	}()
+	// Shopify automatically sends order confirmations, so we skip sending our own here.
 
 	// Release stock locks associated with this customer
 	_ = s.stockLockService.ReleaseLocks(ctx, &customerID, nil)
