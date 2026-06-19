@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -136,12 +137,37 @@ func (s *service) InvoiceSettlement(ctx context.Context, id string) (*Settlement
 
 	// Trigger email in background
 	settlementID := id
-	customerEmail := st.CustomerEmail
 	itemTitle := st.Title
 	balanceAmount := st.BalanceAmount
 	var dueDateStr string
 	if st.DueDate != nil {
 		dueDateStr = st.DueDate.Format("2006-01-02")
+	}
+
+	// Create Shopify Draft Order for remaining balance
+	draftInput := shopify.DraftOrderInput{
+		Email: st.CustomerEmail,
+		LineItems: []shopify.DraftOrderLineItem{
+			{
+				Title:             fmt.Sprintf("Remaining Balance: %s", st.Title),
+				OriginalUnitPrice: fmt.Sprintf("%.2f", st.BalanceAmount),
+				Quantity:          1,
+				CustomAttributes: []shopify.AttributeInput{
+					{Key: "settlement_id", Value: settlementID},
+					{Key: "original_order_id", Value: st.OrderID},
+				},
+			},
+		},
+	}
+
+	draftRes, err := s.shopClient.CreateDraftOrder(ctx, draftInput)
+	var paymentLink string
+	if err == nil && draftRes != nil && draftRes.InvoiceUrl != "" {
+		paymentLink = draftRes.InvoiceUrl
+	} else {
+		slog.ErrorContext(ctx, "failed to create shopify draft order for settlement", "error", err, "settlement_id", settlementID)
+		// Fallback to local link if Shopify fails
+		paymentLink = "https://momiji-home.vercel.app/pay-settlement/" + settlementID
 	}
 
 	go func() {
@@ -151,9 +177,12 @@ func (s *service) InvoiceSettlement(ctx context.Context, id string) (*Settlement
 			ItemTitle:     itemTitle,
 			BalanceAmount: fmt.Sprintf("$%.2f", balanceAmount),
 			DueDate:       dueDateStr,
-			PaymentLink:   s.feURL + "/checkout/settlement/" + settlementID,
+			PaymentLink:   paymentLink,
 		}
-		_ = s.emailService.SendInvoice(bgCtx, customerEmail, emailData)
+
+		if err := s.emailService.SendInvoice(bgCtx, st.CustomerEmail, emailData); err != nil {
+			slog.Error("failed to send settlement email", "error", err, "settlement_id", settlementID)
+		}
 	}()
 
 	return &res, nil
