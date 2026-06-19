@@ -35,10 +35,11 @@ type ShopifyOrderLineItem struct {
 	ID        int64  `json:"id"`
 	VariantID int64  `json:"variant_id"`
 	Title     string `json:"title"`
-	Quantity   int               `json:"quantity"`
-	Price      string            `json:"price"`
-	SKU        string            `json:"sku"`
-	Properties []ShopifyProperty `json:"properties"`
+	Quantity      int               `json:"quantity"`
+	Price         string            `json:"price"`
+	TotalDiscount string            `json:"total_discount"`
+	SKU           string            `json:"sku"`
+	Properties    []ShopifyProperty `json:"properties"`
 }
 
 type ShopifyProperty struct {
