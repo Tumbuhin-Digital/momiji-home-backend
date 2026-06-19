@@ -384,55 +384,7 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 		}
 	}
 
-	// Trigger email notification
-	go func() {
-		// Use a background context so it isn't cancelled when the request ends
-		bgCtx := context.Background()
-		var customerName string
-		customerEmail := ""
-		if req.GuestInfo != nil {
-			customerName = req.GuestInfo.FirstName
-			customerEmail = req.GuestInfo.Email
-		} else {
-			// Find user details if needed, or simply pass email if available.
-			user, _ := s.authStore.GetUserByID(bgCtx, customerID)
-			if user != nil {
-				customerEmail = user.Email
-				customerName = "Customer"
-			}
-		}
-
-		if customerEmail != "" {
-			var emailItems []email.OrderItemData
-			for _, it := range order.Items {
-				title := ""
-				if it.Title != nil {
-					title = *it.Title
-				}
-				amt := 0.0
-				if it.AmountCharged != nil {
-					amt = *it.AmountCharged
-				}
-				emailItems = append(emailItems, email.OrderItemData{
-					Title:    title,
-					Type:     it.Type,
-					Quantity: it.Quantity,
-					Amount:   fmt.Sprintf("$%.2f", amt),
-				})
-			}
-			emailData := email.OrderEmailData{
-				CustomerName:    customerName,
-				OrderNumber:     order.OrderNumber,
-				Items:           emailItems,
-				TotalPaid:       fmt.Sprintf("$%.2f", order.TotalChargedNow),
-				HasBalanceDue:   hasPreOrder,
-				TotalBalanceDue: fmt.Sprintf("$%.2f", order.TotalBalanceDue),
-			}
-			if err := s.emailService.SendOrderConfirmation(bgCtx, customerEmail, emailData); err != nil {
-				slog.Error("Failed to send order confirmation email", slog.Any("error", err), slog.String("to", customerEmail))
-			}
-		}
-	}()
+	// Shopify automatically sends order confirmations, so we skip sending our own here.
 
 	return response, nil
 }
