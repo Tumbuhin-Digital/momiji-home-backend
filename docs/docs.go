@@ -1349,7 +1349,32 @@ const docTemplate = `{
                     "Order"
                 ],
                 "summary": "Update items received count",
-                "responses": {}
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update Received Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/order.UpdateReceivedRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Envelope"
+                        }
+                    }
+                }
             }
         },
         "/orders/{id}/tracking": {
@@ -3195,6 +3220,37 @@ const docTemplate = `{
                 },
                 "total_ship_ready": {
                     "type": "string"
+                }
+            }
+        },
+        "order.UpdateReceivedItem": {
+            "type": "object",
+            "required": [
+                "item_id",
+                "items_received"
+            ],
+            "properties": {
+                "item_id": {
+                    "type": "string"
+                },
+                "items_received": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
+        "order.UpdateReceivedRequest": {
+            "type": "object",
+            "required": [
+                "items"
+            ],
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/order.UpdateReceivedItem"
+                    }
                 }
             }
         },

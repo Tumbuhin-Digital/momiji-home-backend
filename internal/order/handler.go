@@ -236,6 +236,9 @@ func (h *Handler) UpdateFulfillmentStep(c *fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Param request body UpdateReceivedRequest true "Update Received Request"
+// @Success 200 {object} response.Envelope
 // @Router /orders/{id}/received [patch]
 func (h *Handler) UpdateItemsReceived(c *fiber.Ctx) error {
 	uid := c.Locals("user_id").(string)
@@ -249,7 +252,7 @@ func (h *Handler) UpdateItemsReceived(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
 	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
 
-	if err := h.service.UpdateItemsReceived(c.Context(), customerID, c.Params("id"), req.ItemIDs, req.ItemsReceived); err != nil {
+	if err := h.service.UpdateItemsReceived(c.Context(), customerID, c.Params("id"), req.Items); err != nil {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Items received updated", nil)
