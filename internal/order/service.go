@@ -873,6 +873,14 @@ func (s *service) UpdateFulfillmentStep(ctx context.Context, userID, orderID, it
 }
 
 func (s *service) UpdateItemsReceived(ctx context.Context, userID, orderID string, items []UpdateReceivedItem) error {
+	o, err := s.store.GetOrder(ctx, orderID, userID)
+	if err != nil {
+		return apierror.ErrInternal
+	}
+	if o == nil {
+		return apierror.ErrNotFound
+	}
+
 	for _, item := range items {
 		if item.ItemsReceived < 0 {
 			return apierror.New(400, "invalid_count", "Count cannot be negative")
@@ -880,7 +888,31 @@ func (s *service) UpdateItemsReceived(ctx context.Context, userID, orderID strin
 		if err := s.store.UpdateOrderItemReceived(ctx, item.ItemID, item.ItemsReceived); err != nil {
 			slog.WarnContext(ctx, "failed to update item received", slog.String("item_id", item.ItemID), slog.Any("error", err))
 		}
+		
+		// Update the item status in our memory object so we can check it below
+		for i, dbItem := range o.Items {
+			if dbItem.ID == item.ItemID {
+				o.Items[i].ItemStatus = "delivered"
+			}
+		}
 	}
+
+	// Check if ALL items in the order are now delivered
+	allDelivered := true
+	for _, it := range o.Items {
+		if it.ItemStatus != "delivered" {
+			allDelivered = false
+			break
+		}
+	}
+
+	if allDelivered {
+		// aggregateStatus = "completed", financialStatus = o.FinancialStatus, fulfillmentStatus = "fulfilled"
+		if err := s.store.UpdateOrderStatus(ctx, orderID, "completed", o.FinancialStatus, "fulfilled"); err != nil {
+			slog.ErrorContext(ctx, "failed to update master order status to completed", slog.String("order_id", orderID), slog.Any("error", err))
+		}
+	}
+
 	return nil
 }
 
