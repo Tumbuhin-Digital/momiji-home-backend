@@ -72,6 +72,7 @@ type Store interface {
 	GetAllOrdersForExport(ctx context.Context, query OrderQuery) ([]Order, error)
 	UpdateOrderStatus(ctx context.Context, orderID string, aggregateStatus, financialStatus, fulfillmentStatus string) error
 	UpdateItemStatusByType(ctx context.Context, orderID string, itemType string, status string) error
+	UpdateItemStatusByID(ctx context.Context, itemID string, status string) error
 	UpdateItemStepByType(ctx context.Context, orderID string, itemType string, step int) error
 	UpdateOrderItemStep(ctx context.Context, itemID string, step int) error
 	UpdateOrderItemTracking(ctx context.Context, itemID, trackingNumber, trackingURL, trackingCompany, trackingLastEvent string, shippedAt *time.Time) error

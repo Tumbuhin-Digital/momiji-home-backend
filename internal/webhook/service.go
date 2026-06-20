@@ -182,6 +182,31 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 	var draftItems []shopify.DraftOrderLineItem
 
 	for _, item := range payload.LineItems {
+		var settlementID string
+		for _, prop := range item.Properties {
+			if prop.Name == "settlement_id" {
+				if valStr, ok := prop.Value.(string); ok {
+					settlementID = valStr
+					break
+				}
+			}
+		}
+
+		if settlementID != "" {
+			slog.InfoContext(ctx, "Webhook: Received payment for settlement", slog.String("settlement_id", settlementID))
+			
+			// Update settlement status
+			now := time.Now()
+			_ = s.preorderStore.UpdateSettlementStatus(ctx, settlementID, "paid", &now)
+			
+			// Update original order item status to processing
+			st, err := s.preorderStore.GetSettlementByID(ctx, settlementID)
+			if err == nil {
+				_ = s.orderStore.UpdateItemStatusByID(ctx, st.OrderLineItemID, "processing")
+			}
+			continue
+		}
+
 		variant, err := s.getLocalVariant(ctx, item)
 		if err != nil {
 			slog.WarnContext(ctx, "Webhook: variant not found locally", slog.Int64("variant_id", item.VariantID))
@@ -276,6 +301,11 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 				AmountCharged:    &amountCharged,
 			})
 		}
+	}
+
+	if len(orderItems) == 0 {
+		slog.InfoContext(ctx, "Webhook: No new valid items to create an order for", slog.String("shopify_order_id", shopifyOrderIDStr))
+		return nil
 	}
 
 	// Add shipping cost to the overall order totals
