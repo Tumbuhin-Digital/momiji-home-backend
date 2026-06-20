@@ -626,6 +626,16 @@ definitions:
     required:
     - fulfillment_step
     type: object
+  preorder.BulkSettlementRequest:
+    properties:
+      order_line_item_ids:
+        items:
+          type: string
+        minItems: 1
+        type: array
+    required:
+    - order_line_item_ids
+    type: object
   preorder.PreorderGroupResponse:
     properties:
       product_name:
@@ -1800,6 +1810,74 @@ paths:
       summary: Export preorder list to Excel (Admin only)
       tags:
       - Preorder
+  /preorders/invoice:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Bulk Invoice Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/preorder.BulkSettlementRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/preorder.SettlementResponse'
+                  type: array
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: 'Transition multiple settlements: pending → invoiced'
+      tags:
+      - Preorder
+  /preorders/paid:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Bulk Paid Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/preorder.BulkSettlementRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/preorder.SettlementResponse'
+                  type: array
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: 'Transition multiple settlements: invoiced → paid'
+      tags:
+      - Preorder
   /preorders/settlements/{id}:
     get:
       parameters:
@@ -1823,64 +1901,6 @@ paths:
       security:
       - BearerAuth: []
       summary: Get a single settlement by ID
-      tags:
-      - Preorder
-  /preorders/settlements/{id}/invoice:
-    patch:
-      parameters:
-      - description: Settlement ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.Envelope'
-            - properties:
-                data:
-                  $ref: '#/definitions/preorder.SettlementResponse'
-              type: object
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/response.Envelope'
-      security:
-      - BearerAuth: []
-      summary: 'Transition settlement: pending → invoiced'
-      tags:
-      - Preorder
-  /preorders/settlements/{id}/paid:
-    patch:
-      parameters:
-      - description: Settlement ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.Envelope'
-            - properties:
-                data:
-                  $ref: '#/definitions/preorder.SettlementResponse'
-              type: object
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/response.Envelope'
-      security:
-      - BearerAuth: []
-      summary: 'Transition settlement: invoiced → paid'
       tags:
       - Preorder
   /products:
