@@ -43,3 +43,8 @@ type ListSettlementsQuery struct {
 	Page       int    `query:"page"`
 	Limit      int    `query:"limit"`
 }
+
+// BulkSettlementRequest handles bulk operations for settlements.
+type BulkSettlementRequest struct {
+	OrderLineItemIDs []string `json:"order_line_item_ids" validate:"required,min=1,dive,uuid"`
+}

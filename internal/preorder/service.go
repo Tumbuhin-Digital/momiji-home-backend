@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/email"
@@ -23,8 +24,8 @@ type OrderUpdater interface {
 type PreorderService interface {
 	ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderGroupResponse, int64, error)
 	GetSettlement(ctx context.Context, id string) (*SettlementResponse, error)
-	InvoiceSettlement(ctx context.Context, id string) (*SettlementResponse, error)
-	MarkSettlementPaid(ctx context.Context, id string) (*SettlementResponse, error)
+	InvoiceSettlements(ctx context.Context, ids []string) ([]SettlementResponse, error)
+	MarkSettlementsPaid(ctx context.Context, ids []string) ([]SettlementResponse, error)
 	ProcessReminders(ctx context.Context) error
 	ExportPreordersToExcel(ctx context.Context, filter SettlementFilter) ([]byte, error)
 }
@@ -108,134 +109,223 @@ func (s *service) GetSettlement(ctx context.Context, id string) (*SettlementResp
 	return &res, nil
 }
 
-// InvoiceSettlement transitions: pending → invoiced
-// Returns 409 Conflict if the settlement is not in 'pending' state.
-func (s *service) InvoiceSettlement(ctx context.Context, id string) (*SettlementResponse, error) {
-	st, err := s.store.GetSettlementByID(ctx, id)
-	if err != nil {
-		return nil, apierror.ErrNotFound
+// InvoiceSettlements transitions: pending → invoiced for multiple settlements.
+// Validates that all settlements belong to the same customer.
+// Creates ONE Shopify Draft Order containing all items.
+// Sends ONE email to the customer.
+func (s *service) InvoiceSettlements(ctx context.Context, ids []string) ([]SettlementResponse, error) {
+	if len(ids) == 0 {
+		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "No order line item IDs provided")
 	}
 
-	if st.Status != "pending" {
-		return nil, apierror.New(
-			http.StatusConflict,
-			"invalid_transition",
-			"Settlement is already "+st.Status+"; only 'pending' settlements can be invoiced",
-		)
+	var settlements []Settlement
+	var customerEmail string
+	var customerName string
+
+	// 1. Fetch and validate all settlements
+	for i, id := range ids {
+		st, err := s.store.GetSettlementByOrderLineItemID(ctx, id)
+		if err != nil {
+			return nil, apierror.New(http.StatusNotFound, "not_found", fmt.Sprintf("Settlement for OrderLineItemID %s not found", id))
+		}
+
+		if st.Status != "pending" {
+			return nil, apierror.New(
+				http.StatusConflict,
+				"invalid_transition",
+				fmt.Sprintf("Settlement %s is already %s; only 'pending' settlements can be invoiced", id, st.Status),
+			)
+		}
+
+		if i == 0 {
+			customerEmail = st.CustomerEmail
+			customerName = st.CustomerName
+		} else {
+			if st.CustomerEmail != customerEmail {
+				return nil, apierror.New(
+					http.StatusBadRequest,
+					"invalid_request",
+					"All settlements must belong to the same customer to be invoiced together",
+				)
+			}
+		}
+
+		settlements = append(settlements, *st)
 	}
 
-	now := time.Now()
-	if err := s.store.UpdateSettlementStatus(ctx, id, "invoiced", &now); err != nil {
-		return nil, apierror.ErrInternal
-	}
+	// 2. Prepare Shopify Draft Order and Email Data
+	var lineItems []shopify.DraftOrderLineItem
+	var emailItemTitles []string
+	var emailItems []email.SettlementItemData
+	var totalBalance float64
 
-	// TODO Phase 8: trigger pelunasan invoice email to customer here
+	for _, st := range settlements {
+		totalBalance += st.BalanceAmount
+		emailItemTitles = append(emailItemTitles, st.Title)
+		emailItems = append(emailItems, email.SettlementItemData{
+			Title:  st.Title,
+			Amount: fmt.Sprintf("$%.2f", st.BalanceAmount),
+		})
 
-	st.Status = "invoiced"
-	st.InvoicedAt = &now
-	res := toResponse(*st)
-
-	// Trigger email in background
-	settlementID := id
-	itemTitle := st.Title
-	balanceAmount := st.BalanceAmount
-	var dueDateStr string
-	if st.DueDate != nil {
-		dueDateStr = st.DueDate.Format("2006-01-02")
-	}
-
-	// Create Shopify Draft Order for remaining balance
-	draftInput := shopify.DraftOrderInput{
-		Email: st.CustomerEmail,
-		LineItems: []shopify.DraftOrderLineItem{
-			{
-				Title:             fmt.Sprintf("Remaining Balance: %s", st.Title),
-				OriginalUnitPrice: fmt.Sprintf("%.2f", st.BalanceAmount),
-				Quantity:          1,
-				CustomAttributes: []shopify.AttributeInput{
-					{Key: "settlement_id", Value: settlementID},
-					{Key: "original_order_id", Value: st.OrderID},
-				},
+		lineItems = append(lineItems, shopify.DraftOrderLineItem{
+			Title:             fmt.Sprintf("Remaining Balance: %s", st.Title),
+			OriginalUnitPrice: fmt.Sprintf("%.2f", st.BalanceAmount),
+			Quantity:          1,
+			CustomAttributes: []shopify.AttributeInput{
+				{Key: "settlement_id", Value: st.ID},
+				{Key: "original_order_id", Value: st.OrderID},
 			},
-		},
+		})
 	}
 
+	draftInput := shopify.DraftOrderInput{
+		Email:     customerEmail,
+		LineItems: lineItems,
+	}
+
+	// 3. Create Shopify Draft Order
 	draftRes, err := s.shopClient.CreateDraftOrder(ctx, draftInput)
 	var paymentLink string
 	if err == nil && draftRes != nil && draftRes.InvoiceUrl != "" {
 		paymentLink = draftRes.InvoiceUrl
 	} else {
-		slog.ErrorContext(ctx, "failed to create shopify draft order for settlement", "error", err, "settlement_id", settlementID)
-		// Fallback to local link if Shopify fails
-		paymentLink = "https://momiji-home.vercel.app/pay-settlement/" + settlementID
+		slog.ErrorContext(ctx, "failed to create shopify draft order for bulk settlements", "error", err)
+		// Fallback local link if Shopify fails (assuming first settlement ID as fallback reference)
+		paymentLink = "https://momiji-home.vercel.app/pay-settlement/" + settlements[0].ID
 	}
+
+	// 4. Update Database
+	now := time.Now()
+	var responses []SettlementResponse
+	
+	for i := range settlements {
+		if err := s.store.UpdateSettlementStatus(ctx, settlements[i].ID, "invoiced", &now); err != nil {
+			slog.ErrorContext(ctx, "failed to update settlement status", "id", settlements[i].ID, "error", err)
+			continue
+		}
+		settlements[i].Status = "invoiced"
+		settlements[i].InvoicedAt = &now
+		responses = append(responses, toResponse(settlements[i]))
+	}
+
+	// 5. Send ONE Email
+	var dueDateStr string
+	if settlements[0].DueDate != nil {
+		dueDateStr = settlements[0].DueDate.Format("2006-01-02")
+	}
+
+	combinedTitle := strings.Join(emailItemTitles, ", ")
 
 	go func() {
 		bgCtx := context.Background()
 		emailData := email.SettlementEmailData{
-			CustomerName:  st.CustomerName,
-			ItemTitle:     itemTitle,
-			BalanceAmount: fmt.Sprintf("$%.2f", balanceAmount),
+			CustomerName:  customerName,
+			ItemTitle:     combinedTitle,
+			Items:         emailItems,
+			BalanceAmount: fmt.Sprintf("$%.2f", totalBalance),
 			DueDate:       dueDateStr,
 			PaymentLink:   paymentLink,
 		}
 
-		if err := s.emailService.SendInvoice(bgCtx, st.CustomerEmail, emailData); err != nil {
-			slog.Error("failed to send settlement email", "error", err, "settlement_id", settlementID)
+		if err := s.emailService.SendInvoice(bgCtx, customerEmail, emailData); err != nil {
+			slog.Error("failed to send bulk settlement email", "error", err, "email", customerEmail)
 		}
 	}()
 
-	return &res, nil
+	return responses, nil
 }
 
-// MarkSettlementPaid transitions: invoiced → paid
-// Returns 409 Conflict if the settlement is not in 'invoiced' state.
-// After marking paid, checks if ALL settlements for the order are paid and updates order status.
-func (s *service) MarkSettlementPaid(ctx context.Context, id string) (*SettlementResponse, error) {
-	st, err := s.store.GetSettlementByID(ctx, id)
-	if err != nil {
-		return nil, apierror.ErrNotFound
+// MarkSettlementsPaid transitions: invoiced → paid for multiple settlements
+// Checks if ALL settlements for the associated order are paid and updates order status.
+func (s *service) MarkSettlementsPaid(ctx context.Context, ids []string) ([]SettlementResponse, error) {
+	if len(ids) == 0 {
+		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "No order line item IDs provided")
 	}
 
-	if st.Status != "invoiced" {
-		return nil, apierror.New(
-			http.StatusConflict,
-			"invalid_transition",
-			"Settlement is already "+st.Status+"; only 'invoiced' settlements can be marked paid",
-		)
+	var settlements []Settlement
+	var customerEmail string
+	var customerName string
+	var orderID string
+
+	// 1. Fetch and validate
+	for i, id := range ids {
+		st, err := s.store.GetSettlementByOrderLineItemID(ctx, id)
+		if err != nil {
+			return nil, apierror.New(http.StatusNotFound, "not_found", fmt.Sprintf("Settlement for OrderLineItemID %s not found", id))
+		}
+
+		if st.Status != "invoiced" {
+			return nil, apierror.New(
+				http.StatusConflict,
+				"invalid_transition",
+				fmt.Sprintf("Settlement %s is already %s; only 'invoiced' settlements can be marked paid", id, st.Status),
+			)
+		}
+
+		if i == 0 {
+			customerEmail = st.CustomerEmail
+			customerName = st.CustomerName
+			orderID = st.OrderID
+		} else {
+			if st.CustomerEmail != customerEmail {
+				return nil, apierror.New(
+					http.StatusBadRequest,
+					"invalid_request",
+					"All settlements must belong to the same customer to be marked paid together",
+				)
+			}
+		}
+
+		settlements = append(settlements, *st)
 	}
 
+	// 2. Update Database
 	now := time.Now()
-	if err := s.store.UpdateSettlementStatus(ctx, id, "paid", &now); err != nil {
-		return nil, apierror.ErrInternal
+	var responses []SettlementResponse
+	var totalBalance float64
+	var emailItemTitles []string
+	var emailItems []email.SettlementItemData
+
+	for i := range settlements {
+		if err := s.store.UpdateSettlementStatus(ctx, settlements[i].ID, "paid", &now); err != nil {
+			slog.ErrorContext(ctx, "failed to update settlement to paid", "id", settlements[i].ID, "error", err)
+			continue
+		}
+		
+		totalBalance += settlements[i].BalanceAmount
+		emailItemTitles = append(emailItemTitles, settlements[i].Title)
+		emailItems = append(emailItems, email.SettlementItemData{
+			Title:  settlements[i].Title,
+			Amount: fmt.Sprintf("$%.2f", settlements[i].BalanceAmount),
+		})
+		
+		settlements[i].Status = "paid"
+		settlements[i].PaidAt = &now
+		responses = append(responses, toResponse(settlements[i]))
 	}
 
-	// Cascade: if all settlements for this order are paid, mark the order as paid
-	if err := s.checkAndUpdateOrderStatus(ctx, st.OrderID); err != nil {
-		// Non-fatal: log in Phase 8, don't fail the request
-		_ = err
+	// 3. Cascade: if all settlements for this order are paid, mark the order as paid
+	if orderID != "" {
+		if err := s.checkAndUpdateOrderStatus(ctx, orderID); err != nil {
+			_ = err
+		}
 	}
 
-	st.Status = "paid"
-	st.PaidAt = &now
-	res := toResponse(*st)
-
-	// Trigger email in background
-	customerEmail := st.CustomerEmail
-	itemTitle := st.Title
-	balanceAmount := st.BalanceAmount
+	// 4. Send ONE Email
+	combinedTitle := strings.Join(emailItemTitles, ", ")
 
 	go func() {
 		bgCtx := context.Background()
 		emailData := email.SettlementEmailData{
-			CustomerName:  st.CustomerName,
-			ItemTitle:     itemTitle,
-			BalanceAmount: fmt.Sprintf("$%.2f", balanceAmount),
+			CustomerName:  customerName,
+			ItemTitle:     combinedTitle,
+			Items:         emailItems,
+			BalanceAmount: fmt.Sprintf("$%.2f", totalBalance),
 		}
 		_ = s.emailService.SendSettlementPaid(bgCtx, customerEmail, emailData)
 	}()
 
-	return &res, nil
+	return responses, nil
 }
 
 // checkAndUpdateOrderStatus updates orders.aggregate_status to 'paid'

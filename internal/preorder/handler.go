@@ -26,8 +26,8 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	group.Get("/", h.ListSettlements)
 	group.Get("/export", h.ExportPreorders)
 	group.Get("/settlements/:id", h.GetSettlement)
-	group.Patch("/settlements/:id/invoice", h.InvoiceSettlement)
-	group.Patch("/settlements/:id/paid", h.MarkSettlementPaid)
+	group.Patch("/invoice", h.InvoiceSettlements)
+	group.Patch("/paid", h.MarkSettlementsPaid)
 }
 
 // ListSettlements godoc
@@ -93,40 +93,50 @@ func (h *Handler) GetSettlement(c *fiber.Ctx) error {
 	return response.Success(c, fiber.StatusOK, "Settlement retrieved", st)
 }
 
-// InvoiceSettlement godoc
-// @Summary Transition settlement: pending → invoiced
+// InvoiceSettlements godoc
+// @Summary Transition multiple settlements: pending → invoiced
 // @Tags Preorder
+// @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param id path string true "Settlement ID"
-// @Success 200 {object} response.Envelope{data=SettlementResponse}
+// @Param request body BulkSettlementRequest true "Bulk Invoice Request"
+// @Success 200 {object} response.Envelope{data=[]SettlementResponse}
 // @Failure 409 {object} response.Envelope
-// @Router /preorders/settlements/{id}/invoice [patch]
-func (h *Handler) InvoiceSettlement(c *fiber.Ctx) error {
-	id := c.Params("id")
-	st, err := h.service.InvoiceSettlement(c.Context(), id)
+// @Router /preorders/invoice [patch]
+func (h *Handler) InvoiceSettlements(c *fiber.Ctx) error {
+	var req BulkSettlementRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	sts, err := h.service.InvoiceSettlements(c.Context(), req.OrderLineItemIDs)
 	if err != nil {
 		return response.Error(c, err)
 	}
-	return response.Success(c, fiber.StatusOK, "Settlement invoiced", st)
+	return response.Success(c, fiber.StatusOK, "Settlements invoiced", sts)
 }
 
-// MarkSettlementPaid godoc
-// @Summary Transition settlement: invoiced → paid
+// MarkSettlementsPaid godoc
+// @Summary Transition multiple settlements: invoiced → paid
 // @Tags Preorder
+// @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param id path string true "Settlement ID"
-// @Success 200 {object} response.Envelope{data=SettlementResponse}
+// @Param request body BulkSettlementRequest true "Bulk Paid Request"
+// @Success 200 {object} response.Envelope{data=[]SettlementResponse}
 // @Failure 409 {object} response.Envelope
-// @Router /preorders/settlements/{id}/paid [patch]
-func (h *Handler) MarkSettlementPaid(c *fiber.Ctx) error {
-	id := c.Params("id")
-	st, err := h.service.MarkSettlementPaid(c.Context(), id)
+// @Router /preorders/paid [patch]
+func (h *Handler) MarkSettlementsPaid(c *fiber.Ctx) error {
+	var req BulkSettlementRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	sts, err := h.service.MarkSettlementsPaid(c.Context(), req.OrderLineItemIDs)
 	if err != nil {
 		return response.Error(c, err)
 	}
-	return response.Success(c, fiber.StatusOK, "Settlement marked as paid", st)
+	return response.Success(c, fiber.StatusOK, "Settlements marked as paid", sts)
 }
 
 // ExportPreorders godoc

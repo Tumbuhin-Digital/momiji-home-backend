@@ -16,9 +16,32 @@
             <h2>Pre-order Balance Invoice</h2>
         </div>
         <div class="content">
-            <p>Hi {{.CustomerName}},</p>
+            <p>Hi {{if .CustomerName}}{{if eq .CustomerName "Customer"}}there{{else}}{{.CustomerName}}{{end}}{{else}}there{{end}},</p>
             <p>Great news! Your pre-order for <strong>{{.ItemTitle}}</strong> is almost ready to ship.</p>
-            <p>Please pay your remaining balance of <strong>{{.BalanceAmount}}</strong> by <strong>{{.DueDate}}</strong> to complete your order.</p>
+            <p>Please pay your remaining balance by <strong>{{.DueDate}}</strong> to complete your order.</p>
+            
+            <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                <thead>
+                    <tr style="background-color: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                        <th style="padding: 12px; text-align: left;">Item</th>
+                        <th style="padding: 12px; text-align: right;">Remaining Balance Due</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Items}}
+                    <tr style="border-bottom: 1px solid #dee2e6;">
+                        <td style="padding: 12px; text-align: left;">{{.Title}}</td>
+                        <td style="padding: 12px; text-align: right;">{{.Amount}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td style="padding: 12px; text-align: right; font-weight: bold;">Total Due:</td>
+                        <td style="padding: 12px; text-align: right; font-weight: bold;">{{.BalanceAmount}}</td>
+                    </tr>
+                </tfoot>
+            </table>
             
             <p style="text-align: center; margin: 30px 0;">
                 <a href="{{.PaymentLink}}" class="btn">Pay Balance Now</a>

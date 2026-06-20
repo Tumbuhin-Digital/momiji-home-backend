@@ -32,9 +32,15 @@ type OrderItemData struct {
 	Amount   string
 }
 
+type SettlementItemData struct {
+	Title  string
+	Amount string
+}
+
 type SettlementEmailData struct {
 	CustomerName  string
 	ItemTitle     string
+	Items         []SettlementItemData
 	BalanceAmount string
 	DueDate       string
 	PaymentLink   string
