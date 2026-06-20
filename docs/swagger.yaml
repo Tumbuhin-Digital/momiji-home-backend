@@ -596,6 +596,27 @@ definitions:
       total_ship_ready:
         type: string
     type: object
+  order.UpdateReceivedItem:
+    properties:
+      item_id:
+        type: string
+      items_received:
+        minimum: 0
+        type: integer
+    required:
+    - item_id
+    - items_received
+    type: object
+  order.UpdateReceivedRequest:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/order.UpdateReceivedItem'
+        minItems: 1
+        type: array
+    required:
+    - items
+    type: object
   order.UpdateStepRequest:
     properties:
       fulfillment_step:
@@ -1642,9 +1663,25 @@ paths:
     patch:
       consumes:
       - application/json
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Update Received Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/order.UpdateReceivedRequest'
       produces:
       - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Envelope'
       security:
       - BearerAuth: []
       summary: Update items received count

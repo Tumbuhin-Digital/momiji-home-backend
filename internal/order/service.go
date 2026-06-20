@@ -30,7 +30,7 @@ type OrderService interface {
 	AcceptOrder(ctx context.Context, userID, orderID, fulfillmentType string) error
 	CancelOrder(ctx context.Context, userID, orderID, fulfillmentType, reason string) error
 	UpdateFulfillmentStep(ctx context.Context, userID, orderID, itemID string, step int) error
-	UpdateItemsReceived(ctx context.Context, userID, orderID string, itemIDs []string, count int) error
+	UpdateItemsReceived(ctx context.Context, userID, orderID string, items []UpdateReceivedItem) error
 	AddTrackingNumber(ctx context.Context, userID, orderID string, itemIDs []string, trackingNumber, trackingURL string) error
 	GetItemTracking(ctx context.Context, userID, orderID, itemID string) (*shipstation.TrackingResponse, error)
 	ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]byte, error)
@@ -873,13 +873,13 @@ func (s *service) UpdateFulfillmentStep(ctx context.Context, userID, orderID, it
 	return nil
 }
 
-func (s *service) UpdateItemsReceived(ctx context.Context, userID, orderID string, itemIDs []string, count int) error {
-	if count < 0 {
-		return apierror.New(400, "invalid_count", "Count cannot be negative")
-	}
-	for _, itemID := range itemIDs {
-		if err := s.store.UpdateOrderItemReceived(ctx, itemID, count); err != nil {
-			slog.WarnContext(ctx, "failed to update item received", slog.String("item_id", itemID), slog.Any("error", err))
+func (s *service) UpdateItemsReceived(ctx context.Context, userID, orderID string, items []UpdateReceivedItem) error {
+	for _, item := range items {
+		if item.ItemsReceived < 0 {
+			return apierror.New(400, "invalid_count", "Count cannot be negative")
+		}
+		if err := s.store.UpdateOrderItemReceived(ctx, item.ItemID, item.ItemsReceived); err != nil {
+			slog.WarnContext(ctx, "failed to update item received", slog.String("item_id", item.ItemID), slog.Any("error", err))
 		}
 	}
 	return nil
