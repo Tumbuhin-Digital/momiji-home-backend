@@ -37,8 +37,8 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	authGrp.Patch("/:id/accept", h.AcceptOrder)
 	authGrp.Patch("/:id/cancel", h.CancelOrder)
 	authGrp.Patch("/:id/items/:itemId/step", h.UpdateFulfillmentStep)
-	authGrp.Patch("/:id/items/:itemId/received", h.UpdateItemsReceived)
-	authGrp.Patch("/:id/items/:itemId/tracking", h.AddTrackingNumber)
+	authGrp.Patch("/:id/received", h.UpdateItemsReceived)
+	authGrp.Patch("/:id/tracking", h.AddTrackingNumber)
 	authGrp.Get("/:id/items/:itemId/tracking", h.GetTracking)
 }
 
@@ -236,11 +236,7 @@ func (h *Handler) UpdateFulfillmentStep(c *fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param id path string true "Order ID"
-// @Param itemId path string true "Item ID"
-// @Param request body UpdateReceivedRequest true "Update Received Request"
-// @Success 200 {object} response.Envelope
-// @Router /orders/{id}/items/{itemId}/received [patch]
+// @Router /orders/{id}/received [patch]
 func (h *Handler) UpdateItemsReceived(c *fiber.Ctx) error {
 	uid := c.Locals("user_id").(string)
 	role := c.Locals("role").(string)
@@ -253,7 +249,7 @@ func (h *Handler) UpdateItemsReceived(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
 	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
 
-	if err := h.service.UpdateItemsReceived(c.Context(), customerID, c.Params("id"), c.Params("itemId"), req.ItemsReceived); err != nil {
+	if err := h.service.UpdateItemsReceived(c.Context(), customerID, c.Params("id"), req.ItemIDs, req.ItemsReceived); err != nil {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Items received updated", nil)
@@ -265,11 +261,7 @@ func (h *Handler) UpdateItemsReceived(c *fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param id path string true "Order ID"
-// @Param itemId path string true "Item ID"
-// @Param request body AddTrackingRequest true "Add Tracking Request"
-// @Success 200 {object} response.Envelope
-// @Router /orders/{id}/items/{itemId}/tracking [patch]
+// @Router /orders/{id}/tracking [patch]
 func (h *Handler) AddTrackingNumber(c *fiber.Ctx) error {
 	uid := c.Locals("user_id").(string)
 	role := c.Locals("role").(string)
@@ -282,7 +274,7 @@ func (h *Handler) AddTrackingNumber(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
 	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
 
-	if err := h.service.AddTrackingNumber(c.Context(), customerID, c.Params("id"), c.Params("itemId"), req.TrackingNumber, req.TrackingURL); err != nil {
+	if err := h.service.AddTrackingNumber(c.Context(), customerID, c.Params("id"), req.ItemIDs, req.TrackingNumber, req.TrackingURL); err != nil {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Tracking number added", nil)

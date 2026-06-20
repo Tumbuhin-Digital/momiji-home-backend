@@ -30,8 +30,8 @@ type OrderService interface {
 	AcceptOrder(ctx context.Context, userID, orderID, fulfillmentType string) error
 	CancelOrder(ctx context.Context, userID, orderID, fulfillmentType, reason string) error
 	UpdateFulfillmentStep(ctx context.Context, userID, orderID, itemID string, step int) error
-	UpdateItemsReceived(ctx context.Context, userID, orderID, itemID string, count int) error
-	AddTrackingNumber(ctx context.Context, userID, orderID, itemID, trackingNumber, trackingURL string) error
+	UpdateItemsReceived(ctx context.Context, userID, orderID string, itemIDs []string, count int) error
+	AddTrackingNumber(ctx context.Context, userID, orderID string, itemIDs []string, trackingNumber, trackingURL string) error
 	GetItemTracking(ctx context.Context, userID, orderID, itemID string) (*shipstation.TrackingResponse, error)
 	ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]byte, error)
 }
@@ -872,17 +872,19 @@ func (s *service) UpdateFulfillmentStep(ctx context.Context, userID, orderID, it
 	return nil
 }
 
-func (s *service) UpdateItemsReceived(ctx context.Context, userID, orderID, itemID string, count int) error {
+func (s *service) UpdateItemsReceived(ctx context.Context, userID, orderID string, itemIDs []string, count int) error {
 	if count < 0 {
 		return apierror.New(400, "invalid_count", "Count cannot be negative")
 	}
-	if err := s.store.UpdateOrderItemReceived(ctx, itemID, count); err != nil {
-		return apierror.ErrInternal
+	for _, itemID := range itemIDs {
+		if err := s.store.UpdateOrderItemReceived(ctx, itemID, count); err != nil {
+			slog.WarnContext(ctx, "failed to update item received", slog.String("item_id", itemID), slog.Any("error", err))
+		}
 	}
 	return nil
 }
 
-func (s *service) AddTrackingNumber(ctx context.Context, userID, orderID, itemID, trackingNumber, trackingURL string) error {
+func (s *service) AddTrackingNumber(ctx context.Context, userID, orderID string, itemIDs []string, trackingNumber, trackingURL string) error {
 	o, err := s.store.GetOrder(ctx, orderID, userID)
 	if err != nil {
 		return apierror.ErrInternal
@@ -893,8 +895,10 @@ func (s *service) AddTrackingNumber(ctx context.Context, userID, orderID, itemID
 
 	now := time.Now()
 	// When adding tracking manually via admin panel, we don't know company/event yet.
-	if err := s.store.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, "", "", &now); err != nil {
-		return apierror.ErrInternal
+	for _, itemID := range itemIDs {
+		if err := s.store.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, "", "", &now); err != nil {
+			slog.WarnContext(ctx, "failed to add tracking to item", slog.String("item_id", itemID), slog.Any("error", err))
+		}
 	}
 
 	// Trigger email in goroutine
