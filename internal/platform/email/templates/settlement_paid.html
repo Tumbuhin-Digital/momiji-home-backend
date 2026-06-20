@@ -15,8 +15,31 @@
             <h2>Payment Received!</h2>
         </div>
         <div class="content">
-            <p>Hi {{.CustomerName}},</p>
-            <p>Thank you! We've received your final payment of <strong>{{.BalanceAmount}}</strong> for <strong>{{.ItemTitle}}</strong>.</p>
+            <p>Hi {{if .CustomerName}}{{if eq .CustomerName "Customer"}}there{{else}}{{.CustomerName}}{{end}}{{else}}there{{end}},</p>
+            <p>Thank you! We've received your final payment for the following items:</p>
+            
+            <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                <thead>
+                    <tr style="background-color: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                        <th style="padding: 12px; text-align: left;">Item</th>
+                        <th style="padding: 12px; text-align: right;">Amount Paid</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Items}}
+                    <tr style="border-bottom: 1px solid #dee2e6;">
+                        <td style="padding: 12px; text-align: left;">{{.Title}}</td>
+                        <td style="padding: 12px; text-align: right;">{{.Amount}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td style="padding: 12px; text-align: right; font-weight: bold;">Total Paid:</td>
+                        <td style="padding: 12px; text-align: right; font-weight: bold;">{{.BalanceAmount}}</td>
+                    </tr>
+                </tfoot>
+            </table>
             <p>Your order is now fully paid. We are preparing your items for shipment and will send you a tracking number as soon as they dispatch.</p>
         </div>
         <div class="footer">

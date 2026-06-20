@@ -35,6 +35,21 @@ func (s *postgresStore) GetSettlementByID(ctx context.Context, id string) (*Sett
 	return &settlement, nil
 }
 
+func (s *postgresStore) GetSettlementByOrderLineItemID(ctx context.Context, itemID string) (*Settlement, error) {
+	var settlement Settlement
+	if err := s.db.WithContext(ctx).
+		Select("preorder_settlements.*, order_line_items.order_id, order_line_items.title, users.email as customer_email, COALESCE(customers.first_name, 'Customer') as customer_name").
+		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").
+		Joins("JOIN orders ON orders.id = order_line_items.order_id").
+		Joins("JOIN users ON users.id = orders.customer_id").
+		Joins("LEFT JOIN customers ON customers.id = orders.customer_id").
+		Where("preorder_settlements.order_line_item_id = ?", itemID).
+		First(&settlement).Error; err != nil {
+		return nil, err
+	}
+	return &settlement, nil
+}
+
 func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderRow, int64, error) {
 	buildQuery := func() *gorm.DB {
 		q := s.db.WithContext(ctx).Table("preorder_settlements").
