@@ -1240,58 +1240,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/orders/{id}/items/{itemId}/received": {
-            "patch": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Order"
-                ],
-                "summary": "Update items received count",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Order ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Item ID",
-                        "name": "itemId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Update Received Request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/order.UpdateReceivedRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/response.Envelope"
-                        }
-                    }
-                }
-            }
-        },
         "/orders/{id}/items/{itemId}/step": {
             "patch": {
                 "security": [
@@ -1382,7 +1330,29 @@ const docTemplate = `{
                         }
                     }
                 }
-            },
+            }
+        },
+        "/orders/{id}/received": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Order"
+                ],
+                "summary": "Update items received count",
+                "responses": {}
+            }
+        },
+        "/orders/{id}/tracking": {
             "patch": {
                 "security": [
                     {
@@ -1399,39 +1369,7 @@ const docTemplate = `{
                     "Order"
                 ],
                 "summary": "Add tracking number to an item",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Order ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Item ID",
-                        "name": "itemId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Add Tracking Request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/order.AddTrackingRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/response.Envelope"
-                        }
-                    }
-                }
+                "responses": {}
             }
         },
         "/preorders": {
@@ -2439,6 +2377,9 @@ const docTemplate = `{
                 "quantity": {
                     "type": "integer"
                 },
+                "retail_price": {
+                    "type": "string"
+                },
                 "subtotal": {
                     "type": "string"
                 },
@@ -3021,21 +2962,6 @@ const docTemplate = `{
                 }
             }
         },
-        "order.AddTrackingRequest": {
-            "type": "object",
-            "required": [
-                "tracking_number",
-                "tracking_url"
-            ],
-            "properties": {
-                "tracking_number": {
-                    "type": "string"
-                },
-                "tracking_url": {
-                    "type": "string"
-                }
-            }
-        },
         "order.AddressDTO": {
             "type": "object",
             "properties": {
@@ -3272,18 +3198,6 @@ const docTemplate = `{
                 }
             }
         },
-        "order.UpdateReceivedRequest": {
-            "type": "object",
-            "required": [
-                "items_received"
-            ],
-            "properties": {
-                "items_received": {
-                    "type": "integer",
-                    "minimum": 0
-                }
-            }
-        },
         "order.UpdateStepRequest": {
             "type": "object",
             "required": [
@@ -3321,6 +3235,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "batch_label": {
+                    "type": "string"
+                },
+                "created_at": {
                     "type": "string"
                 },
                 "customer_email": {
@@ -3671,6 +3588,9 @@ const docTemplate = `{
                 "title": {
                     "type": "string"
                 },
+                "total_discount": {
+                    "type": "string"
+                },
                 "variant_id": {
                     "type": "integer"
                 }
@@ -3712,6 +3632,12 @@ const docTemplate = `{
                 "shipping_address": {
                     "$ref": "#/definitions/webhook.ShopifyAddress"
                 },
+                "shipping_lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/webhook.ShopifyShippingLine"
+                    }
+                },
                 "total_price": {
                     "type": "string"
                 }
@@ -3724,6 +3650,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "value": {}
+            }
+        },
+        "webhook.ShopifyShippingLine": {
+            "type": "object",
+            "properties": {
+                "price": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
             }
         }
     },
