@@ -32,7 +32,7 @@ type OrderService interface {
 	UpdateFulfillmentStep(ctx context.Context, userID, orderID, itemID string, step int) error
 	UpdateItemsReceived(ctx context.Context, userID, orderID string, items []UpdateReceivedItem) error
 	AddTrackingNumber(ctx context.Context, userID, orderID string, itemIDs []string, trackingNumber, trackingURL string) error
-	GetItemTracking(ctx context.Context, userID, orderID, itemID string) (*shipstation.TrackingResponse, error)
+	GetOrderTracking(ctx context.Context, userID, orderID string) ([]shipstation.TrackingResponse, error)
 	ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]byte, error)
 }
 
@@ -1004,7 +1004,7 @@ func (s *service) ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]
 	return buf.Bytes(), nil
 }
 
-func (s *service) GetItemTracking(ctx context.Context, userID, orderID, itemID string) (*shipstation.TrackingResponse, error) {
+func (s *service) GetOrderTracking(ctx context.Context, userID, orderID string) ([]shipstation.TrackingResponse, error) {
 	o, err := s.store.GetOrder(ctx, orderID, userID)
 	if err != nil {
 		return nil, apierror.ErrInternal
@@ -1013,55 +1013,59 @@ func (s *service) GetItemTracking(ctx context.Context, userID, orderID, itemID s
 		return nil, apierror.ErrNotFound
 	}
 
-	var targetItem *OrderItem
-	for _, it := range o.Items {
-		if it.ID == itemID {
-			targetItem = &it
-			break
+	var results []shipstation.TrackingResponse
+	seenTracking := make(map[string]bool)
+
+	for _, targetItem := range o.Items {
+		if targetItem.TrackingNumber == nil || *targetItem.TrackingNumber == "" {
+			continue
 		}
-	}
 
-	if targetItem == nil {
-		return nil, apierror.ErrNotFound
-	}
-
-	if targetItem.TrackingNumber == nil || *targetItem.TrackingNumber == "" {
-		return nil, apierror.ErrNotFound
-	}
-
-	// For pre_order, fetch live tracking via ShipStation
-	if targetItem.Type == "pre_order" {
-		carrierCode := ""
-		if targetItem.TrackingCompany != nil {
-			carrierCode = strings.ToLower(*targetItem.TrackingCompany)
+		trackingNum := *targetItem.TrackingNumber
+		if seenTracking[trackingNum] {
+			continue // We already fetched tracking for this package
 		}
-		
-		if carrierCode != "" {
-			res, err := s.shipstationClient.TrackShipment(ctx, carrierCode, *targetItem.TrackingNumber)
-			if err == nil {
-				return res, nil
+		seenTracking[trackingNum] = true
+
+		var currentRes *shipstation.TrackingResponse
+
+		// For pre_order, fetch live tracking via ShipStation
+		if targetItem.Type == "pre_order" {
+			carrierCode := ""
+			if targetItem.TrackingCompany != nil {
+				carrierCode = strings.ToLower(*targetItem.TrackingCompany)
 			}
-			// If error, fall through and return DB record
+			
+			if carrierCode != "" {
+				res, err := s.shipstationClient.TrackShipment(ctx, carrierCode, trackingNum)
+				if err == nil && res != nil {
+					currentRes = res
+				}
+			}
 		}
+
+		// Fallback to DB record if ShipStation failed or it's ship_ready
+		if currentRes == nil {
+			currentRes = &shipstation.TrackingResponse{
+				TrackingNumber: trackingNum,
+			}
+			if targetItem.TrackingLastEvent != nil {
+				currentRes.StatusDescription = *targetItem.TrackingLastEvent
+			} else {
+				currentRes.StatusDescription = "Package departed from facility"
+			}
+
+			if targetItem.TrackingCompany != nil {
+				currentRes.CarrierCode = *targetItem.TrackingCompany
+			}
+			
+			if targetItem.ShippedAt != nil {
+				currentRes.ShipDate = targetItem.ShippedAt.Format(time.RFC3339)
+			}
+		}
+
+		results = append(results, *currentRes)
 	}
 
-	// For ship_ready or if ShipStation fails, return the DB record
-	res := &shipstation.TrackingResponse{
-		TrackingNumber: *targetItem.TrackingNumber,
-	}
-	if targetItem.TrackingLastEvent != nil {
-		res.StatusDescription = *targetItem.TrackingLastEvent
-	} else {
-		res.StatusDescription = "Package departed from facility"
-	}
-
-	if targetItem.TrackingCompany != nil {
-		res.CarrierCode = *targetItem.TrackingCompany
-	}
-	
-	if targetItem.ShippedAt != nil {
-		res.ShipDate = targetItem.ShippedAt.Format(time.RFC3339)
-	}
-
-	return res, nil
+	return results, nil
 }

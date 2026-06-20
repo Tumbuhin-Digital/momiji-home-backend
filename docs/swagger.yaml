@@ -820,6 +820,21 @@ definitions:
       totalPages:
         type: integer
     type: object
+  shipstation.TrackingResponse:
+    properties:
+      carrierCode:
+        type: string
+      estimatedDeliveryDate:
+        type: string
+      shipDate:
+        type: string
+      statusCode:
+        type: string
+      statusDescription:
+        type: string
+      trackingNumber:
+        type: string
+    type: object
   webhook.ShopifyAddress:
     properties:
       address1:
@@ -1634,31 +1649,6 @@ paths:
       summary: Update fulfillment step
       tags:
       - Order
-  /orders/{id}/items/{itemId}/tracking:
-    get:
-      parameters:
-      - description: Order ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Item ID
-        in: path
-        name: itemId
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/response.Envelope'
-      security:
-      - BearerAuth: []
-      summary: Get live tracking status for an item
-      tags:
-      - Orders
   /orders/{id}/received:
     patch:
       consumes:
@@ -1688,6 +1678,32 @@ paths:
       tags:
       - Order
   /orders/{id}/tracking:
+    get:
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/shipstation.TrackingResponse'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get live tracking status for an order
+      tags:
+      - Order
     patch:
       consumes:
       - application/json

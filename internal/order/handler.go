@@ -39,7 +39,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	authGrp.Patch("/:id/items/:itemId/step", h.UpdateFulfillmentStep)
 	authGrp.Patch("/:id/received", h.UpdateItemsReceived)
 	authGrp.Patch("/:id/tracking", h.AddTrackingNumber)
-	authGrp.Get("/:id/items/:itemId/tracking", h.GetTracking)
+	authGrp.Get("/:id/tracking", h.GetTracking)
 }
 
 // CreateOrder godoc
@@ -284,20 +284,18 @@ func (h *Handler) AddTrackingNumber(c *fiber.Ctx) error {
 }
 
 // GetTracking godoc
-// @Summary Get live tracking status for an item
-// @Tags Orders
+// @Summary Get live tracking status for an order
+// @Tags Order
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Order ID"
-// @Param itemId path string true "Item ID"
-// @Success 200 {object} response.Envelope
-// @Router /orders/{id}/items/{itemId}/tracking [get]
+// @Success 200 {object} response.Envelope{data=[]shipstation.TrackingResponse}
+// @Router /orders/{id}/tracking [get]
 func (h *Handler) GetTracking(c *fiber.Ctx) error {
 	uid := c.Locals("user_id").(string)
 	orderID := c.Params("id")
-	itemID := c.Params("itemId")
 
-	res, err := h.service.GetItemTracking(c.Context(), uid, orderID, itemID)
+	res, err := h.service.GetOrderTracking(c.Context(), uid, orderID)
 	if err != nil {
 		return response.Error(c, err)
 	}

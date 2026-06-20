@@ -1292,46 +1292,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/orders/{id}/items/{itemId}/tracking": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Orders"
-                ],
-                "summary": "Get live tracking status for an item",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Order ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Item ID",
-                        "name": "itemId",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/response.Envelope"
-                        }
-                    }
-                }
-            }
-        },
         "/orders/{id}/received": {
             "patch": {
                 "security": [
@@ -1378,6 +1338,52 @@ const docTemplate = `{
             }
         },
         "/orders/{id}/tracking": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Order"
+                ],
+                "summary": "Get live tracking status for an order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Envelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/shipstation.TrackingResponse"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
             "patch": {
                 "security": [
                     {
@@ -3557,6 +3563,29 @@ const docTemplate = `{
                 },
                 "totalPages": {
                     "type": "integer"
+                }
+            }
+        },
+        "shipstation.TrackingResponse": {
+            "type": "object",
+            "properties": {
+                "carrierCode": {
+                    "type": "string"
+                },
+                "estimatedDeliveryDate": {
+                    "type": "string"
+                },
+                "shipDate": {
+                    "type": "string"
+                },
+                "statusCode": {
+                    "type": "string"
+                },
+                "statusDescription": {
+                    "type": "string"
+                },
+                "trackingNumber": {
+                    "type": "string"
                 }
             }
         },
