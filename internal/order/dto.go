@@ -93,12 +93,14 @@ type UpdateStepRequest struct {
 }
 
 type UpdateReceivedRequest struct {
-	ItemsReceived int `json:"items_received" validate:"required,min=0"`
+	ItemIDs       []string `json:"item_ids" validate:"required,min=1"`
+	ItemsReceived int      `json:"items_received" validate:"required,min=0"`
 }
 
 type AddTrackingRequest struct {
-	TrackingNumber string `json:"tracking_number" validate:"required"`
-	TrackingURL    string `json:"tracking_url" validate:"required,url"`
+	ItemIDs        []string `json:"item_ids" validate:"required,min=1"`
+	TrackingNumber string   `json:"tracking_number" validate:"required"`
+	TrackingURL    string   `json:"tracking_url" validate:"required,url"`
 }
 
 type OrderQuery struct {
