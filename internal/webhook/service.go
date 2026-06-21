@@ -461,6 +461,14 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 		}
 	}
 
+	// Update the master order status to reflect it's being shipped/fulfilled
+	// Using "on_progress" for aggregate_status and "in_progress" for fulfillment_status
+	if o.AggregateStatus != "completed" {
+		if err := s.orderStore.UpdateOrderStatus(ctx, o.ID, "on_progress", o.FinancialStatus, "in_progress"); err != nil {
+			slog.ErrorContext(ctx, "Failed to update master order status during Shopify fulfillment", slog.String("order_id", o.ID), slog.Any("error", err))
+		}
+	}
+
 	return nil
 }
 
