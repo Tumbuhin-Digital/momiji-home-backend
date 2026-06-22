@@ -928,7 +928,7 @@ func (s *service) AddTrackingNumber(ctx context.Context, userID, orderID string,
 	now := time.Now()
 	// When adding tracking manually via admin panel, we don't know company/event yet.
 	for _, itemID := range itemIDs {
-		if err := s.store.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, "", "", &now); err != nil {
+		if err := s.store.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, "", "", "shipped", 3, &now); err != nil {
 			slog.WarnContext(ctx, "failed to add tracking to item", slog.String("item_id", itemID), slog.Any("error", err))
 		}
 	}

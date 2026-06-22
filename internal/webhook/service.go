@@ -409,8 +409,11 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 		trackingURL = payload.TrackingURLs[0]
 	}
 
-	// Map shipment status to human readable last event
+	// Map shipment status to human readable last event, and determine the internal item_status/step
 	var lastEvent string
+	itemStatus := "shipped"
+	fulfillmentStep := 3
+
 	switch payload.ShipmentStatus {
 	case "label_printed":
 		lastEvent = "Shipping label printed"
@@ -428,10 +431,19 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 		lastEvent = "Out for delivery"
 	case "delivered":
 		lastEvent = "Delivered"
+		itemStatus = "delivered"
+		fulfillmentStep = 4
 	case "failure":
 		lastEvent = "Delivery failed"
 	default:
 		lastEvent = "Package departed from facility"
+	}
+
+	// In case there is no tracking number but Shopify says it's delivered
+	if trackingNumber == "" && payload.Status == "success" {
+		lastEvent = "Delivered"
+		itemStatus = "delivered"
+		fulfillmentStep = 4
 	}
 
 	if trackingNumber == "" {
@@ -445,14 +457,14 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 		// Find matching item in our DB
 		var itemID string
 		for _, dbItem := range o.Items {
-			if dbItem.ShopifyVariantID == fmt.Sprintf("gid://shopify/ProductVariant/%d", li.VariantID) {
+			if dbItem.ShopifyVariantID == fmt.Sprintf("gid://shopify/ProductVariant/%d", li.VariantID) && (dbItem.Title != nil && *dbItem.Title == li.Title) {
 				itemID = dbItem.ID
 				break
 			}
 		}
 
 		if itemID != "" {
-			err := s.orderStore.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, payload.TrackingCompany, lastEvent, &now)
+			err := s.orderStore.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, payload.TrackingCompany, lastEvent, itemStatus, fulfillmentStep, &now)
 			if err != nil {
 				slog.ErrorContext(ctx, "Failed to update item tracking", slog.String("item_id", itemID), slog.Any("error", err))
 			} else {

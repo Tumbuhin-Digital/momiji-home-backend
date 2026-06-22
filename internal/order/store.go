@@ -75,6 +75,6 @@ type Store interface {
 	UpdateItemStatusByID(ctx context.Context, itemID string, status string) error
 	UpdateItemStepByType(ctx context.Context, orderID string, itemType string, step int) error
 	UpdateOrderItemStep(ctx context.Context, itemID string, step int) error
-	UpdateOrderItemTracking(ctx context.Context, itemID, trackingNumber, trackingURL, trackingCompany, trackingLastEvent string, shippedAt *time.Time) error
+	UpdateOrderItemTracking(ctx context.Context, itemID, trackingNumber, trackingURL, trackingCompany, trackingLastEvent, itemStatus string, fulfillmentStep int, shippedAt *time.Time) error
 	UpdateOrderItemReceived(ctx context.Context, itemID string, count int) error
 }
