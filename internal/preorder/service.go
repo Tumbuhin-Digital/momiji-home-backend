@@ -181,6 +181,9 @@ func (s *service) InvoiceSettlements(ctx context.Context, ids []string) ([]Settl
 	draftInput := shopify.DraftOrderInput{
 		Email:     customerEmail,
 		LineItems: lineItems,
+		CustomAttributes: []shopify.AttributeInput{
+			shopify.WholesaleSourceAttribute,
+		},
 	}
 
 	// 3. Create Shopify Draft Order

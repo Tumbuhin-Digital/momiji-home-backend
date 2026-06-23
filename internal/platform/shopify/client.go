@@ -82,13 +82,13 @@ type ShippingLineInput struct {
 }
 
 type DraftOrderLineItem struct {
-	VariantID         string                        `json:"variantId,omitempty"`
-	Title             string                        `json:"title,omitempty"`
-	OriginalUnitPrice string                        `json:"originalUnitPrice,omitempty"`
-	Quantity          int                           `json:"quantity"`
-	RequiresShipping  *bool                         `json:"requiresShipping,omitempty"`
-	CustomAttributes  []AttributeInput              `json:"customAttributes,omitempty"`
-	Weight            *DraftOrderLineItemWeightInput `json:"weight,omitempty"`
+	VariantID         string                          `json:"variantId,omitempty"`
+	Title             string                          `json:"title,omitempty"`
+	OriginalUnitPrice string                          `json:"originalUnitPrice,omitempty"`
+	Quantity          int                             `json:"quantity"`
+	RequiresShipping  *bool                           `json:"requiresShipping,omitempty"`
+	CustomAttributes  []AttributeInput                `json:"customAttributes,omitempty"`
+	Weight            *DraftOrderLineItemWeightInput  `json:"weight,omitempty"`
 	AppliedDiscount   *DraftOrderAppliedDiscountInput `json:"appliedDiscount,omitempty"`
 }
 
@@ -106,7 +106,7 @@ type DraftOrderLineItemWeightInput struct {
 }
 
 type DraftOrderResponse struct {
-	ID        string `json:"id"`
+	ID         string `json:"id"`
 	InvoiceUrl string `json:"invoiceUrl"`
 }
 
@@ -126,7 +126,7 @@ func (c *clientImpl) CreateDraftOrder(ctx context.Context, input DraftOrderInput
 		}
 	`
 	vars := map[string]interface{}{"input": input}
-	
+
 	resBytes, err := c.QueryAdminGraphQL(ctx, query, vars)
 	if err != nil {
 		return nil, err
@@ -215,13 +215,13 @@ func (c *clientImpl) CreateRefund(ctx context.Context, shopifyOrderID string, am
 }
 
 type CartCreateInput struct {
-	Lines []CartLineInput `json:"lines"`
+	Lines         []CartLineInput         `json:"lines"`
 	BuyerIdentity *CartBuyerIdentityInput `json:"buyerIdentity,omitempty"`
 }
 
 type CartLineInput struct {
-	MerchandiseId string `json:"merchandiseId"`
-	Quantity      int    `json:"quantity"`
+	MerchandiseId string           `json:"merchandiseId"`
+	Quantity      int              `json:"quantity"`
 	Attributes    []AttributeInput `json:"attributes,omitempty"`
 }
 
@@ -229,6 +229,8 @@ type AttributeInput struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
+
+var WholesaleSourceAttribute = AttributeInput{Key: "source", Value: "wholesale"}
 
 type CartBuyerIdentityInput struct {
 	Email                      string                     `json:"email,omitempty"`
@@ -301,7 +303,7 @@ func (c *clientImpl) CreateStorefrontCart(ctx context.Context, input CartCreateI
 		}
 	`
 	vars := map[string]interface{}{"input": input}
-	
+
 	resBytes, err := c.QueryStorefrontGraphQL(ctx, query, vars)
 	if err != nil {
 		return nil, err
@@ -347,7 +349,7 @@ func (c *clientImpl) GetVariantsInventory(ctx context.Context, variantIDs []stri
 		}
 	`
 	vars := map[string]interface{}{"ids": variantIDs}
-	
+
 	resBytes, err := c.QueryAdminGraphQL(ctx, query, vars)
 	if err != nil {
 		return nil, err
@@ -398,7 +400,7 @@ func (c *clientImpl) CreateFulfillment(ctx context.Context, shopifyOrderID strin
 		}
 	`
 	vars := map[string]interface{}{"orderId": shopifyOrderID}
-	
+
 	resBytes, err := c.QueryAdminGraphQL(ctx, query, vars)
 	if err != nil {
 		return err
@@ -452,12 +454,12 @@ func (c *clientImpl) CreateFulfillment(ctx context.Context, shopifyOrderID strin
 					},
 				},
 			}
-			
+
 			mutRes, mutErr := c.QueryAdminGraphQL(ctx, mut, mutVars)
 			if mutErr != nil {
 				return mutErr
 			}
-			
+
 			var mRes struct {
 				Data struct {
 					FulfillmentCreate struct {
