@@ -38,12 +38,16 @@ type SettlementItemData struct {
 }
 
 type SettlementEmailData struct {
-	CustomerName  string
-	ItemTitle     string
-	Items         []SettlementItemData
-	BalanceAmount string
-	DueDate       string
-	PaymentLink   string
+	CustomerName   string
+	ItemTitle      string
+	Items          []SettlementItemData
+	BalanceAmount  string
+	ShippingTitle  string
+	ShippingAmount string
+	TotalDue       string
+	ShippingNotes  string
+	DueDate        string
+	PaymentLink    string
 }
 
 type ShipmentEmailData struct {

@@ -36,12 +36,22 @@
                     {{end}}
                 </tbody>
                 <tfoot>
+                    {{if .ShippingAmount}}
+                    <tr>
+                        <td style="padding: 12px; text-align: right;">{{if .ShippingTitle}}{{.ShippingTitle}}{{else}}Shipping{{end}}:</td>
+                        <td style="padding: 12px; text-align: right;">{{.ShippingAmount}}</td>
+                    </tr>
+                    {{end}}
                     <tr>
                         <td style="padding: 12px; text-align: right; font-weight: bold;">Total Due:</td>
-                        <td style="padding: 12px; text-align: right; font-weight: bold;">{{.BalanceAmount}}</td>
+                        <td style="padding: 12px; text-align: right; font-weight: bold;">{{if .TotalDue}}{{.TotalDue}}{{else}}{{.BalanceAmount}}{{end}}</td>
                     </tr>
                 </tfoot>
             </table>
+
+            {{if .ShippingNotes}}
+            <p><strong>Shipping notes:</strong> {{.ShippingNotes}}</p>
+            {{end}}
             
             <p style="text-align: center; margin: 30px 0;">
                 <a href="{{.PaymentLink}}" class="btn">Pay Balance Now</a>

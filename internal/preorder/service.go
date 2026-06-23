@@ -18,6 +18,15 @@ import (
 // OrderUpdater allows preorder service to update order status without circular imports.
 type OrderUpdater interface {
 	UpdateOrderStatus(ctx context.Context, orderID, aggregateStatus, financialStatus, fulfillmentStatus string) error
+	UpdateItemStepByType(ctx context.Context, orderID, itemType string, step int) error
+	UpdateItemStatusByType(ctx context.Context, orderID, itemType, status string) error
+}
+
+// InvoiceOptions carries optional shipping line data for settlement invoices.
+type InvoiceOptions struct {
+	ShippingTitle string
+	ShippingPrice float64
+	ShippingNotes string
 }
 
 // PreorderService defines the settlement state machine operations.
@@ -25,9 +34,11 @@ type PreorderService interface {
 	ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderGroupResponse, int64, error)
 	GetSettlement(ctx context.Context, id string) (*SettlementResponse, error)
 	InvoiceSettlements(ctx context.Context, ids []string) ([]SettlementResponse, error)
+	InvoiceSettlementsWithShipping(ctx context.Context, ids []string, opts InvoiceOptions) ([]SettlementResponse, error)
 	MarkSettlementsPaid(ctx context.Context, ids []string) ([]SettlementResponse, error)
 	ProcessReminders(ctx context.Context) error
 	ExportPreordersToExcel(ctx context.Context, filter SettlementFilter) ([]byte, error)
+	CascadeSettlementPayment(ctx context.Context, orderID string) error
 }
 
 type service struct {
@@ -114,6 +125,11 @@ func (s *service) GetSettlement(ctx context.Context, id string) (*SettlementResp
 // Creates ONE Shopify Draft Order containing all items.
 // Sends ONE email to the customer.
 func (s *service) InvoiceSettlements(ctx context.Context, ids []string) ([]SettlementResponse, error) {
+	return s.InvoiceSettlementsWithShipping(ctx, ids, InvoiceOptions{})
+}
+
+// InvoiceSettlementsWithShipping transitions pending → invoiced, optionally adding a shipping line.
+func (s *service) InvoiceSettlementsWithShipping(ctx context.Context, ids []string, opts InvoiceOptions) ([]SettlementResponse, error) {
 	if len(ids) == 0 {
 		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "No order line item IDs provided")
 	}
@@ -186,6 +202,22 @@ func (s *service) InvoiceSettlements(ctx context.Context, ids []string) ([]Settl
 		},
 	}
 
+	if opts.ShippingPrice > 0 {
+		title := opts.ShippingTitle
+		if title == "" {
+			title = "Shipping"
+		}
+		draftInput.ShippingLine = &shopify.ShippingLineInput{
+			Title: title,
+			Price: fmt.Sprintf("%.2f", opts.ShippingPrice),
+		}
+		if opts.ShippingNotes != "" {
+			draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
+				Key: "shipping_notes", Value: opts.ShippingNotes,
+			})
+		}
+	}
+
 	// 3. Create Shopify Draft Order
 	draftRes, err := s.shopClient.CreateDraftOrder(ctx, draftInput)
 	var paymentLink string
@@ -218,16 +250,27 @@ func (s *service) InvoiceSettlements(ctx context.Context, ids []string) ([]Settl
 	}
 
 	combinedTitle := strings.Join(emailItemTitles, ", ")
+	totalDue := totalBalance + opts.ShippingPrice
 
 	go func() {
 		bgCtx := context.Background()
 		emailData := email.SettlementEmailData{
-			CustomerName:  customerName,
-			ItemTitle:     combinedTitle,
-			Items:         emailItems,
-			BalanceAmount: fmt.Sprintf("$%.2f", totalBalance),
-			DueDate:       dueDateStr,
-			PaymentLink:   paymentLink,
+			CustomerName:   customerName,
+			ItemTitle:      combinedTitle,
+			Items:          emailItems,
+			BalanceAmount:  fmt.Sprintf("$%.2f", totalBalance),
+			ShippingAmount: "",
+			TotalDue:       fmt.Sprintf("$%.2f", totalDue),
+			ShippingNotes:  opts.ShippingNotes,
+			DueDate:        dueDateStr,
+			PaymentLink:    paymentLink,
+		}
+		if opts.ShippingPrice > 0 {
+			emailData.ShippingAmount = fmt.Sprintf("$%.2f", opts.ShippingPrice)
+			emailData.ShippingTitle = opts.ShippingTitle
+			if emailData.ShippingTitle == "" {
+				emailData.ShippingTitle = "Shipping"
+			}
 		}
 
 		if err := s.emailService.SendInvoice(bgCtx, customerEmail, emailData); err != nil {
@@ -342,6 +385,25 @@ func (s *service) checkAndUpdateOrderStatus(ctx context.Context, orderID string)
 		return s.orderStore.UpdateOrderStatus(ctx, orderID, "paid", "paid", "pending")
 	}
 	return nil
+}
+
+// CascadeSettlementPayment advances pre-order fulfillment after all settlements are paid.
+func (s *service) CascadeSettlementPayment(ctx context.Context, orderID string) error {
+	allPaid, err := s.store.AllSettlementsPaid(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	if !allPaid {
+		return nil
+	}
+
+	if err := s.orderStore.UpdateOrderStatus(ctx, orderID, "paid", "paid", "pending"); err != nil {
+		return err
+	}
+	if err := s.orderStore.UpdateItemStatusByType(ctx, orderID, "pre_order", "paid"); err != nil {
+		return err
+	}
+	return s.orderStore.UpdateItemStepByType(ctx, orderID, "pre_order", 4)
 }
 
 func (s *service) ProcessReminders(ctx context.Context) error {

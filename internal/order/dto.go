@@ -55,7 +55,9 @@ type OrderResponse struct {
 	TotalBalanceDue     string         `json:"total_balance_due"`
 	TotalChargedNow     string         `json:"total_charged_now"`
 	Currency            string         `json:"currency"`
-	LineItems           LineItemsGroup `json:"line_items"`
+	LineItems           LineItemsGroup        `json:"line_items"`
+	PreorderShipment    *PreorderShipmentDTO  `json:"preorder_shipment,omitempty"`
+	ShippingMethod      string                `json:"shipping_method,omitempty"`
 }
 
 type OrderItemDetail struct {
@@ -77,6 +79,47 @@ type OrderItemDetail struct {
 	TrackingURL       *string `json:"tracking_url,omitempty"`
 	TrackingCompany   *string `json:"tracking_company,omitempty"`
 	TrackingLastEvent *string `json:"tracking_last_event,omitempty"`
+	SKU               string  `json:"sku,omitempty"`
+	WeightKg          float64 `json:"weight_kg,omitempty"`
+	WidthCm           float64 `json:"width_cm,omitempty"`
+	HeightCm          float64 `json:"height_cm,omitempty"`
+	DepthCm           float64 `json:"depth_cm,omitempty"`
+}
+
+type PreorderShipmentDTO struct {
+	EstimatedShipping  *string          `json:"estimated_shipping,omitempty"`
+	FinalShippingPrice *string          `json:"final_shipping_price,omitempty"`
+	ShippingNotes      *string          `json:"shipping_notes,omitempty"`
+	CreditAmount       *string          `json:"credit_amount,omitempty"`
+	TotalBoxes         int              `json:"total_boxes"`
+	TotalWeightLb      *string          `json:"total_weight_lb,omitempty"`
+	InvoiceSentAt      *string          `json:"invoice_sent_at,omitempty"`
+	Packing            []PackingItemDTO `json:"packing,omitempty"`
+}
+
+type PackingItemDTO struct {
+	LineItemID string `json:"line_item_id"`
+	BoxCount   int    `json:"box_count"`
+	IsNested   bool   `json:"is_nested"`
+}
+
+type CalculatePreorderShippingRequest struct {
+	Packing []PackingItemDTO `json:"packing" validate:"required,min=1,dive"`
+}
+
+type CalculatePreorderShippingResponse struct {
+	EstimatedShipping string           `json:"estimated_shipping"`
+	TotalBoxes        int              `json:"total_boxes"`
+	TotalWeightLb     string           `json:"total_weight_lb"`
+	Packing           []PackingItemDTO `json:"packing"`
+	ServiceCode       string           `json:"service_code"`
+	Currency          string           `json:"currency"`
+}
+
+type UpdatePreorderShippingRequest struct {
+	FinalShippingPrice float64          `json:"final_shipping_price" validate:"required,min=0"`
+	ShippingNotes      string           `json:"shipping_notes"`
+	Packing            []PackingItemDTO `json:"packing,omitempty"`
 }
 
 type AcceptOrderRequest struct {
@@ -89,7 +132,7 @@ type CancelOrderRequest struct {
 }
 
 type UpdateStepRequest struct {
-	FulfillmentStep int `json:"fulfillment_step" validate:"required,min=1,max=4"`
+	FulfillmentStep int `json:"fulfillment_step" validate:"required,min=1,max=5"`
 }
 
 type UpdateReceivedItem struct {

@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/auth"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/config"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/email"
 	"strings"
 
@@ -34,6 +35,9 @@ type OrderService interface {
 	AddTrackingNumber(ctx context.Context, userID, orderID string, itemIDs []string, trackingNumber, trackingURL string) error
 	GetOrderTracking(ctx context.Context, userID, orderID string) ([]shipstation.TrackingResponse, error)
 	ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]byte, error)
+	CalculatePreorderShipping(ctx context.Context, userID, orderID string, req CalculatePreorderShippingRequest) (*CalculatePreorderShippingResponse, error)
+	UpdatePreorderShipping(ctx context.Context, userID, orderID string, req UpdatePreorderShippingRequest) (*PreorderShipmentDTO, error)
+	RequestSecondPayment(ctx context.Context, userID, orderID string) error
 }
 
 type service struct {
@@ -42,14 +46,18 @@ type service struct {
 	authStore         auth.AuthStore
 	shopClient        shopify.Client
 	shipstationClient shipstation.Client
+	shipstationCfg    config.ShipStationConfig
 	preorderStore     preorder.PreorderStore
+	preorderService   preorder.PreorderService
 	emailService      email.NotificationService
 }
 
 func NewOrderService(store Store, cartService cart.CartService, authStore auth.AuthStore, shopClient shopify.Client,
 	preorderStore preorder.PreorderStore,
+	preorderService preorder.PreorderService,
 	notificationService email.NotificationService,
 	shipstationClient shipstation.Client,
+	shipstationCfg config.ShipStationConfig,
 ) OrderService {
 	return &service{
 		store:             store,
@@ -57,7 +65,9 @@ func NewOrderService(store Store, cartService cart.CartService, authStore auth.A
 		authStore:         authStore,
 		shopClient:        shopClient,
 		shipstationClient: shipstationClient,
+		shipstationCfg:    shipstationCfg,
 		preorderStore:     preorderStore,
+		preorderService:   preorderService,
 		emailService:      notificationService,
 	}
 }
@@ -531,6 +541,8 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 		return nil, apierror.ErrNotFound
 	}
 
+	dims := s.enrichOrderItemDetails(ctx, o.Items)
+
 	var shipReady []OrderItemDetail
 	var preOrder []OrderItemDetail
 	for _, it := range o.Items {
@@ -579,6 +591,14 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 			detail.FinalAmount = &val
 		}
 
+		if d, ok := dims[it.ShopifyVariantID]; ok {
+			detail.SKU = d.SKU
+			detail.WeightKg = d.WeightKg
+			detail.WidthCm = d.WidthCm
+			detail.HeightCm = d.HeightCm
+			detail.DepthCm = d.DepthCm
+		}
+
 		if it.Type == "ship_ready" {
 			shipReady = append(shipReady, detail)
 		} else {
@@ -608,6 +628,21 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 		TotalChargedNow:     fmt.Sprintf("%.2f", o.TotalChargedNow),
 		Currency:            o.Currency,
 		LineItems:           LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
+	}
+
+	if o.ShippingMethod != nil {
+		dto.ShippingMethod = *o.ShippingMethod
+	}
+
+	if len(preOrder) > 0 {
+		shipment, err := s.store.GetPreorderShipment(ctx, orderID)
+		if err != nil {
+			return nil, apierror.ErrInternal
+		}
+		if shipment != nil {
+			shipmentDTO := s.toPreorderShipmentDTO(shipment)
+			dto.PreorderShipment = &shipmentDTO
+		}
 	}
 
 	if o.Customer != nil {
@@ -811,9 +846,11 @@ func (s *service) AcceptOrder(ctx context.Context, userID, orderID, fulfillmentT
 		return apierror.ErrInternal
 	}
 
-	// Update the fulfillment step to 2 (Processing/Accepted)
-	if err := s.store.UpdateItemStepByType(ctx, orderID, fulfillmentType, 2); err != nil {
-		return apierror.ErrInternal
+	// Advance ship-ready items only; pre-order stays at step 1 until shipping is configured.
+	if fulfillmentType == "ship_ready" {
+		if err := s.store.UpdateItemStepByType(ctx, orderID, fulfillmentType, 2); err != nil {
+			return apierror.ErrInternal
+		}
 	}
 
 	// NEW: If ship_ready, push to Shopify fulfillment dashboard
@@ -863,8 +900,8 @@ func (s *service) CancelOrder(ctx context.Context, userID, orderID, fulfillmentT
 }
 
 func (s *service) UpdateFulfillmentStep(ctx context.Context, userID, orderID, itemID string, step int) error {
-	if step < 1 || step > 4 {
-		return apierror.New(400, "invalid_step", "Step must be between 1 and 4")
+	if step < 1 || step > 5 {
+		return apierror.New(400, "invalid_step", "Step must be between 1 and 5")
 	}
 	if err := s.store.UpdateOrderItemStep(ctx, itemID, step); err != nil {
 		return apierror.ErrInternal
@@ -885,7 +922,18 @@ func (s *service) UpdateItemsReceived(ctx context.Context, userID, orderID strin
 		if item.ItemsReceived < 0 {
 			return apierror.New(400, "invalid_count", "Count cannot be negative")
 		}
-		if err := s.store.UpdateOrderItemReceived(ctx, item.ItemID, item.ItemsReceived); err != nil {
+
+		deliveredStep := 4
+		for _, dbItem := range o.Items {
+			if dbItem.ID == item.ItemID {
+				if dbItem.Type == "pre_order" {
+					deliveredStep = preOrderStepDelivered
+				}
+				break
+			}
+		}
+
+		if err := s.store.UpdateOrderItemReceived(ctx, item.ItemID, item.ItemsReceived, deliveredStep); err != nil {
 			slog.WarnContext(ctx, "failed to update item received", slog.String("item_id", item.ItemID), slog.Any("error", err))
 		}
 		
@@ -928,7 +976,16 @@ func (s *service) AddTrackingNumber(ctx context.Context, userID, orderID string,
 	now := time.Now()
 	// When adding tracking manually via admin panel, we don't know company/event yet.
 	for _, itemID := range itemIDs {
-		if err := s.store.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, "", "", "shipped", 3, &now); err != nil {
+		fulfillmentStep := 3
+		for _, it := range o.Items {
+			if it.ID == itemID {
+				if it.Type == "pre_order" {
+					fulfillmentStep = preOrderStepShipped
+				}
+				break
+			}
+		}
+		if err := s.store.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, "", "", "shipped", fulfillmentStep, &now); err != nil {
 			slog.WarnContext(ctx, "failed to add tracking to item", slog.String("item_id", itemID), slog.Any("error", err))
 		}
 	}

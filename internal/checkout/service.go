@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/config"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 )
@@ -189,9 +189,50 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 					slog.String("checkout_reference", checkoutRef))
 			} else {
 				matchedRate := s.matchShippingRate(rates, req.ShippingMethod)
-				draftInput.ShippingLine = &shopify.ShippingLineInput{
-					Title: matchedRate.Label,
-					Price: matchedRate.Cost,
+				if matchedRate != nil {
+					draftInput.ShippingLine = &shopify.ShippingLineInput{
+						Title: matchedRate.Label,
+						Price: matchedRate.Cost,
+					}
+				}
+			}
+		}
+	}
+
+	// Persist pre-order shipping estimate for admin fulfillment (balance-due invoice).
+	if len(cartRes.PreOrder) > 0 {
+		if req.Zip == "" {
+			slog.WarnContext(ctx, "pre-order shipping estimate skipped: zip code missing",
+				slog.String("checkout_reference", checkoutRef))
+		} else {
+			country := req.Country
+			if country == "" {
+				country = "US"
+			}
+			ratesReq := ShippingRatesRequest{
+				Name:     strings.TrimSpace(req.FirstName + " " + req.LastName),
+				Phone:    req.Phone,
+				Address1: req.Address1,
+				City:     req.City,
+				State:    req.State,
+				Zip:      req.Zip,
+				Country:  country,
+				Segment:  "pre_order",
+			}
+			rates, rateErr := s.GetShippingRates(ctx, userID, sessionID, ratesReq)
+			if rateErr != nil {
+				slog.WarnContext(ctx, "pre-order shipping rate lookup failed",
+					slog.String("checkout_reference", checkoutRef),
+					slog.Any("error", rateErr))
+			} else if len(rates) == 0 {
+				slog.WarnContext(ctx, "no pre-order shipping rates returned",
+					slog.String("checkout_reference", checkoutRef))
+			} else {
+				matchedRate := s.matchShippingRate(rates, req.ShippingMethod)
+				if matchedRate != nil {
+					draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
+						Key: "preorder_shipping_estimate", Value: matchedRate.Cost,
+					})
 				}
 			}
 		}
@@ -296,146 +337,59 @@ func (s *service) matchShippingRate(rates []ShippingRateDTO, shippingMethod stri
 }
 
 func (s *service) calculateRatesForItems(ctx context.Context, items []cart.CartItem, rateReq ShippingRatesRequest) ([]ShippingRateDTO, error) {
-	packages := s.buildPackagesFromItems(items)
-	if len(packages) == 0 {
-		return []ShippingRateDTO{}, nil
-	}
-
-	if rateReq.Name == "" {
-		rateReq.Name = "Recipient"
-	}
-	if rateReq.Phone == "" {
-		rateReq.Phone = "555-555-5555"
-	}
-	if rateReq.Address1 == "" {
-		rateReq.Address1 = "123 Unknown St"
-	}
-
-	req := shipstation.RateRequest{
-		RateOptions: shipstation.RateOptions{
-			CarrierIDs:   s.shipstationCfg.CarrierCodes,
-			ServiceCodes: []string{s.groundServiceCode()},
-		},
-		Shipment: shipstation.Shipment{
-			ValidateAddress: "no_validation",
-			ShipFrom: shipstation.Address{
-				Name:          s.shipstationCfg.WarehouseName,
-				Phone:         s.shipstationCfg.WarehousePhone,
-				AddressLine1:  s.shipstationCfg.WarehouseAddress1,
-				CityLocality:  s.shipstationCfg.WarehouseCity,
-				StateProvince: s.getStateAbbr(ctx, s.shipstationCfg.WarehouseCountry, s.shipstationCfg.WarehouseZip, s.shipstationCfg.WarehouseState),
-				PostalCode:    s.shipstationCfg.WarehouseZip,
-				CountryCode:   s.shipstationCfg.WarehouseCountry,
-			},
-			ShipTo: shipstation.Address{
-				Name:          rateReq.Name,
-				Phone:         rateReq.Phone,
-				AddressLine1:  rateReq.Address1,
-				CityLocality:  rateReq.City,
-				StateProvince: s.getStateAbbr(ctx, rateReq.Country, rateReq.Zip, rateReq.State),
-				PostalCode:    rateReq.Zip,
-				CountryCode:   rateReq.Country,
-			},
-			Packages: packages,
-		},
-	}
-
-	rates, err := s.shipstationCli.GetRates(ctx, req)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to get shipping rates from shipstation", "error", err)
-		return nil, apierror.New(500, "shipping_rate_error", "Failed to fetch shipping rates from carriers")
-	}
-
-	slog.InfoContext(ctx, "shipstation rates response", "count", len(rates), "rates", rates)
-
-	dtos := s.filterGroundRates(rates)
-	if len(dtos) == 0 {
-		return nil, apierror.New(500, "shipping_rate_error", "Failed to fetch shipping rates from carriers")
-	}
-
-	return dtos, nil
-}
-
-// buildPackagesFromItems creates one ShipStation package per unit (quantity N = N identical packages).
-func (s *service) buildPackagesFromItems(items []cart.CartItem) []shipstation.Package {
-	const cmToInch = 0.393701
-	var packages []shipstation.Package
-
+	var units []shipping.PackableUnit
 	for _, item := range items {
-		wt := item.Weight
-		switch item.WeightUnit {
-		case "KILOGRAMS":
-			wt = wt * 2.20462
-		case "GRAMS":
-			wt = wt * 0.00220462
-		}
-		if wt == 0 {
-			wt = 1.0
-		}
-
-		pkg := shipstation.Package{
-			Weight: shipstation.Weight{
-				Value: wt,
-				Unit:  "pound",
-			},
-		}
-
-		if item.Length > 0 || item.Width > 0 || item.Height > 0 {
-			dims := []float64{item.Length, item.Width, item.Height}
-			sort.Sort(sort.Reverse(sort.Float64Slice(dims)))
-			pkg.Dimensions = &shipstation.Dimensions{
-				Unit:   "inch",
-				Length: math.Round(dims[0]*cmToInch*100) / 100,
-				Width:  math.Round(dims[1]*cmToInch*100) / 100,
-				Height: math.Round(dims[2]*cmToInch*100) / 100,
-			}
-		}
-
 		qty := item.Quantity
 		if qty < 1 {
 			qty = 1
 		}
-		for i := 0; i < qty; i++ {
-			packages = append(packages, pkg)
-		}
+		units = append(units, shipping.PackableUnitFromCartItem(
+			item.Weight, item.WeightUnit, item.Length, item.Width, item.Height, qty,
+		))
 	}
 
-	return packages
-}
+	packages := shipping.BuildPackages(units)
+	if len(packages) == 0 {
+		return []ShippingRateDTO{}, nil
+	}
 
-func (s *service) filterGroundRates(rates []shipstation.Rate) []ShippingRateDTO {
+	amount, currency, err := shipping.CalculateGroundRate(
+		ctx,
+		s.shipstationCli,
+		s.shipstationCfg,
+		shipping.ShipToAddress{
+			Name:     rateReq.Name,
+			Phone:    rateReq.Phone,
+			Address1: rateReq.Address1,
+			City:     rateReq.City,
+			State:    rateReq.State,
+			Zip:      rateReq.Zip,
+			Country:  rateReq.Country,
+		},
+		packages,
+		s.zipLookup,
+	)
+	if err != nil {
+		return nil, apierror.New(500, "shipping_rate_error", "Failed to fetch shipping rates from carriers")
+	}
+
 	groundCode := s.groundServiceCode()
-	var dtos []ShippingRateDTO
-	for _, r := range rates {
-		if r.ServiceCode != groundCode {
-			continue
-		}
-		dtos = append(dtos, ShippingRateDTO{
-			ServiceCode:  r.ServiceCode,
-			Label:        r.ServiceType,
-			Cost:         fmt.Sprintf("%.2f", r.ShippingAmount.Amount),
-			Currency:     r.ShippingAmount.Currency,
-			DeliveryDays: r.DeliveryDays,
-		})
+	if groundCode == "" {
+		groundCode = "ups_ground"
 	}
-	return dtos
+
+	return []ShippingRateDTO{{
+		ServiceCode: groundCode,
+		Label:       "Ground",
+		Cost:        fmt.Sprintf("%.2f", amount),
+		Currency:    currency,
+	}}, nil
 }
 
-func (s *service) getStateAbbr(ctx context.Context, country, zip, defaultState string) string {
-	if !strings.EqualFold(country, "US") && !strings.EqualFold(country, "United States") {
-		return defaultState
+func (s *service) zipLookup(ctx context.Context, zip string) (string, bool) {
+	zipDetails, err := s.store.GetUSZipCodeDetails(ctx, zip)
+	if err != nil || zipDetails == nil || zipDetails.StateAbbr == "" {
+		return "", false
 	}
-	cleanZip := strings.TrimSpace(zip)
-	zipDetails, err := s.store.GetUSZipCodeDetails(ctx, cleanZip)
-	if err == nil && zipDetails != nil && zipDetails.StateAbbr != "" {
-		return zipDetails.StateAbbr
-	}
-	if len(cleanZip) > 5 {
-		zip5 := cleanZip[:5]
-		zipDetails, err = s.store.GetUSZipCodeDetails(ctx, zip5)
-		if err == nil && zipDetails != nil && zipDetails.StateAbbr != "" {
-			return zipDetails.StateAbbr
-		}
-	}
-	return defaultState
+	return zipDetails.StateAbbr, true
 }

@@ -180,6 +180,8 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 	var hasPreOrder bool
 	
 	var draftItems []shopify.DraftOrderLineItem
+	var settlementIDsPaid []string
+	var settlementOrderID string
 
 	for _, item := range payload.LineItems {
 		var settlementID string
@@ -194,16 +196,18 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 
 		if settlementID != "" {
 			slog.InfoContext(ctx, "Webhook: Received payment for settlement", slog.String("settlement_id", settlementID))
-			
-			// Update settlement status
+
 			now := time.Now()
 			_ = s.preorderStore.UpdateSettlementStatus(ctx, settlementID, "paid", &now)
-			
-			// Update original order item status to processing
+
 			st, err := s.preorderStore.GetSettlementByID(ctx, settlementID)
 			if err == nil {
-				_ = s.orderStore.UpdateItemStatusByID(ctx, st.OrderLineItemID, "processing")
+				_ = s.orderStore.UpdateItemStatusByID(ctx, st.OrderLineItemID, "paid")
+				if settlementOrderID == "" {
+					settlementOrderID = st.OrderID
+				}
 			}
+			settlementIDsPaid = append(settlementIDsPaid, settlementID)
 			continue
 		}
 
@@ -304,6 +308,9 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 	}
 
 	if len(orderItems) == 0 {
+		if len(settlementIDsPaid) > 0 && settlementOrderID != "" {
+			return s.handleSettlementOnlyPayment(ctx, settlementOrderID)
+		}
 		slog.InfoContext(ctx, "Webhook: No new valid items to create an order for", slog.String("shopify_order_id", shopifyOrderIDStr))
 		return nil
 	}
@@ -318,6 +325,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 
 	var checkoutRef string
 	var shippingMethod string
+	var preorderShippingEstimate string
 	for _, note := range payload.NoteAttributes {
 		if note.Name == "checkout_reference" {
 			if val, ok := note.Value.(string); ok {
@@ -326,6 +334,10 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		} else if note.Name == "preorder_shipping_method" {
 			if val, ok := note.Value.(string); ok {
 				shippingMethod = val
+			}
+		} else if note.Name == "preorder_shipping_estimate" {
+			if val, ok := note.Value.(string); ok {
+				preorderShippingEstimate = val
 			}
 		}
 	}
@@ -378,6 +390,44 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 				_ = s.preorderStore.CreateSettlement(ctx, settlement)
 			}
 		}
+
+		var preItems []order.OrderItem
+		var variantIDs []string
+		for _, item := range newOrder.Items {
+			if item.Type == "pre_order" {
+				preItems = append(preItems, item)
+				variantIDs = append(variantIDs, item.ShopifyVariantID)
+			}
+		}
+		if len(preItems) > 0 {
+			var estimate *float64
+			if preorderShippingEstimate != "" {
+				if v, err := strconv.ParseFloat(preorderShippingEstimate, 64); err == nil {
+					estimate = &v
+				} else {
+					slog.WarnContext(ctx, "invalid pre-order shipping estimate from checkout",
+						slog.String("order_id", newOrder.ID),
+						slog.String("value", preorderShippingEstimate))
+				}
+			} else {
+				slog.WarnContext(ctx, "pre-order checkout shipping estimate missing",
+					slog.String("order_id", newOrder.ID))
+			}
+
+			dims, dimErr := s.orderStore.GetVariantDimensions(ctx, variantIDs)
+			if dimErr != nil {
+				slog.ErrorContext(ctx, "failed to load variant dimensions for pre-order shipment",
+					slog.String("order_id", newOrder.ID),
+					slog.Any("error", dimErr))
+			} else {
+				shipment, packing := order.BuildCheckoutPreorderShipment(newOrder.ID, preItems, dims, estimate)
+				if err := s.orderStore.UpsertPreorderShipment(ctx, shipment, packing); err != nil {
+					slog.ErrorContext(ctx, "failed to create pre-order shipment from checkout",
+						slog.String("order_id", newOrder.ID),
+						slog.Any("error", err))
+				}
+			}
+		}
 	}
 
 	// Shopify automatically sends order confirmations, so we skip sending our own here.
@@ -409,10 +459,9 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 		trackingURL = payload.TrackingURLs[0]
 	}
 
-	// Map shipment status to human readable last event, and determine the internal item_status/step
+	// Map shipment status to human readable last event, and determine item_status
 	var lastEvent string
 	itemStatus := "shipped"
-	fulfillmentStep := 3
 
 	switch payload.ShipmentStatus {
 	case "label_printed":
@@ -432,7 +481,6 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 	case "delivered":
 		lastEvent = "Delivered"
 		itemStatus = "delivered"
-		fulfillmentStep = 4
 	case "failure":
 		lastEvent = "Delivery failed"
 	default:
@@ -443,7 +491,6 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 	if trackingNumber == "" && payload.Status == "success" {
 		lastEvent = "Delivered"
 		itemStatus = "delivered"
-		fulfillmentStep = 4
 	}
 
 	if trackingNumber == "" {
@@ -464,7 +511,24 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 		}
 
 		if itemID != "" {
-			err := s.orderStore.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, payload.TrackingCompany, lastEvent, itemStatus, fulfillmentStep, &now)
+			fulfillmentStep := 3
+			deliveredStep := 4
+			for _, dbItem := range o.Items {
+				if dbItem.ID == itemID {
+					if dbItem.Type == "pre_order" {
+						fulfillmentStep = 4
+						deliveredStep = 5
+					}
+					break
+				}
+			}
+
+			step := fulfillmentStep
+			if itemStatus == "delivered" {
+				step = deliveredStep
+			}
+
+			err := s.orderStore.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, payload.TrackingCompany, lastEvent, itemStatus, step, &now)
 			if err != nil {
 				slog.ErrorContext(ctx, "Failed to update item tracking", slog.String("item_id", itemID), slog.Any("error", err))
 			} else {
@@ -518,5 +582,56 @@ func (s *service) HandleInventoryUpdate(ctx context.Context, payload ShopifyInve
 	}
 
 	slog.InfoContext(ctx, "inventory updated", slog.String("variant_id", variant.ShopifyVariantID), slog.Int("qty", payload.Available))
+	return nil
+}
+
+func (s *service) handleSettlementOnlyPayment(ctx context.Context, orderID string) error {
+	allPaid, err := s.preorderStore.AllSettlementsPaid(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	if !allPaid {
+		slog.InfoContext(ctx, "Webhook: partial settlement payment received", slog.String("order_id", orderID))
+		return nil
+	}
+
+	if err := s.orderStore.UpdateOrderStatus(ctx, orderID, "on_progress", "paid", "in_progress"); err != nil {
+		return err
+	}
+	if err := s.orderStore.UpdateItemStatusByType(ctx, orderID, "pre_order", "payment_received"); err != nil {
+		return err
+	}
+	if err := s.orderStore.UpdateItemStepByType(ctx, orderID, "pre_order", 4); err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "Webhook: all settlements paid, advanced to step 4", slog.String("order_id", orderID))
+
+	// Best-effort settlement paid email — load order for customer email
+	o, err := s.orderStore.GetOrder(ctx, orderID, "")
+	if err != nil || o == nil || o.Customer == nil {
+		return nil
+	}
+
+	user, _ := s.authStore.GetUserByID(ctx, o.CustomerID)
+	if user == nil {
+		return nil
+	}
+
+	customerName := "Customer"
+	if o.Customer.FirstName != nil {
+		customerName = *o.Customer.FirstName
+	}
+
+	go func() {
+		bgCtx := context.Background()
+		_ = s.emailService.SendSettlementPaid(bgCtx, user.Email, email.SettlementEmailData{
+			CustomerName:  customerName,
+			ItemTitle:     o.OrderNumber,
+			BalanceAmount: fmt.Sprintf("$%.2f", o.TotalBalanceDue),
+			TotalDue:      fmt.Sprintf("$%.2f", o.TotalBalanceDue),
+		})
+	}()
+
 	return nil
 }

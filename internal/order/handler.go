@@ -28,6 +28,9 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	// Admin routes (must be defined before /:id)
 	adminGrp := group.Group("/", middleware.Auth(h.jwtSecret), middleware.RBAC("admin"))
 	adminGrp.Get("/export", h.ExportOrders)
+	adminGrp.Post("/:id/preorder/calculate-shipping", h.CalculatePreorderShipping)
+	adminGrp.Put("/:id/preorder/shipping", h.UpdatePreorderShipping)
+	adminGrp.Post("/:id/preorder/request-second-payment", h.RequestSecondPayment)
 
 	// List Orders (Auth Only)
 	authGrp := group.Group("/")
@@ -325,4 +328,43 @@ func (h *Handler) ExportOrders(c *fiber.Ctx) error {
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	c.Set("Content-Disposition", `attachment; filename="sales_report.xlsx"`)
 	return c.Send(excelBytes)
+}
+
+func (h *Handler) CalculatePreorderShipping(c *fiber.Ctx) error {
+	var req CalculatePreorderShippingRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	res, err := h.service.CalculatePreorderShipping(c.Context(), "", c.Params("id"), req)
+	if err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Shipping calculated", res)
+}
+
+func (h *Handler) UpdatePreorderShipping(c *fiber.Ctx) error {
+	var req UpdatePreorderShippingRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	res, err := h.service.UpdatePreorderShipping(c.Context(), "", c.Params("id"), req)
+	if err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Shipping updated", res)
+}
+
+func (h *Handler) RequestSecondPayment(c *fiber.Ctx) error {
+	if err := h.service.RequestSecondPayment(c.Context(), "", c.Params("id")); err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Second payment invoice sent", nil)
 }

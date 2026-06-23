@@ -217,10 +217,10 @@ func (s *PostgresStore) UpdateOrderItemTracking(ctx context.Context, itemID, tra
 	}).Error
 }
 
-func (s *PostgresStore) UpdateOrderItemReceived(ctx context.Context, itemID string, count int) error {
+func (s *PostgresStore) UpdateOrderItemReceived(ctx context.Context, itemID string, count int, fulfillmentStep int) error {
 	return s.db.WithContext(ctx).Model(&OrderItem{}).Where("id = ?", itemID).Updates(map[string]interface{}{
 		"items_received":   count,
 		"item_status":      "delivered",
-		"fulfillment_step": 4,
+		"fulfillment_step": fulfillmentStep,
 	}).Error
 }

@@ -76,5 +76,12 @@ type Store interface {
 	UpdateItemStepByType(ctx context.Context, orderID string, itemType string, step int) error
 	UpdateOrderItemStep(ctx context.Context, itemID string, step int) error
 	UpdateOrderItemTracking(ctx context.Context, itemID, trackingNumber, trackingURL, trackingCompany, trackingLastEvent, itemStatus string, fulfillmentStep int, shippedAt *time.Time) error
-	UpdateOrderItemReceived(ctx context.Context, itemID string, count int) error
+	UpdateOrderItemReceived(ctx context.Context, itemID string, count int, fulfillmentStep int) error
+
+	GetPreorderShipment(ctx context.Context, orderID string) (*PreorderShipment, error)
+	UpsertPreorderShipment(ctx context.Context, shipment *PreorderShipment, packing []PreorderPackingItem) error
+	UpdatePreorderShipping(ctx context.Context, orderID string, finalPrice float64, notes string, creditAmount float64) error
+	MarkPreorderInvoiceSent(ctx context.Context, orderID string, sentAt time.Time) error
+	GetVariantDimensions(ctx context.Context, shopifyVariantIDs []string) (map[string]VariantDimensions, error)
+	GetUSZipStateAbbr(ctx context.Context, zip string) (string, bool)
 }
