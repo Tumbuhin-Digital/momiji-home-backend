@@ -157,6 +157,17 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 			Country:   req.Country,
 			Phone:     req.Phone,
 		}
+		if snap := ShippingAddressSnapshotFromRequest(req); snap != nil {
+			if jsonVal, err := snap.JSON(); err != nil {
+				slog.WarnContext(ctx, "failed to marshal checkout shipping address snapshot",
+					slog.String("checkout_reference", checkoutRef),
+					slog.Any("error", err))
+			} else {
+				draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
+					Key: ShippingAddressNoteAttribute, Value: jsonVal,
+				})
+			}
+		}
 	}
 
 	// Set shipping line for ship-ready items using live ShipStation rates
