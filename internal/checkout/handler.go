@@ -2,6 +2,7 @@ package checkout
 
 import (
 	"fmt"
+	"log/slog"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
@@ -106,43 +107,60 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
-	shippingCost := 20.00
-	estimatedArrival := "5-7 Business Days"
+	shippingCost := 0.0
+	estimatedArrival := ""
+	shippingPreorder := 0.0
 
-	// Fetch dynamic shipping rates from ShipStation if zip code is provided
+	country := req.Country
+	if country == "" {
+		country = "US"
+	}
+
 	if req.Zip != "" {
-		ratesReq := ShippingRatesRequest{
-			Zip:     req.Zip,
-			Country: req.Country,
-		}
-		if ratesReq.Country == "" {
-			ratesReq.Country = "US"
-		}
-		rates, rateErr := h.checkoutService.GetShippingRates(c.Context(), uid, sid, ratesReq)
-		if rateErr == nil && len(rates) > 0 {
-			// Find matching service code, or fallback to the first rate if method not found
-			var matchedRate *ShippingRateDTO
-			for _, r := range rates {
-				if r.ServiceCode == req.ShippingMethod {
-					matchedRate = &r
-					break
-				}
+		if len(cartRes.ShipReady) > 0 {
+			ratesReq := ShippingRatesRequest{
+				Zip:     req.Zip,
+				Country: country,
+				Segment: "ship_ready",
 			}
-			if matchedRate == nil && req.ShippingMethod == "" {
-				matchedRate = &rates[0] // default to first available
-			}
-			if matchedRate != nil {
-				if cost, err := strconv.ParseFloat(matchedRate.Cost, 64); err == nil {
-					shippingCost = cost
+			rates, rateErr := h.checkoutService.GetShippingRates(c.Context(), uid, sid, ratesReq)
+			if rateErr != nil {
+				slog.WarnContext(c.Context(), "checkout summary: ship ready rate lookup failed", slog.Any("error", rateErr))
+			} else if len(rates) > 0 {
+				matched := h.matchSummaryRate(rates, req.ShippingMethod)
+				if matched != nil {
+					if cost, err := strconv.ParseFloat(matched.Cost, 64); err == nil {
+						shippingCost = cost
+					}
+					if matched.DeliveryDays != nil {
+						estimatedArrival = fmt.Sprintf("%d Days", *matched.DeliveryDays)
+					}
 				}
-				if matchedRate.DeliveryDays != nil {
-					estimatedArrival = fmt.Sprintf("%d Days", *matchedRate.DeliveryDays)
-				}
+			} else {
+				slog.WarnContext(c.Context(), "checkout summary: no ship ready rates returned")
 			}
 		}
-	} else if req.ShippingMethod == "expedited" {
-		shippingCost = 35.00
-		estimatedArrival = "2-3 Business Days"
+
+		if len(cartRes.PreOrder) > 0 {
+			ratesReq := ShippingRatesRequest{
+				Zip:     req.Zip,
+				Country: country,
+				Segment: "pre_order",
+			}
+			rates, rateErr := h.checkoutService.GetShippingRates(c.Context(), uid, sid, ratesReq)
+			if rateErr != nil {
+				slog.WarnContext(c.Context(), "checkout summary: pre-order rate lookup failed", slog.Any("error", rateErr))
+			} else if len(rates) > 0 {
+				matched := h.matchSummaryRate(rates, req.ShippingMethod)
+				if matched != nil {
+					if cost, err := strconv.ParseFloat(matched.Cost, 64); err == nil {
+						shippingPreorder = cost
+					}
+				}
+			} else {
+				slog.WarnContext(c.Context(), "checkout summary: no pre-order rates returned")
+			}
+		}
 	}
 
 	var totalShipReady, preorderDeposit, preorderBalance float64
@@ -164,15 +182,9 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 
 	dueNowTotal := totalShipReady + shippingCost + preorderDeposit
 	res.DueNow.ShipReadyTotal = cartRes.Summary.TotalShipReady
-	res.DueNow.Shipping = res.Shipping.Cost
+	res.DueNow.Shipping = fmt.Sprintf("%.2f", shippingCost)
 	res.DueNow.PreorderDeposit = cartRes.Summary.TotalDeposit
 	res.DueNow.Total = fmt.Sprintf("%.2f", dueNowTotal)
-
-	// Preorder balance assumes a flat shipping rate or free later
-	shippingPreorder := 10.00
-	if len(cartRes.PreOrder) == 0 {
-		shippingPreorder = 0
-	}
 
 	dueAugustTotal := preorderBalance + shippingPreorder
 	res.DueAugust.PreorderBalance = cartRes.Summary.TotalBalanceDue
@@ -182,6 +194,20 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 	res.Currency = "USD"
 
 	return response.Success(c, fiber.StatusOK, "Checkout summary retrieved", res)
+}
+
+func (h *Handler) matchSummaryRate(rates []ShippingRateDTO, shippingMethod string) *ShippingRateDTO {
+	if shippingMethod != "" {
+		for i := range rates {
+			if rates[i].ServiceCode == shippingMethod {
+				return &rates[i]
+			}
+		}
+	}
+	if len(rates) > 0 {
+		return &rates[0]
+	}
+	return nil
 }
 
 // InitiateCheckout godoc

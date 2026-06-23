@@ -159,46 +159,41 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		}
 	}
 
-	// Calculate and set shipping cost for Shopify draft order
-	shippingCost := 20.00
-	shippingTitle := "Standard Shipping"
-	if req.Zip != "" {
-		ratesReq := ShippingRatesRequest{
-			Zip:     req.Zip,
-			Country: req.Country,
-		}
-		if ratesReq.Country == "" {
-			ratesReq.Country = "US"
-		}
-		rates, rateErr := s.GetShippingRates(ctx, userID, sessionID, ratesReq)
-		if rateErr == nil && len(rates) > 0 {
-			var matchedRate *ShippingRateDTO
-			for _, r := range rates {
-				if r.ServiceCode == req.ShippingMethod {
-					matchedRate = &r
-					break
+	// Set shipping line for ship-ready items using live ShipStation rates
+	if len(cartRes.ShipReady) > 0 {
+		if req.Zip == "" {
+			slog.WarnContext(ctx, "ship ready shipping skipped: zip code missing",
+				slog.String("checkout_reference", checkoutRef))
+		} else {
+			country := req.Country
+			if country == "" {
+				country = "US"
+			}
+			ratesReq := ShippingRatesRequest{
+				Name:     strings.TrimSpace(req.FirstName + " " + req.LastName),
+				Phone:    req.Phone,
+				Address1: req.Address1,
+				City:     req.City,
+				State:    req.State,
+				Zip:      req.Zip,
+				Country:  country,
+				Segment:  "ship_ready",
+			}
+			rates, rateErr := s.GetShippingRates(ctx, userID, sessionID, ratesReq)
+			if rateErr != nil {
+				slog.WarnContext(ctx, "ship ready shipping rate lookup failed",
+					slog.String("checkout_reference", checkoutRef),
+					slog.Any("error", rateErr))
+			} else if len(rates) == 0 {
+				slog.WarnContext(ctx, "no ship ready shipping rates returned",
+					slog.String("checkout_reference", checkoutRef))
+			} else {
+				matchedRate := s.matchShippingRate(rates, req.ShippingMethod)
+				draftInput.ShippingLine = &shopify.ShippingLineInput{
+					Title: matchedRate.Label,
+					Price: matchedRate.Cost,
 				}
 			}
-			if matchedRate == nil && req.ShippingMethod == "" {
-				matchedRate = &rates[0]
-			}
-			if matchedRate != nil {
-				if cost, err := strconv.ParseFloat(matchedRate.Cost, 64); err == nil {
-					shippingCost = cost
-				}
-				shippingTitle = matchedRate.Label
-			}
-		}
-	} else if req.ShippingMethod == "expedited" {
-		shippingCost = 35.00
-		shippingTitle = "Expedited Shipping"
-	}
-
-	// Only apply shipping line if there is shipping required (e.g. ship ready or pre-order items present)
-	if len(cartRes.ShipReady) > 0 || len(cartRes.PreOrder) > 0 {
-		draftInput.ShippingLine = &shopify.ShippingLineInput{
-			Title: shippingTitle,
-			Price: fmt.Sprintf("%.2f", shippingCost),
 		}
 	}
 
@@ -254,46 +249,58 @@ func (s *service) GetShippingRates(ctx context.Context, userID, sessionID *strin
 		return nil, apierror.ErrInternal
 	}
 
-	if len(cartRes.PreOrder) == 0 {
+	items := s.resolveCartItems(cartRes, rateReq.Segment)
+	if len(items) == 0 {
 		return []ShippingRateDTO{}, nil
 	}
 
-	totalWeight := 0.0
-	var maxLen, maxWid, maxHt float64
-	for _, item := range cartRes.PreOrder {
-		wt := item.Weight
-		if item.WeightUnit == "KILOGRAMS" {
-			wt = wt * 2.20462
-		} else if item.WeightUnit == "GRAMS" {
-			wt = wt * 0.00220462
-		}
-		totalWeight += (wt * float64(item.Quantity))
+	return s.calculateRatesForItems(ctx, items, rateReq)
+}
 
-		if item.Length > maxLen {
-			maxLen = item.Length
+func (s *service) resolveCartItems(cartRes *cart.CartResponse, segment string) []cart.CartItem {
+	switch segment {
+	case "ship_ready":
+		return cartRes.ShipReady
+	case "pre_order":
+		return cartRes.PreOrder
+	default:
+		if len(cartRes.PreOrder) > 0 {
+			return cartRes.PreOrder
 		}
-		if item.Width > maxWid {
-			maxWid = item.Width
-		}
-		if item.Height > maxHt {
-			maxHt = item.Height
+		return cartRes.ShipReady
+	}
+}
+
+func (s *service) groundServiceCode() string {
+	return s.shipstationCfg.GroundServiceCode
+}
+
+func (s *service) matchShippingRate(rates []ShippingRateDTO, shippingMethod string) *ShippingRateDTO {
+	groundCode := s.groundServiceCode()
+	if shippingMethod != "" {
+		for i := range rates {
+			if rates[i].ServiceCode == shippingMethod {
+				return &rates[i]
+			}
 		}
 	}
+	for i := range rates {
+		if rates[i].ServiceCode == groundCode {
+			return &rates[i]
+		}
+	}
+	if len(rates) > 0 {
+		return &rates[0]
+	}
+	return nil
+}
 
-	if totalWeight == 0 {
-		totalWeight = 1.0 // default 1 lb
+func (s *service) calculateRatesForItems(ctx context.Context, items []cart.CartItem, rateReq ShippingRatesRequest) ([]ShippingRateDTO, error) {
+	packages := s.buildPackagesFromItems(items)
+	if len(packages) == 0 {
+		return []ShippingRateDTO{}, nil
 	}
 
-	dims := []float64{maxLen, maxWid, maxHt}
-	sort.Sort(sort.Reverse(sort.Float64Slice(dims)))
-	pkgLength, pkgWidth, pkgHeight := dims[0], dims[1], dims[2]
-
-	const cmToInch = 0.393701
-	pkgLength = math.Round(pkgLength*cmToInch*100) / 100
-	pkgWidth = math.Round(pkgWidth*cmToInch*100) / 100
-	pkgHeight = math.Round(pkgHeight*cmToInch*100) / 100
-
-	// Default fallback for required recipient details
 	if rateReq.Name == "" {
 		rateReq.Name = "Recipient"
 	}
@@ -306,7 +313,8 @@ func (s *service) GetShippingRates(ctx context.Context, userID, sessionID *strin
 
 	req := shipstation.RateRequest{
 		RateOptions: shipstation.RateOptions{
-			CarrierIDs: s.shipstationCfg.CarrierCodes,
+			CarrierIDs:   s.shipstationCfg.CarrierCodes,
+			ServiceCodes: []string{s.groundServiceCode()},
 		},
 		Shipment: shipstation.Shipment{
 			ValidateAddress: "no_validation",
@@ -328,20 +336,7 @@ func (s *service) GetShippingRates(ctx context.Context, userID, sessionID *strin
 				PostalCode:    rateReq.Zip,
 				CountryCode:   rateReq.Country,
 			},
-			Packages: []shipstation.Package{
-				{
-					Weight: shipstation.Weight{
-						Value: totalWeight,
-						Unit:  "pound",
-					},
-					Dimensions: &shipstation.Dimensions{
-						Unit:   "inch",
-						Length: pkgLength,
-						Width:  pkgWidth,
-						Height: pkgHeight,
-					},
-				},
-			},
+			Packages: packages,
 		},
 	}
 
@@ -353,8 +348,68 @@ func (s *service) GetShippingRates(ctx context.Context, userID, sessionID *strin
 
 	slog.InfoContext(ctx, "shipstation rates response", "count", len(rates), "rates", rates)
 
+	dtos := s.filterGroundRates(rates)
+	if len(dtos) == 0 {
+		return nil, apierror.New(500, "shipping_rate_error", "Failed to fetch shipping rates from carriers")
+	}
+
+	return dtos, nil
+}
+
+// buildPackagesFromItems creates one ShipStation package per unit (quantity N = N identical packages).
+func (s *service) buildPackagesFromItems(items []cart.CartItem) []shipstation.Package {
+	const cmToInch = 0.393701
+	var packages []shipstation.Package
+
+	for _, item := range items {
+		wt := item.Weight
+		switch item.WeightUnit {
+		case "KILOGRAMS":
+			wt = wt * 2.20462
+		case "GRAMS":
+			wt = wt * 0.00220462
+		}
+		if wt == 0 {
+			wt = 1.0
+		}
+
+		pkg := shipstation.Package{
+			Weight: shipstation.Weight{
+				Value: wt,
+				Unit:  "pound",
+			},
+		}
+
+		if item.Length > 0 || item.Width > 0 || item.Height > 0 {
+			dims := []float64{item.Length, item.Width, item.Height}
+			sort.Sort(sort.Reverse(sort.Float64Slice(dims)))
+			pkg.Dimensions = &shipstation.Dimensions{
+				Unit:   "inch",
+				Length: math.Round(dims[0]*cmToInch*100) / 100,
+				Width:  math.Round(dims[1]*cmToInch*100) / 100,
+				Height: math.Round(dims[2]*cmToInch*100) / 100,
+			}
+		}
+
+		qty := item.Quantity
+		if qty < 1 {
+			qty = 1
+		}
+		for i := 0; i < qty; i++ {
+			packages = append(packages, pkg)
+		}
+	}
+
+	return packages
+}
+
+func (s *service) filterGroundRates(rates []shipstation.Rate) []ShippingRateDTO {
+	groundCode := s.groundServiceCode()
 	var dtos []ShippingRateDTO
 	for _, r := range rates {
+		if r.ServiceCode != groundCode {
+			continue
+		}
 		dtos = append(dtos, ShippingRateDTO{
 			ServiceCode:  r.ServiceCode,
 			Label:        r.ServiceType,
@@ -363,12 +418,7 @@ func (s *service) GetShippingRates(ctx context.Context, userID, sessionID *strin
 			DeliveryDays: r.DeliveryDays,
 		})
 	}
-
-	if len(dtos) == 0 {
-		return nil, apierror.New(500, "shipping_rate_error", "Failed to fetch shipping rates from carriers")
-	}
-
-	return dtos, nil
+	return dtos
 }
 
 func (s *service) getStateAbbr(ctx context.Context, country, zip, defaultState string) string {
