@@ -420,8 +420,12 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 
 	// Shopify automatically sends order confirmations, so we skip sending our own here.
 
-	// Release stock locks associated with this customer
-	_ = s.stockLockService.ReleaseLocks(ctx, &customerID, nil)
+	// Release stock locks associated with this checkout attempt
+	if checkoutRef != "" {
+		_ = s.stockLockService.ReleaseLocksByCheckoutReference(ctx, checkoutRef)
+	} else {
+		_ = s.stockLockService.ReleaseLocks(ctx, &customerID, nil)
+	}
 
 	return nil
 }

@@ -55,6 +55,11 @@ type InitiateCheckoutRequest struct {
 type InitiateCheckoutResponse struct {
 	CheckoutUrl       string `json:"checkout_url"`
 	CheckoutReference string `json:"checkout_reference"`
+	ExpiresAt         string `json:"expires_at,omitempty"`
+}
+
+type ReleaseCheckoutRequest struct {
+	CheckoutReference *string `json:"checkout_reference,omitempty"`
 }
 
 type ShippingRatesRequest struct {

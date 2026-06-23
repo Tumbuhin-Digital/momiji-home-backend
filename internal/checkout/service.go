@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"log/slog"
 
@@ -14,13 +15,14 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/config"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
-	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 )
 
 type CheckoutService interface {
 	InitiateCheckout(ctx context.Context, userID, sessionID *string, req InitiateCheckoutRequest) (*InitiateCheckoutResponse, error)
+	ReleaseCheckout(ctx context.Context, userID, sessionID *string, checkoutReference *string) error
 	ValidateAddress(ctx context.Context, req ValidateAddressRequest) map[string]string
 	GetShippingRates(ctx context.Context, userID, sessionID *string, req ShippingRatesRequest) ([]ShippingRateDTO, error)
 }
@@ -57,6 +59,8 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		return nil, apierror.New(400, "bad_request", "cart is empty")
 	}
 
+	checkoutRef := uuid.NewString()
+
 	var draftLines []shopify.DraftOrderLineItem
 	var lockReqs []LockRequest
 
@@ -89,10 +93,13 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		})
 	}
 
+	var lockExpiresAt time.Time
 	if len(lockReqs) > 0 {
-		if err := s.stockLockService.AcquireLocks(ctx, userID, sessionID, lockReqs); err != nil {
+		expiresAt, err := s.stockLockService.AcquireLocks(ctx, userID, sessionID, checkoutRef, lockReqs)
+		if err != nil {
 			return nil, err
 		}
+		lockExpiresAt = expiresAt
 	}
 
 	for _, item := range cartRes.PreOrder {
@@ -102,7 +109,7 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		requiresShipping := false
 
 		draftLine := shopify.DraftOrderLineItem{
-			Title:             fmt.Sprintf("[PREORDER] %s (DP 50%%)", item.Title),
+			Title:             fmt.Sprintf("[PREORDER] %s (Deposit 50%%)", item.Title),
 			Quantity:          item.Quantity,
 			OriginalUnitPrice: fmt.Sprintf("%.2f", deposit),
 			RequiresShipping:  &requiresShipping,
@@ -130,8 +137,6 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	if req.Email != "" {
 		draftInput.Email = req.Email
 	}
-
-	checkoutRef := uuid.NewString()
 
 	slog.InfoContext(ctx, "Initiating checkout", slog.String("checkout_reference", checkoutRef), slog.Int("ship_ready_items", len(cartRes.ShipReady)), slog.Int("pre_order_items", len(cartRes.PreOrder)))
 
@@ -251,6 +256,9 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 
 	res, err := s.shopifyCli.CreateDraftOrder(ctx, draftInput)
 	if err != nil {
+		if len(lockReqs) > 0 {
+			_ = s.stockLockService.ReleaseLocksByCheckoutReference(ctx, checkoutRef)
+		}
 		slog.ErrorContext(ctx, "Failed to create shopify draft order", slog.Any("error", err), slog.String("checkout_reference", checkoutRef))
 		return nil, fmt.Errorf("failed to create shopify draft order: %w", err)
 	}
@@ -262,10 +270,19 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		checkoutUrl += "?return_to=" + url.QueryEscape(s.feURL)
 	}
 
-	return &InitiateCheckoutResponse{
+	resp := &InitiateCheckoutResponse{
 		CheckoutUrl:       checkoutUrl,
 		CheckoutReference: checkoutRef,
-	}, nil
+	}
+	if !lockExpiresAt.IsZero() {
+		resp.ExpiresAt = lockExpiresAt.UTC().Format(time.RFC3339)
+	}
+
+	return resp, nil
+}
+
+func (s *service) ReleaseCheckout(ctx context.Context, userID, sessionID *string, checkoutReference *string) error {
+	return s.stockLockService.ReleaseLocksForIdentity(ctx, userID, sessionID, checkoutReference)
 }
 
 func (s *service) ValidateAddress(ctx context.Context, req ValidateAddressRequest) map[string]string {

@@ -37,6 +37,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	checkout.Use(middleware.OptionalAuth(h.jwtSecret))
 	checkout.Post("/summary", h.GetCheckoutSummary)
 	checkout.Post("/", h.InitiateCheckout)
+	checkout.Post("/release", h.ReleaseCheckout)
 	checkout.Get("/confirm", h.GetCheckoutConfirm)
 }
 
@@ -241,6 +242,36 @@ func (h *Handler) InitiateCheckout(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Checkout initiated", res)
+}
+
+// ReleaseCheckout godoc
+// @Summary Release stock locks for abandoned or expired checkout
+// @Tags Checkout
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Security SessionAuth
+// @Param request body ReleaseCheckoutRequest false "Release Checkout Request"
+// @Success 200 {object} response.Envelope
+// @Router /checkout/release [post]
+func (h *Handler) ReleaseCheckout(c *fiber.Ctx) error {
+	uid, sid := h.extractIdentity(c)
+	if uid == nil && sid == nil {
+		return response.Error(c, apierror.New(401, "unauthorized", "session or authentication required"))
+	}
+
+	var req ReleaseCheckoutRequest
+	if len(c.Body()) > 0 {
+		if err := c.BodyParser(&req); err != nil {
+			return response.Error(c, apierror.New(400, "invalid_request", "invalid request body"))
+		}
+	}
+
+	if err := h.checkoutService.ReleaseCheckout(c.Context(), uid, sid, req.CheckoutReference); err != nil {
+		return response.Error(c, err)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Stock locks released", nil)
 }
 
 // GetCheckoutConfirm godoc

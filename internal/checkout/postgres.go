@@ -33,20 +33,46 @@ func (s *PostgresStockLockStore) CreateLocks(ctx context.Context, locks []StockL
 }
 
 func (s *PostgresStockLockStore) DeleteLocksBySession(ctx context.Context, userID, sessionID *string) error {
-	query := s.db.WithContext(ctx).Where("1=1")
+	query := s.db.WithContext(ctx)
 	hasCond := false
 
 	if userID != nil && *userID != "" {
-		query = query.Or("user_id = ?", *userID)
+		query = query.Where("user_id = ?", *userID)
 		hasCond = true
 	}
 	if sessionID != nil && *sessionID != "" {
-		query = query.Or("session_id = ?", *sessionID)
+		if hasCond {
+			query = query.Or("session_id = ?", *sessionID)
+		} else {
+			query = query.Where("session_id = ?", *sessionID)
+		}
 		hasCond = true
 	}
 
 	if !hasCond {
 		return nil
+	}
+
+	return query.Delete(&StockLock{}).Error
+}
+
+func (s *PostgresStockLockStore) DeleteLocksByCheckoutReference(
+	ctx context.Context,
+	checkoutReference string,
+	userID, sessionID *string,
+) error {
+	if checkoutReference == "" {
+		return nil
+	}
+
+	query := s.db.WithContext(ctx).Where("checkout_reference = ?", checkoutReference)
+
+	if userID != nil && *userID != "" && sessionID != nil && *sessionID != "" {
+		query = query.Where("user_id = ? OR session_id = ?", *userID, *sessionID)
+	} else if userID != nil && *userID != "" {
+		query = query.Where("user_id = ?", *userID)
+	} else if sessionID != nil && *sessionID != "" {
+		query = query.Where("session_id = ?", *sessionID)
 	}
 
 	return query.Delete(&StockLock{}).Error
