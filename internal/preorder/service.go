@@ -523,6 +523,48 @@ func (s *service) ExportPreordersToExcel(ctx context.Context, filter SettlementF
 		rowNum++
 	}
 
+	headerStyle, err := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create header style: %w", err)
+	}
+	if err := f.SetCellStyle(sheetName, "A1", "I1", headerStyle); err != nil {
+		return nil, fmt.Errorf("failed to apply header style: %w", err)
+	}
+	if err := f.SetPanes(sheetName, &excelize.Panes{
+		Freeze:      true,
+		YSplit:      1,
+		TopLeftCell: "A2",
+		ActivePane:  "bottomLeft",
+		Selection: []excelize.Selection{
+			{SQRef: "A2", ActiveCell: "A2", Pane: "bottomLeft"},
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("failed to freeze header row: %w", err)
+	}
+
+	cols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I"}
+	for _, col := range cols {
+		maxLen := 0
+		for row := 1; row < rowNum; row++ {
+			val, _ := f.GetCellValue(sheetName, fmt.Sprintf("%s%d", col, row))
+			if l := len(val); l > maxLen {
+				maxLen = l
+			}
+		}
+		width := float64(maxLen) + 2
+		if width < 10 {
+			width = 10
+		}
+		if width > 55 {
+			width = 55
+		}
+		if err := f.SetColWidth(sheetName, col, col, width); err != nil {
+			return nil, fmt.Errorf("failed to set column width: %w", err)
+		}
+	}
+
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {
 		return nil, fmt.Errorf("failed to write excel file: %w", err)

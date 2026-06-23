@@ -59,9 +59,13 @@ func (h *Handler) ListSettlements(c *fiber.Ctx) error {
 	}
 
 	limit := filter.Limit
-	if limit < 1 { limit = 20 }
+	if limit < 1 {
+		limit = 20
+	}
 	page := filter.Page
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	totalPages := int((total + int64(limit) - 1) / int64(limit))
 
 	paginatedData := response.PaginatedData{
