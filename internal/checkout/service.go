@@ -138,6 +138,7 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
 		Key: "checkout_reference", Value: checkoutRef,
 	})
+	draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.WholesaleSourceAttribute)
 
 	if req.ShippingMethod != "" {
 		draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{

@@ -37,6 +37,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/settings"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/webhook"
 )
 
@@ -85,6 +86,7 @@ func main() {
 	customerStore := customer.NewPostgresStore(db)
 	stockLockStore := checkout.NewPostgresStockLockStore(db)
 	dashboardStore := dashboard.NewPostgresStore(db)
+	settingsStore := settings.NewPostgresStore(db)
 
 	// Initialize Services
 	authService := auth.NewAuthService(authStore, cfg.Auth)
@@ -119,6 +121,7 @@ func main() {
 	stockLockService := checkout.NewStockLockService(stockLockStore, productService, shopifyClient)
 	webhookService := webhook.NewWebhookService(orderStore, authStore, productStore, shopifyClient, preorderStore, notificationService, stockLockService, customerStore)
 	dashboardService := dashboard.NewDashboardService(dashboardStore)
+	settingsService := settings.NewSettingsService(settingsStore)
 
 	// Initialize Fiber App
 	app := server.NewFiberApp(log)
@@ -153,6 +156,9 @@ func main() {
 
 	dashboardHandler := dashboard.NewHandler(dashboardService)
 	dashboardHandler.SetupRoutes(api, cfg.Auth.Secret)
+
+	settingsHandler := settings.NewSettingsHandler(settingsService, cfg.Auth.Secret)
+	settingsHandler.SetupRoutes(api)
 
 	// Start scheduled jobs
 	scheduler.StartDailyJob(context.Background(), func(ctx context.Context) {
