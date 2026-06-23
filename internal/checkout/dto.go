@@ -65,6 +65,7 @@ type ShippingRatesRequest struct {
 	State    string `json:"state,omitempty"`
 	Zip      string `json:"zip" validate:"required"`
 	Country  string `json:"country" validate:"required"`
+	Segment  string `json:"segment,omitempty"` // "ship_ready" | "pre_order"
 }
 
 type ValidateAddressRequest struct {

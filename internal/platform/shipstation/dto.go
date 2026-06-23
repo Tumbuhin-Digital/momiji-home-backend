@@ -8,7 +8,8 @@ type RateRequest struct {
 }
 
 type RateOptions struct {
-	CarrierIDs []string `json:"carrier_ids"`
+	CarrierIDs   []string `json:"carrier_ids"`
+	ServiceCodes []string `json:"service_codes,omitempty"`
 }
 
 type Shipment struct {

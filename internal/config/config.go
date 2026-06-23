@@ -76,7 +76,8 @@ type ShipStationConfig struct {
 	WarehouseAddress1 string
 	WarehouseCity string
 	WarehouseState string
-	CarrierCodes []string
+	CarrierCodes        []string
+	GroundServiceCode   string
 }
 
 func Load() (*Config, error) {
@@ -154,6 +155,11 @@ func Load() (*Config, error) {
 		for _, code := range strings.Split(carrierCodesStr, ",") {
 			cfg.ShipStation.CarrierCodes = append(cfg.ShipStation.CarrierCodes, strings.TrimSpace(code))
 		}
+	}
+
+	cfg.ShipStation.GroundServiceCode = os.Getenv("SHIPSTATION_GROUND_SERVICE_CODE")
+	if cfg.ShipStation.GroundServiceCode == "" {
+		cfg.ShipStation.GroundServiceCode = "ups_ground"
 	}
 
 	return cfg, nil
