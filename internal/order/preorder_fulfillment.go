@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/customer"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
@@ -254,6 +256,10 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 		lineItemIDs = append(lineItemIDs, it.ID)
 	}
 
+	if o.ShippingAddress == nil {
+		return apierror.New(http.StatusBadRequest, "invalid_request", "Order has no shipping address")
+	}
+
 	shippingTitle := "UPS Ground"
 	if o.ShippingMethod != nil && *o.ShippingMethod != "" {
 		shippingTitle = *o.ShippingMethod
@@ -264,9 +270,10 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 	}
 
 	opts := preorder.InvoiceOptions{
-		ShippingTitle: shippingTitle,
-		ShippingPrice: *shipment.FinalShippingPrice,
-		ShippingNotes: notes,
+		ShippingTitle:   shippingTitle,
+		ShippingPrice:   *shipment.FinalShippingPrice,
+		ShippingNotes:   notes,
+		ShippingAddress: orderShippingAddressToShopify(o.ShippingAddress),
 	}
 
 	if _, err := s.preorderService.InvoiceSettlementsWithShipping(ctx, lineItemIDs, opts); err != nil {
@@ -288,6 +295,34 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 	}
 
 	return nil
+}
+
+func orderShippingAddressToShopify(addr *customer.Address) *shopify.AddressInput {
+	if addr == nil {
+		return nil
+	}
+
+	firstName, lastName, phone := "", "", ""
+	if addr.FirstName != nil {
+		firstName = *addr.FirstName
+	}
+	if addr.LastName != nil {
+		lastName = *addr.LastName
+	}
+	if addr.Phone != nil {
+		phone = *addr.Phone
+	}
+
+	return &shopify.AddressInput{
+		FirstName: firstName,
+		LastName:  lastName,
+		Address1:  addr.Address1,
+		City:      addr.City,
+		Province:  addr.Province,
+		Zip:       addr.Zip,
+		Country:   addr.Country,
+		Phone:     phone,
+	}
 }
 
 func (s *service) toPreorderShipmentDTO(shipment *PreorderShipment) PreorderShipmentDTO {

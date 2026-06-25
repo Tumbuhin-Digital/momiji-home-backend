@@ -25,17 +25,24 @@ type WebhookService interface {
 	HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebhook) error
 	HandleInventoryUpdate(ctx context.Context, payload ShopifyInventoryLevelWebhook) error
 	HandleFulfillment(ctx context.Context, payload ShopifyFulfillmentWebhook) error
+	IsWebhookProcessed(ctx context.Context, webhookID string) (bool, error)
+	SaveWebhookEvent(ctx context.Context, webhookID, topic string) error
+}
+
+type FulfillmentSyncer interface {
+	SyncFulfillmentOrdersFromShopify(ctx context.Context, orderID, shopifyOrderID string) error
 }
 
 type service struct {
-	orderStore    order.Store
-	authStore     auth.AuthStore
-	productStore  product.Store
-	shopClient    shopify.Client
+	orderStore       order.Store
+	authStore        auth.AuthStore
+	productStore     product.Store
+	shopClient       shopify.Client
 	preorderStore    preorder.PreorderStore
 	emailService     email.NotificationService
 	stockLockService checkout.StockLockService
 	customerStore    customer.CustomerStore
+	fulfillmentSync  FulfillmentSyncer
 }
 
 func NewWebhookService(
@@ -47,6 +54,7 @@ func NewWebhookService(
 	emailService email.NotificationService,
 	stockLockService checkout.StockLockService,
 	customerStore customer.CustomerStore,
+	fulfillmentSync FulfillmentSyncer,
 ) WebhookService {
 	return &service{
 		orderStore:       orderStore,
@@ -57,7 +65,16 @@ func NewWebhookService(
 		emailService:     emailService,
 		stockLockService: stockLockService,
 		customerStore:    customerStore,
+		fulfillmentSync:  fulfillmentSync,
 	}
+}
+
+func (s *service) IsWebhookProcessed(ctx context.Context, webhookID string) (bool, error) {
+	return s.orderStore.IsWebhookProcessed(ctx, webhookID)
+}
+
+func (s *service) SaveWebhookEvent(ctx context.Context, webhookID, topic string) error {
+	return s.orderStore.SaveWebhookEvent(ctx, webhookID, topic)
 }
 
 func (s *service) getLocalVariant(ctx context.Context, item ShopifyOrderLineItem) (*product.ProductVariant, error) {
@@ -427,33 +444,35 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		_ = s.stockLockService.ReleaseLocks(ctx, &customerID, nil)
 	}
 
+	if s.fulfillmentSync != nil && newOrder.ShopifyOrderID != nil {
+		_ = s.fulfillmentSync.SyncFulfillmentOrdersFromShopify(ctx, newOrder.ID, *newOrder.ShopifyOrderID)
+	}
+
 	return nil
 }
 
 func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillmentWebhook) error {
 	slog.InfoContext(ctx, "Processing Shopify Fulfillment webhook", slog.Int64("fulfillment_id", payload.ID), slog.Int64("order_id", payload.OrderID))
 
-	// Find the order by Shopify ID
 	shopOrderID := fmt.Sprintf("%d", payload.OrderID)
 	o, err := s.orderStore.GetOrderByShopifyID(ctx, shopOrderID)
 	if err != nil || o == nil {
 		slog.ErrorContext(ctx, "Order not found for fulfillment", slog.String("shopify_order_id", shopOrderID))
-		return nil // Return 200 so Shopify stops retrying
+		return nil
 	}
 
 	trackingNumber := payload.TrackingNumber
 	if trackingNumber == "" && len(payload.TrackingNumbers) > 0 {
 		trackingNumber = payload.TrackingNumbers[0]
 	}
-
 	trackingURL := ""
 	if len(payload.TrackingURLs) > 0 {
 		trackingURL = payload.TrackingURLs[0]
 	}
 
-	// Map shipment status to human readable last event, and determine item_status
 	var lastEvent string
 	itemStatus := "shipped"
+	shipmentStatus := payload.ShipmentStatus
 
 	switch payload.ShipmentStatus {
 	case "label_printed":
@@ -479,58 +498,100 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 		lastEvent = "Package departed from facility"
 	}
 
-	// In case there is no tracking number but Shopify says it's delivered
 	if trackingNumber == "" && payload.Status == "success" {
 		lastEvent = "Delivered"
 		itemStatus = "delivered"
-	}
-
-	if trackingNumber == "" {
-		slog.InfoContext(ctx, "Fulfillment has no tracking number, but updating fulfillment status anyway")
+		shipmentStatus = "delivered"
 	}
 
 	now := time.Now()
+	shopifyFID := fmt.Sprintf("gid://shopify/Fulfillment/%d", payload.ID)
+	fulfillmentStatus := "fulfilled"
+	if itemStatus == "delivered" {
+		fulfillmentStatus = "delivered"
+	}
 
-	// Update all items in this fulfillment
+	var flis []order.FulfillmentLineItem
+	var preOrderItemIDs []string
+
 	for _, li := range payload.LineItems {
-		// Find matching item in our DB
+		variantGID := fmt.Sprintf("gid://shopify/ProductVariant/%d", li.VariantID)
 		var itemID string
-		for _, dbItem := range o.Items {
-			if dbItem.ShopifyVariantID == fmt.Sprintf("gid://shopify/ProductVariant/%d", li.VariantID) && (dbItem.Title != nil && *dbItem.Title == li.Title) {
-				itemID = dbItem.ID
+		var dbItem order.OrderItem
+		for _, it := range o.Items {
+			if it.Type != "pre_order" {
+				continue
+			}
+			if it.ShopifyVariantID == variantGID && (it.Title != nil && *it.Title == li.Title) {
+				itemID = it.ID
+				dbItem = it
 				break
 			}
 		}
+		if itemID == "" {
+			continue
+		}
 
-		if itemID != "" {
-			fulfillmentStep := 3
-			deliveredStep := 4
-			for _, dbItem := range o.Items {
-				if dbItem.ID == itemID {
-					if dbItem.Type == "pre_order" {
-						fulfillmentStep = 4
-						deliveredStep = 5
+		qty := li.Quantity
+		if qty <= 0 {
+			qty = 1
+		}
+		flis = append(flis, order.FulfillmentLineItem{
+			OrderLineItemID: itemID,
+			Quantity:        qty,
+		})
+		preOrderItemIDs = append(preOrderItemIDs, itemID)
+
+		step := 4 // pre-order shipped
+		if itemStatus == "delivered" {
+			step = 5 // pre-order delivered
+		}
+		_ = s.orderStore.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, payload.TrackingCompany, lastEvent, itemStatus, step, &now)
+
+		_ = dbItem
+	}
+
+	if len(flis) > 0 {
+		seq, _ := s.orderStore.GetNextFulfillmentSequence(ctx, o.ID)
+		tn := trackingNumber
+		tu := trackingURL
+		tc := payload.TrackingCompany
+		ss := shipmentStatus
+		f := &order.Fulfillment{
+			OrderID:              o.ID,
+			ShopifyFulfillmentID: &shopifyFID,
+			SequenceNumber:       seq,
+			TrackingNumber:       &tn,
+			TrackingURL:          &tu,
+			TrackingCompany:      &tc,
+			ShipmentStatus:       &ss,
+			Status:               fulfillmentStatus,
+			FulfilledAt:          &now,
+		}
+		if itemStatus == "delivered" {
+			f.DeliveredAt = &now
+		}
+		if err := s.orderStore.UpsertFulfillmentByShopifyID(ctx, f, flis); err != nil {
+			slog.ErrorContext(ctx, "Failed to upsert fulfillment from webhook", slog.Any("error", err))
+		}
+
+		for _, itemID := range preOrderItemIDs {
+			folis, _ := s.orderStore.GetFOLIByOrderLineItemIDs(ctx, o.ID, []string{itemID})
+			for _, foli := range folis {
+				qty := 0
+				for _, fli := range flis {
+					if fli.OrderLineItemID == itemID {
+						qty = fli.Quantity
+						break
 					}
-					break
 				}
-			}
-
-			step := fulfillmentStep
-			if itemStatus == "delivered" {
-				step = deliveredStep
-			}
-
-			err := s.orderStore.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, payload.TrackingCompany, lastEvent, itemStatus, step, &now)
-			if err != nil {
-				slog.ErrorContext(ctx, "Failed to update item tracking", slog.String("item_id", itemID), slog.Any("error", err))
-			} else {
-				slog.InfoContext(ctx, "Updated tracking for item", slog.String("item_id", itemID), slog.String("tracking_number", trackingNumber))
+				if qty > 0 {
+					_ = s.orderStore.DecrementFOLIRemaining(ctx, foli.ID, qty)
+				}
 			}
 		}
 	}
 
-	// Update the master order status to reflect it's being shipped/fulfilled
-	// Using "on_progress" for aggregate_status and "in_progress" for fulfillment_status
 	if o.AggregateStatus != "completed" {
 		if err := s.orderStore.UpdateOrderStatus(ctx, o.ID, "on_progress", o.FinancialStatus, "in_progress"); err != nil {
 			slog.ErrorContext(ctx, "Failed to update master order status during Shopify fulfillment", slog.String("order_id", o.ID), slog.Any("error", err))
@@ -598,6 +659,13 @@ func (s *service) handleSettlementOnlyPayment(ctx context.Context, orderID strin
 	}
 
 	slog.InfoContext(ctx, "Webhook: all settlements paid, advanced to step 4", slog.String("order_id", orderID))
+
+	if s.fulfillmentSync != nil {
+		o, err := s.orderStore.GetOrder(ctx, orderID, "")
+		if err == nil && o != nil && o.ShopifyOrderID != nil {
+			_ = s.fulfillmentSync.SyncFulfillmentOrdersFromShopify(ctx, orderID, *o.ShopifyOrderID)
+		}
+	}
 
 	// Best-effort settlement paid email — load order for customer email
 	o, err := s.orderStore.GetOrder(ctx, orderID, "")

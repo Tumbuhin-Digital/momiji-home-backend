@@ -177,6 +177,18 @@ func (m *MockShopifyClient) CreateFulfillment(ctx context.Context, shopifyOrderI
 	return nil
 }
 
+func (m *MockShopifyClient) FetchFulfillmentOrders(ctx context.Context, shopifyOrderID string) ([]shopify.FulfillmentOrderData, error) {
+	return nil, nil
+}
+
+func (m *MockShopifyClient) CreateFulfillmentV2(ctx context.Context, input shopify.CreateFulfillmentV2Input) (*shopify.CreateFulfillmentV2Result, error) {
+	return &shopify.CreateFulfillmentV2Result{FulfillmentID: "gid://shopify/Fulfillment/mock"}, nil
+}
+
+func (m *MockShopifyClient) CreateFulfillmentEvent(ctx context.Context, shopifyFulfillmentID, status string) error {
+	return nil
+}
+
 type MockShopifyClientFunc struct {
 	QueryAdminGraphQLFn      func(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error)
 	CreateDraftOrderFn       func(ctx context.Context, input shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error)
@@ -215,5 +227,17 @@ func (m *MockShopifyClientFunc) GetVariantsInventory(ctx context.Context, varian
 }
 
 func (m *MockShopifyClientFunc) CreateFulfillment(ctx context.Context, shopifyOrderID string) error {
+	return nil
+}
+
+func (m *MockShopifyClientFunc) FetchFulfillmentOrders(ctx context.Context, shopifyOrderID string) ([]shopify.FulfillmentOrderData, error) {
+	return nil, nil
+}
+
+func (m *MockShopifyClientFunc) CreateFulfillmentV2(ctx context.Context, input shopify.CreateFulfillmentV2Input) (*shopify.CreateFulfillmentV2Result, error) {
+	return &shopify.CreateFulfillmentV2Result{FulfillmentID: "gid://shopify/Fulfillment/mock"}, nil
+}
+
+func (m *MockShopifyClientFunc) CreateFulfillmentEvent(ctx context.Context, shopifyFulfillmentID, status string) error {
 	return nil
 }

@@ -112,14 +112,14 @@ func main() {
 	notificationService := email.NewNotificationService(emailClient, "internal/platform/email/templates")
 
 	shipstationClient := shipstation.NewClient(cfg.ShipStation.APIKey, cfg.ShipStation.Sandbox)
-	
+
 	productService := product.NewProductService(productStore, shopifyClient)
 	cartService := cart.NewCartService(cartStore, productService)
 	preorderService := preorder.NewPreorderService(preorderStore, orderStore, notificationService, shopifyClient, cfg.App.FrontendURL)
 	orderService := order.NewOrderService(orderStore, cartService, authStore, shopifyClient, preorderStore, preorderService, notificationService, shipstationClient, cfg.ShipStation)
 	customerService := customer.NewCustomerService(customerStore)
 	stockLockService := checkout.NewStockLockService(stockLockStore, productService, shopifyClient)
-	webhookService := webhook.NewWebhookService(orderStore, authStore, productStore, shopifyClient, preorderStore, notificationService, stockLockService, customerStore)
+	webhookService := webhook.NewWebhookService(orderStore, authStore, productStore, shopifyClient, preorderStore, notificationService, stockLockService, customerStore, orderService)
 	dashboardService := dashboard.NewDashboardService(dashboardStore)
 	settingsService := settings.NewSettingsService(settingsStore)
 

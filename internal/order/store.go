@@ -84,4 +84,6 @@ type Store interface {
 	MarkPreorderInvoiceSent(ctx context.Context, orderID string, sentAt time.Time) error
 	GetVariantDimensions(ctx context.Context, shopifyVariantIDs []string) (map[string]VariantDimensions, error)
 	GetUSZipStateAbbr(ctx context.Context, zip string) (string, bool)
+
+	FulfillmentStore
 }

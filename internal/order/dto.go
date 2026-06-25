@@ -58,6 +58,7 @@ type OrderResponse struct {
 	LineItems           LineItemsGroup        `json:"line_items"`
 	PreorderShipment    *PreorderShipmentDTO  `json:"preorder_shipment,omitempty"`
 	ShippingMethod      string                `json:"shipping_method,omitempty"`
+	Fulfillments        []FulfillmentDTO      `json:"fulfillments,omitempty"`
 }
 
 type OrderItemDetail struct {
@@ -84,6 +85,7 @@ type OrderItemDetail struct {
 	WidthCm           float64 `json:"width_cm,omitempty"`
 	HeightCm          float64 `json:"height_cm,omitempty"`
 	DepthCm           float64 `json:"depth_cm,omitempty"`
+	RemainingQuantity int     `json:"remaining_quantity,omitempty"`
 }
 
 type PreorderShipmentDTO struct {
@@ -155,4 +157,39 @@ type OrderQuery struct {
 	Limit  int    `query:"limit"`
 	Search string `query:"search"`
 	Status string `query:"status"` // expected format could be financial/fulfillment depending on need, but the contract says 'status'
+}
+
+type CreateFulfillmentItemRequest struct {
+	LineItemID string `json:"line_item_id" validate:"required,uuid"`
+	Quantity   int    `json:"quantity" validate:"required,min=1"`
+}
+
+type CreateFulfillmentRequest struct {
+	Items           []CreateFulfillmentItemRequest `json:"items" validate:"required,min=1,dive"`
+	TrackingNumber  string                         `json:"tracking_number" validate:"required"`
+	TrackingCompany string                         `json:"tracking_company" validate:"required"`
+	TrackingURL     string                         `json:"tracking_url,omitempty"`
+	NotifyCustomer  bool                           `json:"notify_customer"`
+}
+
+type FulfillmentLineItemDTO struct {
+	LineItemID string `json:"line_item_id"`
+	Title      string `json:"title"`
+	Quantity   int    `json:"quantity"`
+	ImageSrc   string `json:"image_src,omitempty"`
+	UnitPrice  string `json:"unit_price,omitempty"`
+}
+
+type FulfillmentDTO struct {
+	ID              string                   `json:"id"`
+	DisplayID       string                   `json:"display_id"`
+	SequenceNumber  int                      `json:"sequence_number"`
+	TrackingNumber  string                   `json:"tracking_number,omitempty"`
+	TrackingURL     string                   `json:"tracking_url,omitempty"`
+	TrackingCompany string                   `json:"tracking_company,omitempty"`
+	ShipmentStatus  string                   `json:"shipment_status,omitempty"`
+	Status          string                   `json:"status"`
+	FulfilledAt     string                   `json:"fulfilled_at,omitempty"`
+	DeliveredAt     string                   `json:"delivered_at,omitempty"`
+	LineItems       []FulfillmentLineItemDTO `json:"line_items"`
 }

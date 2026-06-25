@@ -24,9 +24,10 @@ type OrderUpdater interface {
 
 // InvoiceOptions carries optional shipping line data for settlement invoices.
 type InvoiceOptions struct {
-	ShippingTitle string
-	ShippingPrice float64
-	ShippingNotes string
+	ShippingTitle   string
+	ShippingPrice   float64
+	ShippingNotes   string
+	ShippingAddress *shopify.AddressInput
 }
 
 // PreorderService defines the settlement state machine operations.
@@ -200,6 +201,10 @@ func (s *service) InvoiceSettlementsWithShipping(ctx context.Context, ids []stri
 		CustomAttributes: []shopify.AttributeInput{
 			shopify.WholesaleSourceAttribute,
 		},
+	}
+
+	if opts.ShippingAddress != nil {
+		draftInput.ShippingAddress = opts.ShippingAddress
 	}
 
 	if opts.ShippingPrice > 0 {

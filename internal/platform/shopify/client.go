@@ -18,6 +18,9 @@ type Client interface {
 	CreateRefund(ctx context.Context, shopifyOrderID string, amount float64, currency string, reason string) error
 	GetVariantsInventory(ctx context.Context, variantIDs []string) (map[string]int, error)
 	CreateFulfillment(ctx context.Context, shopifyOrderID string) error
+	FetchFulfillmentOrders(ctx context.Context, shopifyOrderID string) ([]FulfillmentOrderData, error)
+	CreateFulfillmentV2(ctx context.Context, input CreateFulfillmentV2Input) (*CreateFulfillmentV2Result, error)
+	CreateFulfillmentEvent(ctx context.Context, shopifyFulfillmentID, status string) error
 }
 
 type clientImpl struct {
