@@ -33,6 +33,9 @@ type OrderService interface {
 	UpdateFulfillmentStep(ctx context.Context, userID, orderID, itemID string, step int) error
 	UpdateItemsReceived(ctx context.Context, userID, orderID string, items []UpdateReceivedItem) error
 	AddTrackingNumber(ctx context.Context, userID, orderID string, itemIDs []string, trackingNumber, trackingURL string) error
+	CreatePreorderFulfillment(ctx context.Context, userID, orderID string, req CreateFulfillmentRequest) (*FulfillmentDTO, error)
+	MarkFulfillmentDelivered(ctx context.Context, userID, orderID, fulfillmentID string) error
+	SyncFulfillmentOrdersFromShopify(ctx context.Context, orderID, shopifyOrderID string) error
 	GetOrderTracking(ctx context.Context, userID, orderID string) ([]shipstation.TrackingResponse, error)
 	ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]byte, error)
 	CalculatePreorderShipping(ctx context.Context, userID, orderID string, req CalculatePreorderShippingRequest) (*CalculatePreorderShippingResponse, error)
@@ -644,6 +647,9 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 			dto.PreorderShipment = &shipmentDTO
 		}
 	}
+
+	s.enrichRemainingQuantities(ctx, orderID, preOrder)
+	dto.Fulfillments = s.loadFulfillmentDTOs(ctx, o)
 
 	if o.Customer != nil {
 		firstName := ""

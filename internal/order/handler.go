@@ -31,6 +31,8 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	adminGrp.Post("/:id/preorder/calculate-shipping", h.CalculatePreorderShipping)
 	adminGrp.Put("/:id/preorder/shipping", h.UpdatePreorderShipping)
 	adminGrp.Post("/:id/preorder/request-second-payment", h.RequestSecondPayment)
+	adminGrp.Post("/:id/fulfillments", h.CreateFulfillment)
+	adminGrp.Post("/:id/fulfillments/:fulfillmentId/delivered", h.MarkFulfillmentDelivered)
 
 	// List Orders (Auth Only)
 	authGrp := group.Group("/")
@@ -367,4 +369,41 @@ func (h *Handler) RequestSecondPayment(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Second payment invoice sent", nil)
+}
+
+func (h *Handler) CreateFulfillment(c *fiber.Ctx) error {
+	uid := c.Locals("user_id").(string)
+	role := c.Locals("role").(string)
+	customerID := uid
+	if role == "admin" {
+		customerID = ""
+	}
+
+	var req CreateFulfillmentRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	res, err := h.service.CreatePreorderFulfillment(c.Context(), customerID, c.Params("id"), req)
+	if err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusCreated, "Fulfillment created", res)
+}
+
+func (h *Handler) MarkFulfillmentDelivered(c *fiber.Ctx) error {
+	uid := c.Locals("user_id").(string)
+	role := c.Locals("role").(string)
+	customerID := uid
+	if role == "admin" {
+		customerID = ""
+	}
+
+	if err := h.service.MarkFulfillmentDelivered(c.Context(), customerID, c.Params("id"), c.Params("fulfillmentId")); err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Fulfillment marked as delivered", nil)
 }

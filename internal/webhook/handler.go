@@ -23,10 +23,34 @@ func NewWebhookHandler(service WebhookService, secret string) *Handler {
 func (h *Handler) SetupRoutes(router fiber.Router) {
 	webhooks := router.Group("/webhooks/shopify")
 	webhooks.Use(h.verifyShopifyHMAC)
-	webhooks.Post("/orders/paid", h.HandleOrderPaid)
-	webhooks.Post("/inventory_levels/update", h.HandleInventoryUpdate)
-	webhooks.Post("/fulfillments/create", h.HandleFulfillment)
-	webhooks.Post("/fulfillments/update", h.HandleFulfillment)
+	webhooks.Post("/orders/paid", h.withDedupe("orders/paid", h.HandleOrderPaid))
+	webhooks.Post("/inventory_levels/update", h.withDedupe("inventory_levels/update", h.HandleInventoryUpdate))
+	webhooks.Post("/fulfillments/create", h.withDedupe("fulfillments/create", h.HandleFulfillment))
+	webhooks.Post("/fulfillments/update", h.withDedupe("fulfillments/update", h.HandleFulfillment))
+}
+
+func (h *Handler) withDedupe(topic string, handler fiber.Handler) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		webhookID := c.Get("X-Shopify-Webhook-Id")
+		if webhookID != "" {
+			already, err := h.service.IsWebhookProcessed(c.Context(), webhookID)
+			if err != nil {
+				slog.WarnContext(c.Context(), "webhook dedupe check failed", slog.Any("error", err))
+			} else if already {
+				slog.InfoContext(c.Context(), "skipping duplicate webhook", slog.String("webhook_id", webhookID), slog.String("topic", topic))
+				return c.SendStatus(fiber.StatusOK)
+			}
+		}
+		if err := handler(c); err != nil {
+			return err
+		}
+		if webhookID != "" {
+			if err := h.service.SaveWebhookEvent(c.Context(), webhookID, topic); err != nil {
+				slog.WarnContext(c.Context(), "failed to save webhook event", slog.Any("error", err))
+			}
+		}
+		return nil
+	}
 }
 
 func (h *Handler) verifyShopifyHMAC(c *fiber.Ctx) error {
