@@ -332,17 +332,45 @@ func (h *Handler) GetCheckoutConfirm(c *fiber.Ctx) error {
 		customerEmail = orderRes.Customer.Email
 	}
 
+	var shipReadyProductPaid, preOrderDepositPaid, totalChargedNow float64
+	for _, it := range orderRes.LineItems.ShipReady {
+		if it.AmountCharged != nil {
+			var v float64
+			fmt.Sscanf(*it.AmountCharged, "%f", &v)
+			shipReadyProductPaid += v
+		}
+	}
+	for _, it := range orderRes.LineItems.PreOrder {
+		if it.AmountCharged != nil {
+			var v float64
+			fmt.Sscanf(*it.AmountCharged, "%f", &v)
+			preOrderDepositPaid += v
+		}
+	}
+	fmt.Sscanf(orderRes.TotalChargedNow, "%f", &totalChargedNow)
+	shipReadyShipping := totalChargedNow - shipReadyProductPaid - preOrderDepositPaid
+	if shipReadyShipping < 0 {
+		shipReadyShipping = 0
+	}
+
+	preorderShippingEstimate := ""
+	if orderRes.PreorderShipment != nil && orderRes.PreorderShipment.EstimatedShipping != nil {
+		preorderShippingEstimate = *orderRes.PreorderShipment.EstimatedShipping
+	}
+
 	return response.Success(c, fiber.StatusOK, "Order confirmed", fiber.Map{
-		"order_id":          orderRes.ID,
-		"order_number":      orderRes.OrderNumber,
-		"order_date":        orderRes.OrderDate,
-		"customer_email":    customerEmail,
-		"total_price":       orderRes.TotalPrice,
-		"total_charged_now": orderRes.TotalChargedNow,
-		"total_balance_due": orderRes.TotalBalanceDue,
-		"currency":          orderRes.Currency,
-		"financial_status":  orderRes.FinancialStatus,
-		"items":             items,
+		"order_id":                     orderRes.ID,
+		"order_number":                 orderRes.OrderNumber,
+		"order_date":                   orderRes.OrderDate,
+		"customer_email":               customerEmail,
+		"total_price":                  orderRes.TotalPrice,
+		"total_charged_now":            orderRes.TotalChargedNow,
+		"total_balance_due":            orderRes.TotalBalanceDue,
+		"currency":                     orderRes.Currency,
+		"financial_status":             orderRes.FinancialStatus,
+		"ship_ready_shipping":          fmt.Sprintf("%.2f", shipReadyShipping),
+		"preorder_shipping_estimate":   preorderShippingEstimate,
+		"items":                        items,
 	})
 }
 

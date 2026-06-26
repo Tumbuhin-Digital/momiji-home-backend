@@ -823,6 +823,17 @@ func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string
 		}
 	}
 
+	if len(preOrder) > 0 {
+		shipment, err := s.store.GetPreorderShipment(ctx, o.ID)
+		if err != nil {
+			return nil, apierror.ErrInternal
+		}
+		if shipment != nil {
+			shipmentDTO := s.toPreorderShipmentDTO(shipment)
+			dto.PreorderShipment = &shipmentDTO
+		}
+	}
+
 	return dto, nil
 }
 
