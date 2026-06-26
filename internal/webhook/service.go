@@ -507,6 +507,13 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 		fulfillmentStatus = "delivered"
 	}
 
+	const (
+		shipReadyStepShipped   = 3
+		shipReadyStepDelivered = 4
+		preOrderStepShipped    = 4
+		preOrderStepDelivered  = 5
+	)
+
 	var flis []order.FulfillmentLineItem
 	var preOrderItemIDs []string
 
@@ -515,14 +522,15 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 		var itemID string
 		var dbItem order.OrderItem
 		for _, it := range o.Items {
-			if it.Type != "pre_order" {
+			if it.ShopifyVariantID != variantGID {
 				continue
 			}
-			if it.ShopifyVariantID == variantGID && (it.Title != nil && *it.Title == li.Title) {
-				itemID = it.ID
-				dbItem = it
-				break
+			if it.Title != nil && *it.Title != "" && li.Title != "" && *it.Title != li.Title {
+				continue
 			}
+			itemID = it.ID
+			dbItem = it
+			break
 		}
 		if itemID == "" {
 			continue
@@ -532,19 +540,40 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 		if qty <= 0 {
 			qty = 1
 		}
-		flis = append(flis, order.FulfillmentLineItem{
-			OrderLineItemID: itemID,
-			Quantity:        qty,
-		})
-		preOrderItemIDs = append(preOrderItemIDs, itemID)
 
-		step := 4 // pre-order shipped
-		if itemStatus == "delivered" {
-			step = 5 // pre-order delivered
+		var step int
+		switch dbItem.Type {
+		case "pre_order":
+			flis = append(flis, order.FulfillmentLineItem{
+				OrderLineItemID: itemID,
+				Quantity:        qty,
+			})
+			preOrderItemIDs = append(preOrderItemIDs, itemID)
+			step = preOrderStepShipped
+			if itemStatus == "delivered" {
+				step = preOrderStepDelivered
+			}
+		case "ship_ready":
+			step = shipReadyStepShipped
+			if itemStatus == "delivered" {
+				step = shipReadyStepDelivered
+			}
+		default:
+			continue
 		}
-		_ = s.orderStore.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, payload.TrackingCompany, lastEvent, itemStatus, step, &now)
 
-		_ = dbItem
+		if err := s.orderStore.UpdateOrderItemTracking(ctx, itemID, trackingNumber, trackingURL, payload.TrackingCompany, lastEvent, itemStatus, step, &now); err != nil {
+			slog.WarnContext(ctx, "Failed to update line item tracking from fulfillment webhook", slog.String("item_id", itemID), slog.Any("error", err))
+			continue
+		}
+
+		for i, it := range o.Items {
+			if it.ID == itemID {
+				o.Items[i].ItemStatus = itemStatus
+				o.Items[i].FulfillmentStep = step
+				break
+			}
+		}
 	}
 
 	if len(flis) > 0 {
@@ -588,7 +617,19 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 		}
 	}
 
-	if o.AggregateStatus != "completed" {
+	allDelivered := len(o.Items) > 0
+	for _, it := range o.Items {
+		if it.ItemStatus != "delivered" {
+			allDelivered = false
+			break
+		}
+	}
+
+	if allDelivered {
+		if err := s.orderStore.UpdateOrderStatus(ctx, o.ID, "completed", o.FinancialStatus, "fulfilled"); err != nil {
+			slog.ErrorContext(ctx, "Failed to update master order status to completed during Shopify fulfillment", slog.String("order_id", o.ID), slog.Any("error", err))
+		}
+	} else if o.AggregateStatus != "completed" {
 		if err := s.orderStore.UpdateOrderStatus(ctx, o.ID, "on_progress", o.FinancialStatus, "in_progress"); err != nil {
 			slog.ErrorContext(ctx, "Failed to update master order status during Shopify fulfillment", slog.String("order_id", o.ID), slog.Any("error", err))
 		}
