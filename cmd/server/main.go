@@ -174,7 +174,7 @@ func main() {
 		_ = stockLockService.CleanExpiredLocks(ctx)
 	})
 
-	// Start server in a separate goroutine
+	// Start server in a separate goroutinee
 	go func() {
 		if err := app.Listen(":" + cfg.App.Port); err != nil {
 			log.Error("Server failed", slog.Any("error", err))
