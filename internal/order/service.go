@@ -216,10 +216,11 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 			draftInput.Email = req.GuestInfo.Email
 		}
 		if req.ShippingTitle != "" && req.ShippingPrice != "" {
-			draftInput.ShippingLine = &shopify.ShippingLineInput{
-				Title: req.ShippingTitle,
-				Price: req.ShippingPrice,
-			}
+			draftInput.ShippingLine = shopify.NewShippingLineInput(
+				req.ShippingTitle,
+				req.ShippingPrice,
+				"USD",
+			)
 			total += shippingCost
 			totalChargedNow += shippingCost
 		}

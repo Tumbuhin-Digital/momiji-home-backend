@@ -205,17 +205,24 @@ func (s *service) InvoiceSettlementsWithShipping(ctx context.Context, ids []stri
 
 	if opts.ShippingAddress != nil {
 		draftInput.ShippingAddress = opts.ShippingAddress
+		draftInput.BillingAddress = opts.ShippingAddress
 	}
 
 	if opts.ShippingPrice > 0 {
-		title := opts.ShippingTitle
-		if title == "" {
-			title = "Shipping"
+		shippingTitle := opts.ShippingTitle
+		if shippingTitle == "" {
+			shippingTitle = "Pre-Order Shipping"
 		}
-		draftInput.ShippingLine = &shopify.ShippingLineInput{
-			Title: title,
-			Price: fmt.Sprintf("%.2f", opts.ShippingPrice),
-		}
+		lineItems = append(lineItems, shopify.DraftOrderLineItem{
+			Title:             shippingTitle,
+			OriginalUnitPrice: fmt.Sprintf("%.2f", opts.ShippingPrice),
+			Quantity:          1,
+			CustomAttributes: []shopify.AttributeInput{
+				{Key: "charge_type", Value: "pre_order_shipping"},
+				{Key: "original_order_id", Value: settlements[0].OrderID},
+			},
+		})
+		draftInput.LineItems = lineItems
 		if opts.ShippingNotes != "" {
 			draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
 				Key: "shipping_notes", Value: opts.ShippingNotes,

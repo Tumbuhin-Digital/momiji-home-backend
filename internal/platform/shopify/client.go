@@ -74,14 +74,35 @@ type DraftOrderInput struct {
 	Email            string               `json:"email,omitempty"`
 	CustomerID       string               `json:"customerId,omitempty"`
 	ShippingAddress  *AddressInput        `json:"shippingAddress,omitempty"`
+	BillingAddress   *AddressInput        `json:"billingAddress,omitempty"`
 	ShippingLine     *ShippingLineInput   `json:"shippingLine,omitempty"`
 	CustomAttributes []AttributeInput     `json:"customAttributes,omitempty"`
 }
 
+type MoneyInput struct {
+	Amount       string `json:"amount"`
+	CurrencyCode string `json:"currencyCode"`
+}
+
 type ShippingLineInput struct {
-	Price              string `json:"price"`
-	ShippingRateHandle string `json:"shippingRateHandle,omitempty"`
-	Title              string `json:"title"`
+	Price              string      `json:"price,omitempty"`
+	PriceWithCurrency  *MoneyInput `json:"priceWithCurrency,omitempty"`
+	ShippingRateHandle string      `json:"shippingRateHandle,omitempty"`
+	Title              string      `json:"title"`
+}
+
+func NewShippingLineInput(title, price, currencyCode string) *ShippingLineInput {
+	if currencyCode == "" {
+		currencyCode = "USD"
+	}
+	return &ShippingLineInput{
+		Title: title,
+		Price: price,
+		PriceWithCurrency: &MoneyInput{
+			Amount:       price,
+			CurrencyCode: currencyCode,
+		},
+	}
 }
 
 type DraftOrderLineItem struct {

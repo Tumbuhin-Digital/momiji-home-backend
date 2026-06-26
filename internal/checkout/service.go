@@ -206,10 +206,11 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 			} else {
 				matchedRate := s.matchShippingRate(rates, req.ShippingMethod)
 				if matchedRate != nil {
-					draftInput.ShippingLine = &shopify.ShippingLineInput{
-						Title: matchedRate.Label,
-						Price: matchedRate.Cost,
-					}
+					draftInput.ShippingLine = shopify.NewShippingLineInput(
+						matchedRate.Label,
+						matchedRate.Cost,
+						"USD",
+					)
 				}
 			}
 		}
