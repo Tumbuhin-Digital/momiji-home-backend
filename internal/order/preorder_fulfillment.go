@@ -224,6 +224,7 @@ func (s *service) UpdatePreorderShipping(ctx context.Context, userID, orderID st
 			EstimatedShipping: shipment.EstimatedShipping,
 			TotalBoxes:        totalBoxes,
 			TotalWeightLb:     &totalWeight,
+			WarehouseOrigin:   shipment.WarehouseOrigin,
 		}
 		if err := s.store.UpsertPreorderShipment(ctx, packingShipment, PackingToDBItems(req.Packing)); err != nil {
 			return nil, apierror.ErrInternal

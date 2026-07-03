@@ -86,6 +86,21 @@ func (s *PostgresStore) GetPreorderShipment(ctx context.Context, orderID string)
 	return &shipment, nil
 }
 
+func buildPreorderShipmentUpsertUpdates(shipment *PreorderShipment) map[string]interface{} {
+	updates := map[string]interface{}{
+		"total_boxes":     shipment.TotalBoxes,
+		"total_weight_lb": shipment.TotalWeightLb,
+		"updated_at":      time.Now(),
+	}
+	if shipment.WarehouseOrigin != "" {
+		updates["warehouse_origin"] = shipment.WarehouseOrigin
+	}
+	if shipment.EstimatedShipping != nil {
+		updates["estimated_shipping"] = shipment.EstimatedShipping
+	}
+	return updates
+}
+
 func (s *PostgresStore) UpsertPreorderShipment(ctx context.Context, shipment *PreorderShipment, packing []PreorderPackingItem) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing PreorderShipment
@@ -101,15 +116,7 @@ func (s *PostgresStore) UpsertPreorderShipment(ctx context.Context, shipment *Pr
 			return err
 		} else {
 			shipment.ID = existing.ID
-			updates := map[string]interface{}{
-				"total_boxes":       shipment.TotalBoxes,
-				"total_weight_lb":   shipment.TotalWeightLb,
-				"warehouse_origin":  shipment.WarehouseOrigin,
-				"updated_at":        time.Now(),
-			}
-			if shipment.EstimatedShipping != nil {
-				updates["estimated_shipping"] = shipment.EstimatedShipping
-			}
+			updates := buildPreorderShipmentUpsertUpdates(shipment)
 			if err := tx.Model(&PreorderShipment{}).Where("id = ?", existing.ID).Updates(updates).Error; err != nil {
 				return err
 			}
