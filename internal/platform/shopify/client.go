@@ -40,7 +40,7 @@ func NewClient(storeDomain, adminToken, storefrontToken string) Client {
 }
 
 func (c *clientImpl) QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error) {
-	url := fmt.Sprintf("https://%s/admin/api/2024-01/graphql.json", c.StoreDomain)
+	url := fmt.Sprintf("https://%s/admin/api/2025-01/graphql.json", c.StoreDomain)
 
 	payload := map[string]interface{}{
 		"query":     query,
@@ -109,6 +109,7 @@ type DraftOrderLineItem struct {
 	VariantID         string                          `json:"variantId,omitempty"`
 	Title             string                          `json:"title,omitempty"`
 	OriginalUnitPrice string                          `json:"originalUnitPrice,omitempty"`
+	PriceOverride     *MoneyInput                     `json:"priceOverride,omitempty"`
 	Quantity          int                             `json:"quantity"`
 	RequiresShipping  *bool                           `json:"requiresShipping,omitempty"`
 	CustomAttributes  []AttributeInput                `json:"customAttributes,omitempty"`

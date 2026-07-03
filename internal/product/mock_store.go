@@ -120,6 +120,10 @@ func (m *MockProductStore) UpdateProductStatus(ctx context.Context, productID st
 	return nil
 }
 
+func (m *MockProductStore) UpdateVariantFulfillmentType(ctx context.Context, variantID string, fulfillmentType string) error {
+	return nil
+}
+
 func (m *MockProductStore) UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) error {
 	m.UpdateVariantBatchLabelCalls++
 	return nil

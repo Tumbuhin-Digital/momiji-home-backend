@@ -71,6 +71,10 @@ func (s *PostgresCartStore) UpdateItemQuantity(ctx context.Context, itemID strin
 	return s.db.WithContext(ctx).Model(&CartItemModel{}).Where("id = ?", itemID).Update("quantity", quantity).Error
 }
 
+func (s *PostgresCartStore) UpdateItemUnitPrice(ctx context.Context, itemID string, unitPrice float64) error {
+	return s.db.WithContext(ctx).Model(&CartItemModel{}).Where("id = ?", itemID).Update("unit_price", unitPrice).Error
+}
+
 func (s *PostgresCartStore) RemoveItem(ctx context.Context, itemID string) error {
 	return s.db.WithContext(ctx).Where("id = ?", itemID).Delete(&CartItemModel{}).Error
 }
@@ -145,8 +149,11 @@ func (s *PostgresCartStore) UpsertVariantItems(ctx context.Context, cartID, vari
 					UnitPrice:        unitPrice,
 				})
 			} else {
-				// Update existing
-				tx.Model(&existing).Update("quantity", t.qty)
+				// Update existing quantity and refresh wholesale price
+				tx.Model(&existing).Updates(map[string]interface{}{
+					"quantity":   t.qty,
+					"unit_price": unitPrice,
+				})
 			}
 		}
 		return nil

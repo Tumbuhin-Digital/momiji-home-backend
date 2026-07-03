@@ -99,8 +99,13 @@ func (s *service) GetCartResponse(ctx context.Context, userID, sessionID *string
 			continue // skip invalid items
 		}
 
-		subtotal := item.UnitPrice * float64(item.Quantity)
-		
+		unitPrice := effectiveWholesalePrice(variant)
+		if pricesDiffer(item.UnitPrice, unitPrice) {
+			_ = s.store.UpdateItemUnitPrice(ctx, item.ID, unitPrice)
+		}
+
+		subtotal := unitPrice * float64(item.Quantity)
+
 		cItem := CartItem{
 			ID:                item.ID,
 			VariantID:         item.ShopifyVariantID,
@@ -108,7 +113,7 @@ func (s *service) GetCartResponse(ctx context.Context, userID, sessionID *string
 			ImageSrc:          variant.ImageSrc,
 			Quantity:          item.Quantity,
 			InventoryQuantity: variant.InventoryQuantity,
-			UnitPrice:         fmt.Sprintf("%.2f", item.UnitPrice),
+			UnitPrice:         fmt.Sprintf("%.2f", unitPrice),
 			RetailPrice:       variant.RetailPrice,
 			Subtotal:          fmt.Sprintf("%.2f", subtotal),
 			Weight:            variant.WeightKg,
@@ -182,6 +187,9 @@ func (s *service) AddItem(ctx context.Context, userID, sessionID *string, req Ca
 
 	var price float64
 	fmt.Sscanf(variant.WSPrice, "%f", &price)
+	if price <= 0 {
+		fmt.Sscanf(variant.RetailPrice, "%f", &price)
+	}
 
 	item := &CartItemModel{
 		CartID:           cart.ID,
@@ -263,6 +271,9 @@ func (s *service) SetVariantQuantity(ctx context.Context, userID, sessionID *str
 
 	var price float64
 	fmt.Sscanf(variant.WSPrice, "%f", &price)
+	if price <= 0 {
+		fmt.Sscanf(variant.RetailPrice, "%f", &price)
+	}
 
 	return s.store.UpsertVariantItems(ctx, cart.ID, variantID, shipReadyQty, preOrderQty, price)
 }

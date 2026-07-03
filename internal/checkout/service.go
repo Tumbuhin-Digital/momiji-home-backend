@@ -3,7 +3,6 @@ package checkout
 import (
 	"context"
 	"fmt"
-	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -68,35 +67,7 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	var lockReqs []LockRequest
 
 	for _, item := range cartRes.ShipReady {
-		var discount *shopify.DraftOrderAppliedDiscountInput
-		if item.RetailPrice != "" {
-			retailPrice, err1 := strconv.ParseFloat(item.RetailPrice, 64)
-			wsPrice, err2 := strconv.ParseFloat(item.UnitPrice, 64)
-			if err1 == nil && err2 == nil && retailPrice > wsPrice {
-				discountPerUnit := retailPrice - wsPrice
-				discountPerUnit = math.Round(discountPerUnit*100) / 100
-				discount = &shopify.DraftOrderAppliedDiscountInput{
-					Title:     "Wholesale Pricing",
-					Value:     discountPerUnit,
-					ValueType: "FIXED_AMOUNT",
-					Amount:    discountPerUnit,
-				}
-			}
-		}
-
-		draftLine := shopify.DraftOrderLineItem{
-			VariantID:         item.VariantID,
-			Quantity:          item.Quantity,
-			OriginalUnitPrice: item.UnitPrice,
-			AppliedDiscount:   discount,
-		}
-		if item.Weight > 0 {
-			draftLine.Weight = &shopify.DraftOrderLineItemWeightInput{
-				Unit:  "KILOGRAMS",
-				Value: item.Weight,
-			}
-		}
-
+		draftLine := buildShipReadyDraftLine(item)
 		draftLines = append(draftLines, draftLine)
 		lockReqs = append(lockReqs, LockRequest{
 			ShopifyVariantID: item.VariantID,
