@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/uszip"
 	"gorm.io/gorm"
 )
 
@@ -19,8 +20,13 @@ func (usZipCode) TableName() string {
 }
 
 func (s *PostgresStore) GetUSZipStateAbbr(ctx context.Context, zip string) (string, bool) {
+	normalized, ok := uszip.NormalizeUSZip(zip)
+	if !ok {
+		return "", false
+	}
+
 	var row usZipCode
-	if err := s.db.WithContext(ctx).Where("zip_code = ?", zip).First(&row).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("zip_code = ?", normalized).First(&row).Error; err != nil {
 		return "", false
 	}
 	if row.StateAbbr == "" {

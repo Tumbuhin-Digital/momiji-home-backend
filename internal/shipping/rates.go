@@ -10,6 +10,7 @@ import (
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/config"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/uszip"
 )
 
 const (
@@ -195,14 +196,12 @@ func resolveState(ctx context.Context, country, zip, defaultState string, zipLoo
 	if !strings.EqualFold(country, "US") && !strings.EqualFold(country, "United States") {
 		return defaultState
 	}
-	cleanZip := strings.TrimSpace(zip)
-	if abbr, ok := zipLookup(ctx, cleanZip); ok && abbr != "" {
-		return abbr
+	normalized, ok := uszip.NormalizeUSZip(zip)
+	if !ok {
+		return defaultState
 	}
-	if len(cleanZip) > 5 {
-		if abbr, ok := zipLookup(ctx, cleanZip[:5]); ok && abbr != "" {
-			return abbr
-		}
+	if abbr, ok := zipLookup(ctx, normalized); ok && abbr != "" {
+		return abbr
 	}
 	return defaultState
 }

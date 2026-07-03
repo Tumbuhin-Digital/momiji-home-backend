@@ -139,6 +139,18 @@ func (m *mockShopifyInventoryClient) CreateFulfillment(context.Context, string) 
 	return nil
 }
 
+func (m *mockShopifyInventoryClient) FetchFulfillmentOrders(context.Context, string) ([]shopify.FulfillmentOrderData, error) {
+	return nil, nil
+}
+
+func (m *mockShopifyInventoryClient) CreateFulfillmentV2(context.Context, shopify.CreateFulfillmentV2Input) (*shopify.CreateFulfillmentV2Result, error) {
+	return nil, nil
+}
+
+func (m *mockShopifyInventoryClient) CreateFulfillmentEvent(context.Context, string, string) error {
+	return nil
+}
+
 func (m *mockShopifyInventoryClient) GetVariantsInventory(_ context.Context, variantIDs []string) (map[string]int, error) {
 	result := make(map[string]int, len(variantIDs))
 	for _, id := range variantIDs {

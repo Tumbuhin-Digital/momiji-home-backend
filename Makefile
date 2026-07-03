@@ -4,7 +4,7 @@ ifneq (,$(wildcard .env))
     export
 endif
 
-.PHONY: dev test migrate-up migrate-down seed
+.PHONY: dev test migrate-up migrate-down seed seed-zips db-clean
 
 dev:
 	go run cmd/server/main.go
@@ -23,6 +23,14 @@ migrate-down:
 
 db-reset: migrate-down migrate-up seed
 
+# General app seed (products, etc.) — not yet implemented.
 seed:
-	go run cmd/seed/main.go
+	@echo "cmd/seed/main.go is not implemented; use make seed-zips for US ZIP reference data"
+
+# Seed us_zip_codes from data/uszips.csv (or USZIPS_CSV env). Download CSV first; see data/README.md.
+seed-zips:
+	go run cmd/seed_zips/main.go
+
+db-clean:
+	go run cmd/dbclean/main.go
 

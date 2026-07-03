@@ -41,3 +41,8 @@ Technical PRD (2).pdf
 # Local Scripts
 cmd/seed/
 api_contract/
+
+# US ZIP reference data (large CSV; download before make seed-zips)
+data/uszips.csv
+data/*.csv
+!data/README.md

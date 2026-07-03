@@ -6,14 +6,14 @@ import (
 )
 
 type StockLock struct {
-	ID                 string `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
-	ShopifyVariantID   string
-	Quantity           int
-	SessionID          *string
-	UserID             *string
-	CheckoutReference  *string
-	ExpiresAt          time.Time
-	CreatedAt          time.Time
+	ID                string `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	ShopifyVariantID  string
+	Quantity          int
+	SessionID         *string
+	UserID            *string
+	CheckoutReference *string
+	ExpiresAt         time.Time
+	CreatedAt         time.Time
 }
 
 type UsZipCode struct {

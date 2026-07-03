@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/uszip"
 	"gorm.io/gorm"
 )
 
@@ -83,8 +84,13 @@ func (s *PostgresStockLockStore) DeleteExpiredLocks(ctx context.Context) error {
 }
 
 func (s *PostgresStockLockStore) GetUSZipCodeDetails(ctx context.Context, zip string) (*UsZipCode, error) {
+	normalized, ok := uszip.NormalizeUSZip(zip)
+	if !ok {
+		return nil, nil
+	}
+
 	var zipCode UsZipCode
-	if err := s.db.WithContext(ctx).Where("zip_code = ?", zip).First(&zipCode).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("zip_code = ?", normalized).First(&zipCode).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
