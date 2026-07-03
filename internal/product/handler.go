@@ -423,6 +423,16 @@ func (h *Handler) ImportDimensions(c *fiber.Ctx) error {
 		if idx, ok := idxMap["depth_cm"]; ok && len(row) > idx && row[idx] != "" {
 			input.DepthCm = parseFloat(row[idx])
 		}
+		if input.WeightKg == 0 {
+			slog.Warn("dimension import: weight_kg is zero",
+				slog.String("variant_id", vid),
+			)
+		}
+		if input.WidthCm == 0 && input.HeightCm == 0 && input.DepthCm == 0 {
+			slog.Warn("dimension import: all dimensions are zero",
+				slog.String("variant_id", vid),
+			)
+		}
 		updates = append(updates, input)
 	}
 

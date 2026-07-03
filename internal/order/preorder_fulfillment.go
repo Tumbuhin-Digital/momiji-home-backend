@@ -13,7 +13,6 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
-	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/warehouse"
 )
 
 const (
@@ -68,8 +67,11 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 		return nil, apierror.ErrInternal
 	}
 
-	units := BuildPackableUnits(req.Packing, itemMap, dims)
-	packages := shipping.BuildPackages(units)
+	units, err := BuildPackableUnits(req.Packing, itemMap, dims)
+	if err != nil {
+		return nil, err
+	}
+	packages := shipping.BuildPackages(ctx, units)
 	if len(packages) == 0 {
 		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "No shippable boxes in packing plan")
 	}
@@ -91,7 +93,12 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 	}
 	province := addr.Province
 
-	origin, err := s.warehouseResolver.GetOrigin(ctx, warehouse.CodeEast)
+	existingShipment, err := s.store.GetPreorderShipment(ctx, orderID)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	originCode := resolveWarehouseOrigin(existingShipment)
+	origin, err := s.warehouseResolver.GetOrigin(ctx, originCode)
 	if err != nil {
 		return nil, apierror.New(http.StatusInternalServerError, "shipping_rate_error", "Failed to resolve warehouse origin")
 	}
@@ -130,18 +137,21 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 	liveEstimate := amount
 	dbPacking := PackingToDBItems(req.Packing)
 
-	existing, err := s.store.GetPreorderShipment(ctx, orderID)
-	if err != nil {
-		return nil, apierror.ErrInternal
-	}
-
 	shipment := &PreorderShipment{
-		OrderID:       orderID,
-		TotalBoxes:    totalBoxes,
-		TotalWeightLb: &totalWeight,
+		OrderID:         orderID,
+		TotalBoxes:      totalBoxes,
+		TotalWeightLb:   &totalWeight,
+		WarehouseOrigin: originCode,
 	}
-	if existing != nil && existing.EstimatedShipping != nil {
-		// Preserve checkout estimate; live rate is returned in the response only.
+	if existingShipment != nil {
+		if existingShipment.EstimatedShipping != nil {
+			// Preserve checkout estimate; live rate is returned in the response only.
+		} else {
+			shipment.EstimatedShipping = &liveEstimate
+		}
+		if existingShipment.WarehouseOrigin != "" {
+			shipment.WarehouseOrigin = existingShipment.WarehouseOrigin
+		}
 	} else {
 		shipment.EstimatedShipping = &liveEstimate
 	}
@@ -150,7 +160,7 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 		return nil, apierror.ErrInternal
 	}
 
-	groundCode := s.shipstationCfg.GroundServiceCode
+	groundCode := origin.GroundServiceCode
 	if groundCode == "" {
 		groundCode = "ups_ground"
 	}
@@ -200,8 +210,11 @@ func (s *service) UpdatePreorderShipping(ctx context.Context, userID, orderID st
 			return nil, apierror.ErrInternal
 		}
 
-		units := BuildPackableUnits(req.Packing, itemMap, dims)
-		if len(shipping.BuildPackages(units)) == 0 {
+		units, packErr := BuildPackableUnits(req.Packing, itemMap, dims)
+		if packErr != nil {
+			return nil, packErr
+		}
+		if len(shipping.BuildPackages(ctx, units)) == 0 {
 			return nil, apierror.New(http.StatusBadRequest, "invalid_request", "No shippable boxes in packing plan")
 		}
 

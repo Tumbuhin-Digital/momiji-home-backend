@@ -9,14 +9,8 @@ import (
 	"strings"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/units"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/uszip"
-)
-
-const (
-	kgToLb  = 2.20462
-	gToLb   = 0.00220462
-	cmToIn  = 0.393701
-	defaultLb = 1.0
 )
 
 // PackableUnit describes one logical box for ShipStation packages[].
@@ -26,6 +20,11 @@ type PackableUnit struct {
 	HeightCm float64
 	DepthCm  float64 // mapped to package length (consistent with product service)
 	BoxCount int
+
+	// Metadata for logging when fallbacks apply.
+	LineItemID        string
+	SKU               string
+	ShopifyVariantID  string
 }
 
 // ShipFromAddress is the origin warehouse for rate calculation.
@@ -57,17 +56,23 @@ type ZipLookup func(ctx context.Context, zip string) (stateAbbr string, ok bool)
 // Nested items should have BoxCount=0 and are skipped entirely.
 // Assumption: nested items physically fit inside another item's box and do not
 // add a separate package entry to the rate request.
-func BuildPackages(units []PackableUnit) []shipstation.Package {
+func BuildPackages(ctx context.Context, packableUnits []PackableUnit) []shipstation.Package {
 	var packages []shipstation.Package
 
-	for _, unit := range units {
+	for _, unit := range packableUnits {
 		if unit.BoxCount <= 0 {
 			continue
 		}
 
-		wt := unit.WeightKg * kgToLb
+		wt := units.KgToLb(unit.WeightKg)
 		if wt == 0 {
-			wt = defaultLb
+			slog.WarnContext(ctx, "shipping package weight missing, using default 1 lb",
+				"line_item_id", unit.LineItemID,
+				"sku", unit.SKU,
+				"shopify_variant_id", unit.ShopifyVariantID,
+				"weight_kg", unit.WeightKg,
+			)
+			wt = units.DefaultLb
 		}
 
 		pkg := shipstation.Package{
@@ -82,10 +87,16 @@ func BuildPackages(units []PackableUnit) []shipstation.Package {
 			sort.Sort(sort.Reverse(sort.Float64Slice(dims)))
 			pkg.Dimensions = &shipstation.Dimensions{
 				Unit:   "inch",
-				Length: math.Round(dims[0]*cmToIn*100) / 100,
-				Width:  math.Round(dims[1]*cmToIn*100) / 100,
-				Height: math.Round(dims[2]*cmToIn*100) / 100,
+				Length: units.CmToIn(dims[0]),
+				Width:  units.CmToIn(dims[1]),
+				Height: units.CmToIn(dims[2]),
 			}
+		} else {
+			slog.WarnContext(ctx, "shipping package dimensions missing, omitting from rate request",
+				"line_item_id", unit.LineItemID,
+				"sku", unit.SKU,
+				"shopify_variant_id", unit.ShopifyVariantID,
+			)
 		}
 
 		for i := 0; i < unit.BoxCount; i++ {
@@ -97,15 +108,15 @@ func BuildPackages(units []PackableUnit) []shipstation.Package {
 }
 
 // TotalWeightLb sums weight across all boxes (nested items excluded).
-func TotalWeightLb(units []PackableUnit) float64 {
+func TotalWeightLb(packableUnits []PackableUnit) float64 {
 	var total float64
-	for _, unit := range units {
+	for _, unit := range packableUnits {
 		if unit.BoxCount <= 0 {
 			continue
 		}
-		wt := unit.WeightKg * kgToLb
+		wt := units.KgToLb(unit.WeightKg)
 		if wt == 0 {
-			wt = defaultLb
+			wt = units.DefaultLb
 		}
 		total += wt * float64(unit.BoxCount)
 	}
@@ -113,9 +124,9 @@ func TotalWeightLb(units []PackableUnit) float64 {
 }
 
 // TotalBoxes returns the sum of box counts across units.
-func TotalBoxes(units []PackableUnit) int {
+func TotalBoxes(packableUnits []PackableUnit) int {
 	var total int
-	for _, unit := range units {
+	for _, unit := range packableUnits {
 		if unit.BoxCount > 0 {
 			total += unit.BoxCount
 		}
@@ -225,18 +236,12 @@ func resolveState(ctx context.Context, country, zip, defaultState string, zipLoo
 
 // PackableUnitFromCartItem converts cart item fields to a single-unit packable (BoxCount set separately).
 func PackableUnitFromCartItem(weight float64, weightUnit string, length, width, height float64, boxCount int) PackableUnit {
-	wtKg := weight
-	switch weightUnit {
-	case "KILOGRAMS":
-		// already kg
-	case "GRAMS":
-		wtKg = weight * 0.001
-	case "POUNDS":
-		wtKg = weight * 0.453592
-	default:
-		if weightUnit != "" && weightUnit != "KILOGRAMS" {
-			wtKg = weight
-		}
+	wtKg, ok := units.CartWeightToKg(weight, weightUnit)
+	if !ok {
+		slog.Warn("unknown cart weight unit, treating value as kg",
+			"weight_unit", weightUnit,
+			"weight", weight,
+		)
 	}
 	return PackableUnit{
 		WeightKg: wtKg,

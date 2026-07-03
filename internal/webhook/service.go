@@ -331,6 +331,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 	var checkoutRef string
 	var shippingMethod string
 	var preorderShippingEstimate string
+	var preorderWarehouseOrigin string
 	for _, note := range payload.NoteAttributes {
 		if note.Name == "checkout_reference" {
 			if val, ok := note.Value.(string); ok {
@@ -343,6 +344,10 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		} else if note.Name == "preorder_shipping_estimate" {
 			if val, ok := note.Value.(string); ok {
 				preorderShippingEstimate = val
+			}
+		} else if note.Name == "preorder_warehouse_origin" {
+			if val, ok := note.Value.(string); ok {
+				preorderWarehouseOrigin = val
 			}
 		}
 	}
@@ -425,7 +430,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 					slog.String("order_id", newOrder.ID),
 					slog.Any("error", dimErr))
 			} else {
-				shipment, packing := order.BuildCheckoutPreorderShipment(newOrder.ID, preItems, dims, estimate)
+				shipment, packing := order.BuildCheckoutPreorderShipment(newOrder.ID, preItems, dims, estimate, preorderWarehouseOrigin)
 				if err := s.orderStore.UpsertPreorderShipment(ctx, shipment, packing); err != nil {
 					slog.ErrorContext(ctx, "failed to create pre-order shipment from checkout",
 						slog.String("order_id", newOrder.ID),

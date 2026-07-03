@@ -102,9 +102,10 @@ func (s *PostgresStore) UpsertPreorderShipment(ctx context.Context, shipment *Pr
 		} else {
 			shipment.ID = existing.ID
 			updates := map[string]interface{}{
-				"total_boxes":     shipment.TotalBoxes,
-				"total_weight_lb": shipment.TotalWeightLb,
-				"updated_at":      time.Now(),
+				"total_boxes":       shipment.TotalBoxes,
+				"total_weight_lb":   shipment.TotalWeightLb,
+				"warehouse_origin":  shipment.WarehouseOrigin,
+				"updated_at":        time.Now(),
 			}
 			if shipment.EstimatedShipping != nil {
 				updates["estimated_shipping"] = shipment.EstimatedShipping

@@ -12,6 +12,7 @@ type PreorderShipment struct {
 	CreditAmount       float64    `gorm:"not null;default:0"`
 	TotalBoxes         int        `gorm:"not null;default:0"`
 	TotalWeightLb      *float64
+	WarehouseOrigin    string     `gorm:"not null;default:east"`
 	InvoiceSentAt      *time.Time
 	CreatedAt          time.Time
 	UpdatedAt          time.Time

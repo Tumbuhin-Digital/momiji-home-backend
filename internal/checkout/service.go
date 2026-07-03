@@ -84,12 +84,20 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 			}
 		}
 
-		draftLines = append(draftLines, shopify.DraftOrderLineItem{
+		draftLine := shopify.DraftOrderLineItem{
 			VariantID:         item.VariantID,
 			Quantity:          item.Quantity,
 			OriginalUnitPrice: item.UnitPrice,
 			AppliedDiscount:   discount,
-		})
+		}
+		if item.Weight > 0 {
+			draftLine.Weight = &shopify.DraftOrderLineItemWeightInput{
+				Unit:  "KILOGRAMS",
+				Value: item.Weight,
+			}
+		}
+
+		draftLines = append(draftLines, draftLine)
 		lockReqs = append(lockReqs, LockRequest{
 			ShopifyVariantID: item.VariantID,
 			Quantity:         item.Quantity,
@@ -403,7 +411,7 @@ func (s *service) calculateRatesForItems(ctx context.Context, items []cart.CartI
 		))
 	}
 
-	packages := shipping.BuildPackages(units)
+	packages := shipping.BuildPackages(ctx, units)
 	if len(packages) == 0 {
 		return []ShippingRateDTO{}, nil
 	}

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"strconv"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/units"
 )
 
 type ProductService interface {
@@ -313,19 +315,29 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 				wVal := vNode.InventoryItem.Measurement.Weight.Value
 				wUnit := vNode.InventoryItem.Measurement.Weight.Unit
 
-				weightKg := wVal
-				if wUnit == "GRAMS" {
-					weightKg = wVal / 1000.0
-				} else if wUnit == "OUNCES" {
-					weightKg = wVal * 0.0283495
-				} else if wUnit == "POUNDS" {
-					weightKg = wVal * 0.453592
+				weightKg, unitOK := units.ShopifyWeightToKg(wVal, wUnit)
+				if !unitOK {
+					slog.WarnContext(ctx, "unknown shopify weight unit, treating value as kg",
+						slog.String("shopify_variant_id", vNode.ID),
+						slog.String("sku", vNode.Sku),
+						slog.String("unit", wUnit),
+						slog.Float64("value", wVal),
+					)
 				}
 
 				fulfillmentType := "ship_ready"
-				
+
 				// Try to preserve existing fulfillment type from DB if > 0
 				existing, _ := s.store.GetVariantByShopifyID(ctx, vNode.ID)
+				if existing != nil && existing.WeightKg > 0 && math.Abs(existing.WeightKg-weightKg) > 0.01 {
+					slog.WarnContext(ctx, "shopify weight differs from db weight_kg",
+						slog.String("shopify_variant_id", vNode.ID),
+						slog.String("sku", vNode.Sku),
+						slog.Float64("db_kg", existing.WeightKg),
+						slog.Float64("shopify_kg", weightKg),
+						slog.String("shopify_unit", wUnit),
+					)
+				}
 				if existing != nil && existing.FulfillmentType != "" {
 					fulfillmentType = existing.FulfillmentType
 				}
