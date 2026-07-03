@@ -38,6 +38,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/settings"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/warehouse"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/webhook"
 )
 
@@ -87,6 +88,7 @@ func main() {
 	stockLockStore := checkout.NewPostgresStockLockStore(db)
 	dashboardStore := dashboard.NewPostgresStore(db)
 	settingsStore := settings.NewPostgresStore(db)
+	warehouseStore := warehouse.NewPostgresStore(db)
 
 	// Initialize Services
 	authService := auth.NewAuthService(authStore, cfg.Auth)
@@ -116,7 +118,12 @@ func main() {
 	productService := product.NewProductService(productStore, shopifyClient)
 	cartService := cart.NewCartService(cartStore, productService)
 	preorderService := preorder.NewPreorderService(preorderStore, orderStore, notificationService, shopifyClient, cfg.App.FrontendURL)
-	orderService := order.NewOrderService(orderStore, cartService, authStore, shopifyClient, preorderStore, preorderService, notificationService, shipstationClient, cfg.ShipStation)
+	warehouseService := warehouse.NewService(warehouseStore, cfg.ShipStation)
+	if err := warehouseService.EnsureFromEnv(context.Background(), cfg.ShipStation); err != nil {
+		log.Warn("Failed to ensure warehouse config from env", slog.Any("error", err))
+	}
+
+	orderService := order.NewOrderService(orderStore, cartService, authStore, shopifyClient, preorderStore, preorderService, notificationService, shipstationClient, cfg.ShipStation, warehouseService)
 	customerService := customer.NewCustomerService(customerStore)
 	stockLockService := checkout.NewStockLockService(stockLockStore, productService, shopifyClient)
 	webhookService := webhook.NewWebhookService(orderStore, authStore, productStore, shopifyClient, preorderStore, notificationService, stockLockService, customerStore, orderService)
@@ -135,7 +142,7 @@ func main() {
 	cartHandler := cart.NewCartHandler(cartService, cfg.Auth.Secret)
 	cartHandler.SetupRoutes(api)
 
-	checkoutService := checkout.NewCheckoutService(cartService, shopifyClient, stockLockService, stockLockStore, cfg.App.FrontendURL, shipstationClient, cfg.ShipStation)
+	checkoutService := checkout.NewCheckoutService(cartService, shopifyClient, stockLockService, stockLockStore, cfg.App.FrontendURL, shipstationClient, cfg.ShipStation, warehouseService)
 	checkoutHandler := checkout.NewCheckoutHandler(cartService, checkoutService, orderService, cfg.Auth.Secret)
 	checkoutHandler.SetupRoutes(api)
 
@@ -159,6 +166,9 @@ func main() {
 
 	settingsHandler := settings.NewSettingsHandler(settingsService, cfg.Auth.Secret)
 	settingsHandler.SetupRoutes(api)
+
+	warehouseHandler := warehouse.NewHandler(warehouseService, cfg.Auth.Secret)
+	warehouseHandler.SetupRoutes(api)
 
 	// Start scheduled jobs
 	scheduler.StartDailyJob(context.Background(), func(ctx context.Context) {

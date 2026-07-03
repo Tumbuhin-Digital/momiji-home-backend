@@ -18,6 +18,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/warehouse"
 )
 
 type CheckoutService interface {
@@ -35,9 +36,10 @@ type service struct {
 	feURL            string
 	shipstationCli   shipstation.Client
 	shipstationCfg   config.ShipStationConfig
+	warehouseResolver warehouse.Resolver
 }
 
-func NewCheckoutService(cartService cart.CartService, shopifyCli shopify.Client, stockLockService StockLockService, store StockLockStore, feURL string, shipstationCli shipstation.Client, shipstationCfg config.ShipStationConfig) CheckoutService {
+func NewCheckoutService(cartService cart.CartService, shopifyCli shopify.Client, stockLockService StockLockService, store StockLockStore, feURL string, shipstationCli shipstation.Client, shipstationCfg config.ShipStationConfig, warehouseResolver warehouse.Resolver) CheckoutService {
 	return &service{
 		cartService:      cartService,
 		shopifyCli:       shopifyCli,
@@ -46,6 +48,7 @@ func NewCheckoutService(cartService cart.CartService, shopifyCli shopify.Client,
 		feURL:            feURL,
 		shipstationCli:   shipstationCli,
 		shipstationCfg:   shipstationCfg,
+		warehouseResolver: warehouseResolver,
 	}
 }
 
@@ -151,6 +154,16 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		})
 	}
 
+	if len(cartRes.PreOrder) > 0 {
+		preOrderOrigin := warehouse.CodeEast
+		if s.warehouseResolver != nil {
+			preOrderOrigin = s.warehouseResolver.ResolveOrigin("pre_order", req.Origin)
+		}
+		draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
+			Key: "preorder_warehouse_origin", Value: preOrderOrigin,
+		})
+	}
+
 	if req.Address1 != "" || req.City != "" {
 		draftInput.ShippingAddress = &shopify.AddressInput{
 			FirstName: req.FirstName,
@@ -204,7 +217,7 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 				slog.WarnContext(ctx, "no ship ready shipping rates returned",
 					slog.String("checkout_reference", checkoutRef))
 			} else {
-				matchedRate := s.matchShippingRate(rates, req.ShippingMethod)
+				matchedRate := s.matchShippingRate(rates, req.ShippingMethod, warehouse.CodeEast)
 				if matchedRate != nil {
 					draftInput.ShippingLine = shopify.NewShippingLineInput(
 						matchedRate.Label,
@@ -235,6 +248,7 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 				Zip:      req.Zip,
 				Country:  country,
 				Segment:  "pre_order",
+				Origin:   req.Origin,
 			}
 			rates, rateErr := s.GetShippingRates(ctx, userID, sessionID, ratesReq)
 			if rateErr != nil {
@@ -245,7 +259,11 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 				slog.WarnContext(ctx, "no pre-order shipping rates returned",
 					slog.String("checkout_reference", checkoutRef))
 			} else {
-				matchedRate := s.matchShippingRate(rates, req.ShippingMethod)
+				preOrderOrigin := warehouse.CodeEast
+				if s.warehouseResolver != nil {
+					preOrderOrigin = s.warehouseResolver.ResolveOrigin("pre_order", req.Origin)
+				}
+				matchedRate := s.matchShippingRate(rates, req.ShippingMethod, preOrderOrigin)
 				if matchedRate != nil {
 					draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
 						Key: "preorder_shipping_estimate", Value: matchedRate.Cost,
@@ -341,12 +359,20 @@ func (s *service) resolveCartItems(cartRes *cart.CartResponse, segment string) [
 	}
 }
 
-func (s *service) groundServiceCode() string {
-	return s.shipstationCfg.GroundServiceCode
+func (s *service) groundServiceCode(originCode string) string {
+	if s.warehouseResolver != nil {
+		if origin, err := s.warehouseResolver.GetOrigin(context.Background(), originCode); err == nil && origin.GroundServiceCode != "" {
+			return origin.GroundServiceCode
+		}
+	}
+	if s.shipstationCfg.GroundServiceCode != "" {
+		return s.shipstationCfg.GroundServiceCode
+	}
+	return "ups_ground"
 }
 
-func (s *service) matchShippingRate(rates []ShippingRateDTO, shippingMethod string) *ShippingRateDTO {
-	groundCode := s.groundServiceCode()
+func (s *service) matchShippingRate(rates []ShippingRateDTO, shippingMethod, originCode string) *ShippingRateDTO {
+	groundCode := s.groundServiceCode(originCode)
 	if shippingMethod != "" {
 		for i := range rates {
 			if rates[i].ServiceCode == shippingMethod {
@@ -382,10 +408,34 @@ func (s *service) calculateRatesForItems(ctx context.Context, items []cart.CartI
 		return []ShippingRateDTO{}, nil
 	}
 
+	originCode := warehouse.CodeEast
+	if s.warehouseResolver != nil {
+		originCode = s.warehouseResolver.ResolveOrigin(rateReq.Segment, rateReq.Origin)
+	}
+
+	if s.warehouseResolver == nil {
+		return nil, apierror.New(500, "shipping_rate_error", "Warehouse resolver not configured")
+	}
+
+	origin, err := s.warehouseResolver.GetOrigin(ctx, originCode)
+	if err != nil {
+		return nil, apierror.New(500, "shipping_rate_error", "Failed to resolve warehouse origin")
+	}
+
 	amount, currency, err := shipping.CalculateGroundRate(
 		ctx,
 		s.shipstationCli,
-		s.shipstationCfg,
+		shipping.ShipFromAddress{
+			Name:     origin.Name,
+			Phone:    origin.Phone,
+			Address1: origin.Address1,
+			City:     origin.City,
+			State:    origin.State,
+			Zip:      origin.Zip,
+			Country:  origin.Country,
+		},
+		s.shipstationCfg.CarrierCodes,
+		origin.GroundServiceCode,
 		shipping.ShipToAddress{
 			Name:     rateReq.Name,
 			Phone:    rateReq.Phone,
@@ -402,7 +452,7 @@ func (s *service) calculateRatesForItems(ctx context.Context, items []cart.CartI
 		return nil, apierror.New(500, "shipping_rate_error", "Failed to fetch shipping rates from carriers")
 	}
 
-	groundCode := s.groundServiceCode()
+	groundCode := s.groundServiceCode(originCode)
 	if groundCode == "" {
 		groundCode = "ups_ground"
 	}

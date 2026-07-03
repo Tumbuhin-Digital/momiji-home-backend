@@ -7,6 +7,7 @@ type CheckoutSummaryRequest struct {
 	AddressID      int    `json:"address_id,omitempty"`
 	Zip            string `json:"zip,omitempty"`
 	Country        string `json:"country,omitempty"`
+	Origin         string `json:"origin,omitempty"` // pre_order warehouse: east | west
 }
 
 type CheckoutSummaryResponse struct {
@@ -50,6 +51,7 @@ type InitiateCheckoutRequest struct {
 	Zip            string `json:"zip,omitempty"`
 	Country        string `json:"country,omitempty"`
 	Phone          string `json:"phone,omitempty"`
+	Origin         string `json:"origin,omitempty"` // pre_order warehouse: east | west
 }
 
 type InitiateCheckoutResponse struct {
@@ -71,6 +73,7 @@ type ShippingRatesRequest struct {
 	Zip      string `json:"zip" validate:"required"`
 	Country  string `json:"country" validate:"required"`
 	Segment  string `json:"segment,omitempty"` // "ship_ready" | "pre_order"
+	Origin   string `json:"origin,omitempty"`  // "east" | "west" (pre_order only)
 }
 
 type ValidateAddressRequest struct {

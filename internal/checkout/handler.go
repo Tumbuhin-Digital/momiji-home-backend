@@ -147,6 +147,7 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 				Zip:     req.Zip,
 				Country: country,
 				Segment: "pre_order",
+				Origin:  req.Origin,
 			}
 			rates, rateErr := h.checkoutService.GetShippingRates(c.Context(), uid, sid, ratesReq)
 			if rateErr != nil {

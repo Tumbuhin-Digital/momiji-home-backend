@@ -13,6 +13,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/warehouse"
 )
 
 const (
@@ -90,10 +91,25 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 	}
 	province := addr.Province
 
+	origin, err := s.warehouseResolver.GetOrigin(ctx, warehouse.CodeEast)
+	if err != nil {
+		return nil, apierror.New(http.StatusInternalServerError, "shipping_rate_error", "Failed to resolve warehouse origin")
+	}
+
 	amount, currency, err := shipping.CalculateGroundRate(
 		ctx,
 		s.shipstationClient,
-		s.shipstationCfg,
+		shipping.ShipFromAddress{
+			Name:     origin.Name,
+			Phone:    origin.Phone,
+			Address1: origin.Address1,
+			City:     origin.City,
+			State:    origin.State,
+			Zip:      origin.Zip,
+			Country:  origin.Country,
+		},
+		s.shipstationCfg.CarrierCodes,
+		origin.GroundServiceCode,
 		shipping.ShipToAddress{
 			Name:     strings.TrimSpace(firstName + " " + lastName),
 			Phone:    phone,

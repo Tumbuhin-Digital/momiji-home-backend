@@ -19,6 +19,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/warehouse"
 	"github.com/xuri/excelize/v2"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -50,6 +51,7 @@ type service struct {
 	shopClient        shopify.Client
 	shipstationClient shipstation.Client
 	shipstationCfg    config.ShipStationConfig
+	warehouseResolver warehouse.Resolver
 	preorderStore     preorder.PreorderStore
 	preorderService   preorder.PreorderService
 	emailService      email.NotificationService
@@ -61,6 +63,7 @@ func NewOrderService(store Store, cartService cart.CartService, authStore auth.A
 	notificationService email.NotificationService,
 	shipstationClient shipstation.Client,
 	shipstationCfg config.ShipStationConfig,
+	warehouseResolver warehouse.Resolver,
 ) OrderService {
 	return &service{
 		store:             store,
@@ -69,6 +72,7 @@ func NewOrderService(store Store, cartService cart.CartService, authStore auth.A
 		shopClient:        shopClient,
 		shipstationClient: shipstationClient,
 		shipstationCfg:    shipstationCfg,
+		warehouseResolver: warehouseResolver,
 		preorderStore:     preorderStore,
 		preorderService:   preorderService,
 		emailService:      notificationService,

@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/config"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/uszip"
 )
@@ -27,6 +26,17 @@ type PackableUnit struct {
 	HeightCm float64
 	DepthCm  float64 // mapped to package length (consistent with product service)
 	BoxCount int
+}
+
+// ShipFromAddress is the origin warehouse for rate calculation.
+type ShipFromAddress struct {
+	Name     string
+	Phone    string
+	Address1 string
+	City     string
+	State    string
+	Zip      string
+	Country  string
 }
 
 // ShipToAddress is the destination for rate calculation.
@@ -117,7 +127,9 @@ func TotalBoxes(units []PackableUnit) int {
 func CalculateGroundRate(
 	ctx context.Context,
 	client shipstation.Client,
-	cfg config.ShipStationConfig,
+	shipFrom ShipFromAddress,
+	carrierCodes []string,
+	groundServiceCode string,
 	shipTo ShipToAddress,
 	packages []shipstation.Package,
 	zipLookup ZipLookup,
@@ -126,7 +138,7 @@ func CalculateGroundRate(
 		return 0, "", fmt.Errorf("no packages to rate")
 	}
 
-	groundCode := cfg.GroundServiceCode
+	groundCode := groundServiceCode
 	if groundCode == "" {
 		groundCode = "ups_ground"
 	}
@@ -145,21 +157,26 @@ func CalculateGroundRate(
 		country = "US"
 	}
 
+	fromCountry := shipFrom.Country
+	if fromCountry == "" {
+		fromCountry = "US"
+	}
+
 	req := shipstation.RateRequest{
 		RateOptions: shipstation.RateOptions{
-			CarrierIDs:   cfg.CarrierCodes,
+			CarrierIDs:   carrierCodes,
 			ServiceCodes: []string{groundCode},
 		},
 		Shipment: shipstation.Shipment{
 			ValidateAddress: "no_validation",
 			ShipFrom: shipstation.Address{
-				Name:          cfg.WarehouseName,
-				Phone:         cfg.WarehousePhone,
-				AddressLine1:  cfg.WarehouseAddress1,
-				CityLocality:  cfg.WarehouseCity,
-				StateProvince: resolveState(ctx, cfg.WarehouseCountry, cfg.WarehouseZip, cfg.WarehouseState, zipLookup),
-				PostalCode:    cfg.WarehouseZip,
-				CountryCode:   cfg.WarehouseCountry,
+				Name:          shipFrom.Name,
+				Phone:         shipFrom.Phone,
+				AddressLine1:  shipFrom.Address1,
+				CityLocality:  shipFrom.City,
+				StateProvince: resolveState(ctx, fromCountry, shipFrom.Zip, shipFrom.State, zipLookup),
+				PostalCode:    shipFrom.Zip,
+				CountryCode:   fromCountry,
 			},
 			ShipTo: shipstation.Address{
 				Name:          shipTo.Name,
