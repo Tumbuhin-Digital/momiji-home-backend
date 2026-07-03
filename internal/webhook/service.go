@@ -280,10 +280,14 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		} else {
 			totalShipReady += actualAmountCharged
 			title := item.Title
-			
-			// For ship ready, unit price could reflect the discount if we divide, 
-			// but usually unitPrice is the base price.
+
 			unitPrice := unitPriceFromShopify
+			if variant.WSPrice != nil && *variant.WSPrice > 0 {
+				unitPrice = *variant.WSPrice
+			} else if item.Quantity > 0 && actualAmountCharged > 0 {
+				unitPrice = actualAmountCharged / float64(item.Quantity)
+			}
+
 			finalAmount := actualAmountCharged
 			amountCharged := actualAmountCharged
 			

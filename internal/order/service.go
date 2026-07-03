@@ -290,11 +290,8 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 		if it.Title != nil {
 			itemTitle = *it.Title
 		}
-		var unitPrice, amountCharged, balanceDue *string
-		if it.UnitPrice != nil {
-			val := fmt.Sprintf("%.2f", *it.UnitPrice)
-			unitPrice = &val
-		}
+		unitPrice := formatItemUnitPrice(it)
+		var amountCharged, balanceDue *string
 		if it.AmountCharged != nil {
 			val := fmt.Sprintf("%.2f", *it.AmountCharged)
 			amountCharged = &val
@@ -422,11 +419,8 @@ func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery
 			if it.Title != nil {
 				itemTitle = *it.Title
 			}
-			var unitPrice, amountCharged, balanceDue *string
-			if it.UnitPrice != nil {
-				val := fmt.Sprintf("%.2f", *it.UnitPrice)
-				unitPrice = &val
-			}
+			unitPrice := formatItemUnitPrice(it)
+			var amountCharged, balanceDue *string
 			if it.AmountCharged != nil {
 				val := fmt.Sprintf("%.2f", *it.AmountCharged)
 				amountCharged = &val
@@ -558,11 +552,8 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 		if it.Title != nil {
 			itemTitle = *it.Title
 		}
-		var unitPrice, amountCharged, balanceDue *string
-		if it.UnitPrice != nil {
-			val := fmt.Sprintf("%.2f", *it.UnitPrice)
-			unitPrice = &val
-		}
+		unitPrice := formatItemUnitPrice(it)
+		var amountCharged, balanceDue *string
 		if it.AmountCharged != nil {
 			val := fmt.Sprintf("%.2f", *it.AmountCharged)
 			amountCharged = &val
@@ -718,11 +709,8 @@ func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string
 		if it.Title != nil {
 			itemTitle = *it.Title
 		}
-		var unitPrice, amountCharged, balanceDue *string
-		if it.UnitPrice != nil {
-			val := fmt.Sprintf("%.2f", *it.UnitPrice)
-			unitPrice = &val
-		}
+		unitPrice := formatItemUnitPrice(it)
+		var amountCharged, balanceDue *string
 		if it.AmountCharged != nil {
 			val := fmt.Sprintf("%.2f", *it.AmountCharged)
 			amountCharged = &val
