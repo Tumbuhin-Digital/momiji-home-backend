@@ -67,7 +67,7 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 		return nil, apierror.ErrInternal
 	}
 
-	units, err := BuildPackableUnits(req.Packing, itemMap, dims)
+	units, err := BuildPackableUnits(orderID, req.Packing, itemMap, dims)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +210,7 @@ func (s *service) UpdatePreorderShipping(ctx context.Context, userID, orderID st
 			return nil, apierror.ErrInternal
 		}
 
-		units, packErr := BuildPackableUnits(req.Packing, itemMap, dims)
+		units, packErr := BuildPackableUnits(orderID, req.Packing, itemMap, dims)
 		if packErr != nil {
 			return nil, packErr
 		}
@@ -359,7 +359,8 @@ func (s *service) toPreorderShipmentDTO(shipment *PreorderShipment) PreorderShip
 		return PreorderShipmentDTO{}
 	}
 	dto := PreorderShipmentDTO{
-		TotalBoxes: shipment.TotalBoxes,
+		TotalBoxes:      shipment.TotalBoxes,
+		WarehouseOrigin: shipment.WarehouseOrigin,
 	}
 	if shipment.EstimatedShipping != nil {
 		v := fmt.Sprintf("%.2f", *shipment.EstimatedShipping)

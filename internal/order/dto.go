@@ -96,6 +96,7 @@ type PreorderShipmentDTO struct {
 	TotalBoxes         int              `json:"total_boxes"`
 	TotalWeightLb      *string          `json:"total_weight_lb,omitempty"`
 	InvoiceSentAt      *string          `json:"invoice_sent_at,omitempty"`
+	WarehouseOrigin    string           `json:"warehouse_origin,omitempty"`
 	Packing            []PackingItemDTO `json:"packing,omitempty"`
 }
 

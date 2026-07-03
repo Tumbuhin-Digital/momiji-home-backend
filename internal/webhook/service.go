@@ -231,18 +231,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		total += actualAmountCharged
 		totalChargedNow += actualAmountCharged
 
-		isPreorder := variant.FulfillmentType == "pre_order"
-
-		// Also check line item properties, in case stock changed to 0 but webhook was delayed,
-		// or if checkout specifically marked this line item as a preorder down payment.
-		for _, prop := range item.Properties {
-			if prop.Name == "type" {
-				if valStr, ok := prop.Value.(string); ok && valStr == "preorder_dp" {
-					isPreorder = true
-					break
-				}
-			}
-		}
+		isPreorder := isPreorderShopifyLineItem(item)
 
 		if isPreorder {
 			hasPreOrder = true
@@ -430,8 +419,12 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 					slog.String("order_id", newOrder.ID),
 					slog.Any("error", dimErr))
 			} else {
-				shipment, packing := order.BuildCheckoutPreorderShipment(newOrder.ID, preItems, dims, estimate, preorderWarehouseOrigin)
-				if err := s.orderStore.UpsertPreorderShipment(ctx, shipment, packing); err != nil {
+				shipment, packing, buildErr := order.BuildCheckoutPreorderShipment(newOrder.ID, preItems, dims, estimate, preorderWarehouseOrigin)
+				if buildErr != nil {
+					slog.ErrorContext(ctx, "failed to build pre-order shipment from checkout packing",
+						slog.String("order_id", newOrder.ID),
+						slog.Any("error", buildErr))
+				} else if err := s.orderStore.UpsertPreorderShipment(ctx, shipment, packing); err != nil {
 					slog.ErrorContext(ctx, "failed to create pre-order shipment from checkout",
 						slog.String("order_id", newOrder.ID),
 						slog.Any("error", err))

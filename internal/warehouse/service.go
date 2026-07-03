@@ -53,15 +53,6 @@ func NewService(store Store, envFallback config.ShipStationConfig) Service {
 	}
 }
 
-func NormalizeCode(code string) string {
-	switch strings.ToLower(strings.TrimSpace(code)) {
-	case CodeWest:
-		return CodeWest
-	default:
-		return CodeEast
-	}
-}
-
 func (s *service) ResolveOrigin(segment, requested string) string {
 	if segment == "ship_ready" {
 		return CodeEast

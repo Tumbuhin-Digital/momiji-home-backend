@@ -1,8 +1,11 @@
 package order
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
@@ -83,9 +86,10 @@ func unitsPerBox(quantity, boxCount int) (int, error) {
 //   - HeightCm: unit height × units_per_box (vertical stack)
 //
 // Nested items: weight is pooled and distributed evenly across all non-nested physical boxes.
-func BuildPackableUnits(packing []PackingItemDTO, itemMap map[string]OrderItem, dims map[string]VariantDimensions) ([]shipping.PackableUnit, error) {
+func BuildPackableUnits(orderID string, packing []PackingItemDTO, itemMap map[string]OrderItem, dims map[string]VariantDimensions) ([]shipping.PackableUnit, error) {
 	var units []shipping.PackableUnit
 	var totalNestedKg float64
+	var nestedLineIDs []string
 	totalPhysicalBoxes := 0
 
 	for _, p := range packing {
@@ -94,6 +98,7 @@ func BuildPackableUnits(packing []PackingItemDTO, itemMap map[string]OrderItem, 
 
 		if p.IsNested {
 			totalNestedKg += d.WeightKg * float64(it.Quantity)
+			nestedLineIDs = append(nestedLineIDs, p.LineItemID)
 			continue
 		}
 
@@ -120,7 +125,9 @@ func BuildPackableUnits(packing []PackingItemDTO, itemMap map[string]OrderItem, 
 	}
 
 	if totalNestedKg > 0 && totalPhysicalBoxes == 0 {
-		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "nested items require at least one shippable box")
+		return nil, apierror.New(http.StatusBadRequest, "invalid_request",
+			fmt.Sprintf("order %s: nested items require at least one shippable box (nested_line_item_ids=%s)", orderID, strings.Join(nestedLineIDs, ",")),
+		)
 	}
 
 	if totalNestedKg > 0 && totalPhysicalBoxes > 0 {
@@ -138,19 +145,26 @@ func PackingTotals(units []shipping.PackableUnit) (totalBoxes int, totalWeight f
 }
 
 // BuildCheckoutPreorderShipment creates the initial shipment record from checkout estimate and default packing.
-func BuildCheckoutPreorderShipment(orderID string, preItems []OrderItem, dims map[string]VariantDimensions, estimate *float64, warehouseOrigin string) (*PreorderShipment, []PreorderPackingItem) {
+func BuildCheckoutPreorderShipment(orderID string, preItems []OrderItem, dims map[string]VariantDimensions, estimate *float64, warehouseOrigin string) (*PreorderShipment, []PreorderPackingItem, error) {
 	packing := BuildDefaultPackingDTO(preItems)
+	return buildPreorderShipmentFromPacking(orderID, packing, preItems, dims, estimate, warehouseOrigin)
+}
+
+func buildPreorderShipmentFromPacking(orderID string, packing []PackingItemDTO, preItems []OrderItem, dims map[string]VariantDimensions, estimate *float64, warehouseOrigin string) (*PreorderShipment, []PreorderPackingItem, error) {
 	itemMap := make(map[string]OrderItem, len(preItems))
 	for _, it := range preItems {
 		itemMap[it.ID] = it
 	}
-	units, _ := BuildPackableUnits(packing, itemMap, dims)
+	units, err := BuildPackableUnits(orderID, packing, itemMap, dims)
+	if err != nil {
+		return nil, nil, err
+	}
 	totalBoxes, totalWeight := PackingTotals(units)
 
 	shipment := &PreorderShipment{
 		OrderID:         orderID,
 		TotalBoxes:      totalBoxes,
-		WarehouseOrigin: warehouse.NormalizeCode(warehouseOrigin),
+		WarehouseOrigin: warehouse.NormalizeOrigin(context.Background(), warehouseOrigin, slog.String("order_id", orderID)),
 	}
 	if estimate != nil {
 		shipment.EstimatedShipping = estimate
@@ -158,7 +172,7 @@ func BuildCheckoutPreorderShipment(orderID string, preItems []OrderItem, dims ma
 	if totalWeight > 0 {
 		shipment.TotalWeightLb = &totalWeight
 	}
-	return shipment, PackingToDBItems(packing)
+	return shipment, PackingToDBItems(packing), nil
 }
 
 func resolveWarehouseOrigin(shipment *PreorderShipment) string {

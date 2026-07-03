@@ -1,6 +1,7 @@
 package order_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/order"
@@ -19,7 +20,7 @@ func TestBuildPackableUnits_ConsolidationSingleBox(t *testing.T) {
 	}
 	packing := []order.PackingItemDTO{{LineItemID: "line-1", BoxCount: 1, IsNested: false}}
 
-	units, err := order.BuildPackableUnits(packing, itemMap, dims(5))
+	units, err := order.BuildPackableUnits("order-1", packing, itemMap, dims(5))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +44,7 @@ func TestBuildPackableUnits_OneUnitPerBox(t *testing.T) {
 	}
 	packing := []order.PackingItemDTO{{LineItemID: "line-1", BoxCount: 3, IsNested: false}}
 
-	units, err := order.BuildPackableUnits(packing, itemMap, dims(5))
+	units, err := order.BuildPackableUnits("order-1", packing, itemMap, dims(5))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +71,7 @@ func TestBuildPackableUnits_NestedWeightDistributed(t *testing.T) {
 	d := dims(5)
 	d["var-2"] = order.VariantDimensions{ShopifyVariantID: "var-2", WeightKg: 2, WidthCm: 10, HeightCm: 10, DepthCm: 10}
 
-	units, err := order.BuildPackableUnits(packing, itemMap, d)
+	units, err := order.BuildPackableUnits("order-1", packing, itemMap, d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,9 +90,15 @@ func TestBuildPackableUnits_NestedOnlyNoBoxes(t *testing.T) {
 	}
 	packing := []order.PackingItemDTO{{LineItemID: "line-1", BoxCount: 0, IsNested: true}}
 
-	_, err := order.BuildPackableUnits(packing, itemMap, dims(5))
+	_, err := order.BuildPackableUnits("order-99", packing, itemMap, dims(5))
 	if err == nil {
 		t.Fatal("expected error for nested-only packing")
+	}
+	if !strings.Contains(err.Error(), "order-99") {
+		t.Fatalf("expected order_id in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "line-1") {
+		t.Fatalf("expected nested line_item_id in error, got: %v", err)
 	}
 }
 
@@ -102,5 +109,32 @@ func TestValidatePacking_BoxCountMustDivideQuantity(t *testing.T) {
 	err := order.ValidatePacking(packing, items)
 	if err == nil {
 		t.Fatal("expected validation error")
+	}
+}
+
+func TestBuildCheckoutPreorderShipment_HappyPath(t *testing.T) {
+	preItems := []order.OrderItem{
+		{ID: "line-1", ShopifyVariantID: "var-1", Quantity: 2},
+	}
+	dims := map[string]order.VariantDimensions{
+		"var-1": {ShopifyVariantID: "var-1", SKU: "SKU-1", WeightKg: 5, WidthCm: 40, HeightCm: 20, DepthCm: 30},
+	}
+	estimate := 12.34
+
+	shipment, packing, err := order.BuildCheckoutPreorderShipment("order-ok", preItems, dims, &estimate, "west")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if shipment == nil || len(packing) != 1 {
+		t.Fatalf("expected shipment and packing, got shipment=%v packing=%d", shipment, len(packing))
+	}
+	if shipment.TotalBoxes != 2 {
+		t.Fatalf("expected 2 boxes, got %d", shipment.TotalBoxes)
+	}
+	if shipment.WarehouseOrigin != "west" {
+		t.Fatalf("expected west origin, got %q", shipment.WarehouseOrigin)
+	}
+	if shipment.EstimatedShipping == nil || *shipment.EstimatedShipping != estimate {
+		t.Fatalf("expected estimate preserved")
 	}
 }
