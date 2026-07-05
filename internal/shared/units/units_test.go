@@ -28,6 +28,16 @@ func TestInToCm_KnownValue(t *testing.T) {
 	}
 }
 
+func TestInCmRoundTrip_Integers(t *testing.T) {
+	for _, inches := range []float64{10, 11, 15, 18, 19, 21} {
+		cm := units.InToCm(inches)
+		got := units.CmToIn(cm)
+		if math.Abs(got-inches) > 1e-9 {
+			t.Fatalf("%f in -> %f cm -> %f in", inches, cm, got)
+		}
+	}
+}
+
 func TestLbKgRoundTrip(t *testing.T) {
 	original := 5.0
 	roundTrip := units.LbToKg(units.KgToLb(original))

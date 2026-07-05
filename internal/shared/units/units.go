@@ -7,7 +7,8 @@ import (
 
 const (
 	KgToLbFactor = 2.20462
-	CmToInFactor = 0.393701
+	CmPerIn      = 2.54
+	CmToInFactor = 1 / CmPerIn
 	DefaultLb    = 1.0
 )
 
@@ -16,11 +17,11 @@ func KgToLb(kg float64) float64 {
 }
 
 func CmToIn(cm float64) float64 {
-	return math.Round(cm*CmToInFactor*100) / 100
+	return math.Round(cm/CmPerIn*100) / 100
 }
 
 func InToCm(in float64) float64 {
-	return math.Round(in/CmToInFactor*10) / 10
+	return math.Round(in*CmPerIn*100) / 100
 }
 
 func GToKg(g float64) float64 {

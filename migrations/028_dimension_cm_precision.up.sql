@@ -1,0 +1,4 @@
+ALTER TABLE product_variants
+  ALTER COLUMN width_cm  TYPE NUMERIC(10,2),
+  ALTER COLUMN height_cm TYPE NUMERIC(10,2),
+  ALTER COLUMN depth_cm  TYPE NUMERIC(10,2);
