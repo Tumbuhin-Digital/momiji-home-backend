@@ -10,6 +10,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server/middleware"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/response"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/units"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/validator"
 )
 
@@ -325,7 +326,7 @@ func (h *Handler) DownloadDimensionTemplate(c *fiber.Ctx) error {
 	c.Set("Content-Disposition", `attachment; filename="dimension-template.csv"`)
 
 	writer := csv.NewWriter(c.Response().BodyWriter())
-	header := []string{"variant_id", "product_title", "variant_title", "sku", "weight_kg", "width_cm", "height_cm", "depth_cm"}
+	header := []string{"variant_id", "product_title", "variant_title", "sku", "weight_lb", "width_in", "height_in", "depth_in"}
 	_ = writer.Write(header)
 
 	for _, v := range variants {
@@ -338,10 +339,10 @@ func (h *Handler) DownloadDimensionTemplate(c *fiber.Ctx) error {
 			productTitle,
 			v.Title,
 			v.SKU,
-			fmt.Sprintf("%.3f", v.WeightKg),
-			fmt.Sprintf("%.1f", v.WidthCm),
-			fmt.Sprintf("%.1f", v.HeightCm),
-			fmt.Sprintf("%.1f", v.DepthCm),
+			fmt.Sprintf("%.2f", units.KgToLb(v.WeightKg)),
+			fmt.Sprintf("%.2f", units.CmToIn(v.WidthCm)),
+			fmt.Sprintf("%.2f", units.CmToIn(v.HeightCm)),
+			fmt.Sprintf("%.2f", units.CmToIn(v.DepthCm)),
 		}
 		_ = writer.Write(row)
 	}
@@ -411,20 +412,28 @@ func (h *Handler) ImportDimensions(c *fiber.Ctx) error {
 		}
 
 		input := DimensionUpdateInput{ShopifyVariantID: vid}
-		if idx, ok := idxMap["weight_kg"]; ok && len(row) > idx && row[idx] != "" {
+		if idx, ok := idxMap["weight_lb"]; ok && len(row) > idx && row[idx] != "" {
+			input.WeightKg = units.LbToKg(parseFloat(row[idx]))
+		} else if idx, ok := idxMap["weight_kg"]; ok && len(row) > idx && row[idx] != "" {
 			input.WeightKg = parseFloat(row[idx])
 		}
-		if idx, ok := idxMap["width_cm"]; ok && len(row) > idx && row[idx] != "" {
+		if idx, ok := idxMap["width_in"]; ok && len(row) > idx && row[idx] != "" {
+			input.WidthCm = units.InToCm(parseFloat(row[idx]))
+		} else if idx, ok := idxMap["width_cm"]; ok && len(row) > idx && row[idx] != "" {
 			input.WidthCm = parseFloat(row[idx])
 		}
-		if idx, ok := idxMap["height_cm"]; ok && len(row) > idx && row[idx] != "" {
+		if idx, ok := idxMap["height_in"]; ok && len(row) > idx && row[idx] != "" {
+			input.HeightCm = units.InToCm(parseFloat(row[idx]))
+		} else if idx, ok := idxMap["height_cm"]; ok && len(row) > idx && row[idx] != "" {
 			input.HeightCm = parseFloat(row[idx])
 		}
-		if idx, ok := idxMap["depth_cm"]; ok && len(row) > idx && row[idx] != "" {
+		if idx, ok := idxMap["depth_in"]; ok && len(row) > idx && row[idx] != "" {
+			input.DepthCm = units.InToCm(parseFloat(row[idx]))
+		} else if idx, ok := idxMap["depth_cm"]; ok && len(row) > idx && row[idx] != "" {
 			input.DepthCm = parseFloat(row[idx])
 		}
 		if input.WeightKg == 0 {
-			slog.Warn("dimension import: weight_kg is zero",
+			slog.Warn("dimension import: weight is zero",
 				slog.String("variant_id", vid),
 			)
 		}

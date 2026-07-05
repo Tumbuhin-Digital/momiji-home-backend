@@ -21,6 +21,13 @@ func TestCmToIn_KnownValue(t *testing.T) {
 	}
 }
 
+func TestInToCm_KnownValue(t *testing.T) {
+	got := units.InToCm(39.37)
+	if got != 100.0 {
+		t.Fatalf("expected 100.0, got %f", got)
+	}
+}
+
 func TestLbKgRoundTrip(t *testing.T) {
 	original := 5.0
 	roundTrip := units.LbToKg(units.KgToLb(original))

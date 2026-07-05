@@ -19,6 +19,10 @@ func CmToIn(cm float64) float64 {
 	return math.Round(cm*CmToInFactor*100) / 100
 }
 
+func InToCm(in float64) float64 {
+	return math.Round(in/CmToInFactor*10) / 10
+}
+
 func GToKg(g float64) float64 {
 	return g * 0.001
 }
