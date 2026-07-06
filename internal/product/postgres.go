@@ -207,7 +207,6 @@ func (s *PostgresStore) BulkUpdateVariantDimensions(ctx context.Context, inputs 
 
 	for _, input := range inputs {
 		res := tx.Model(&ProductVariant{}).Where("shopify_variant_id = ?", input.ShopifyVariantID).Updates(map[string]interface{}{
-			"weight_kg": input.WeightKg,
 			"width_cm":  input.WidthCm,
 			"height_cm": input.HeightCm,
 			"depth_cm":  input.DepthCm,

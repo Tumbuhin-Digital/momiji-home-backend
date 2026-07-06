@@ -76,7 +76,6 @@ type Store interface {
 
 type DimensionUpdateInput struct {
 	ShopifyVariantID string
-	WeightKg         float64
 	WidthCm          float64
 	HeightCm         float64
 	DepthCm          float64

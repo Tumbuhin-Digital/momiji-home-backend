@@ -142,6 +142,15 @@ func (m *MockProductStore) GetAllVariants(ctx context.Context) ([]ProductVariant
 }
 
 func (m *MockProductStore) BulkUpdateVariantDimensions(ctx context.Context, inputs []DimensionUpdateInput) error {
+	for _, input := range inputs {
+		v, ok := m.Variants[input.ShopifyVariantID]
+		if !ok {
+			continue
+		}
+		v.WidthCm = input.WidthCm
+		v.HeightCm = input.HeightCm
+		v.DepthCm = input.DepthCm
+	}
 	return nil
 }
 
