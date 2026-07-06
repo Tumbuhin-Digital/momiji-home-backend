@@ -10,9 +10,9 @@ import (
 )
 
 type Config struct {
-	App      AppConfig
-	Database DatabaseConfig
-	Auth     AuthConfig
+	App         AppConfig
+	Database    DatabaseConfig
+	Auth        AuthConfig
 	Shopify     ShopifyConfig
 	Email       EmailConfig
 	ShipStation ShipStationConfig
@@ -67,17 +67,17 @@ type EmailConfig struct {
 }
 
 type ShipStationConfig struct {
-	APIKey       string
-	Sandbox      bool
-	WarehouseZip string
-	WarehouseCountry string
-	WarehouseName string
-	WarehousePhone string
+	APIKey            string
+	Sandbox           bool
+	WarehouseZip      string
+	WarehouseCountry  string
+	WarehouseName     string
+	WarehousePhone    string
 	WarehouseAddress1 string
-	WarehouseCity string
-	WarehouseState string
-	CarrierCodes        []string
-	GroundServiceCode   string
+	WarehouseCity     string
+	WarehouseState    string
+	CarrierCodes      []string
+	GroundServiceCode string
 }
 
 func Load() (*Config, error) {
@@ -140,7 +140,7 @@ func Load() (*Config, error) {
 	cfg.Email.SMTPPassword = os.Getenv("SMTP_PASS")
 	cfg.Email.From = os.Getenv("EMAIL_FROM")
 
-	cfg.ShipStation.APIKey = os.Getenv("SHIPSTATION_SANDBOX_API_KEY")
+	cfg.ShipStation.APIKey = os.Getenv("SHIPSTATION_API_KEY")
 	cfg.ShipStation.Sandbox = cfg.App.Env != "production"
 	cfg.ShipStation.WarehouseZip = os.Getenv("WAREHOUSE_ZIP")
 	cfg.ShipStation.WarehouseCountry = os.Getenv("WAREHOUSE_COUNTRY")
