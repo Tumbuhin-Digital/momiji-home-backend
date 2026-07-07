@@ -84,9 +84,6 @@ func mapProductToDTO(p *Product) ProductDTO {
 			Position: img.Position,
 		}
 	}
-	if images == nil {
-		images = []ProductImageDTO{}
-	}
 
 	variants := make([]VariantDTO, len(p.Variants))
 	for i, v := range p.Variants {
@@ -164,6 +161,8 @@ func mapVariantToDTO(variant *ProductVariant) *VariantDTO {
 const shopifySyncPageCap = 50
 
 func (s *service) SyncFromShopify(ctx context.Context) error {
+	shopifyProductIDs := make(map[string]struct{})
+
 	query := `
 		query($cursor: String) {
 		  products(first: 50, after: $cursor, sortKey: CREATED_AT, reverse: true) {
@@ -272,6 +271,7 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 
 		for _, pEdge := range res.Data.Products.Edges {
 			pNode := pEdge.Node
+			shopifyProductIDs[pNode.ID] = struct{}{}
 			product := &Product{
 				ShopifyID:   pNode.ID,
 				Title:       pNode.Title,
@@ -379,10 +379,23 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 		}
 	}
 
+	localProductIDs, err := s.store.ListShopifyProductIDs(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list local products for reconciliation: %w", err)
+	}
+	for _, localID := range localProductIDs {
+		if _, exists := shopifyProductIDs[localID]; exists {
+			continue
+		}
+		if err := s.store.MarkProductDeletedByShopifyID(ctx, localID); err != nil {
+			return fmt.Errorf("failed to mark deleted product %s: %w", localID, err)
+		}
+		slog.InfoContext(ctx, "marked product as deleted after sync reconciliation",
+			slog.String("shopify_product_id", localID))
+	}
+
 	return nil
 }
-
-var validProductStatuses = map[string]bool{"active": true, "draft": true, "archived": true}
 
 func (s *service) GetProductByID(ctx context.Context, id string) (*ProductDTO, error) {
 	p, err := s.store.GetProductByID(ctx, id)

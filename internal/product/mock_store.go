@@ -3,6 +3,8 @@ package product
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 )
@@ -44,8 +46,24 @@ func NewMockProductStore() *MockProductStore {
 func (m *MockProductStore) GetProducts(ctx context.Context, q ProductQuery) ([]Product, int64, error) {
 	if m.GetVariantsErr != nil { return nil, 0, m.GetVariantsErr }
 	out := make([]Product, 0, len(m.Products))
-	for _, p := range m.Products { out = append(out, *p) }
+	for _, p := range m.Products {
+		if strings.EqualFold(p.Status, "deleted") {
+			continue
+		}
+		out = append(out, *p)
+	}
 	return out, int64(len(out)), nil
+}
+
+func (m *MockProductStore) ListShopifyProductIDs(ctx context.Context) ([]string, error) {
+	ids := make([]string, 0, len(m.Products))
+	for _, p := range m.Products {
+		if strings.EqualFold(p.Status, "deleted") {
+			continue
+		}
+		ids = append(ids, p.ShopifyID)
+	}
+	return ids, nil
 }
 
 func (m *MockProductStore) GetVariantByShopifyID(ctx context.Context, id string) (*ProductVariant, error) {
@@ -78,6 +96,21 @@ func (m *MockProductStore) UpsertProduct(ctx context.Context, product *Product) 
 	if m.UpsertProductErr != nil { return m.UpsertProductErr }
 	if product.ID == "" { product.ID = "mock-product-uuid" }
 	m.Products[product.ShopifyID] = product
+	return nil
+}
+
+func (m *MockProductStore) MarkProductDeletedByShopifyID(ctx context.Context, shopifyID string) error {
+	candidates := []string{shopifyID}
+	if _, err := strconv.ParseInt(shopifyID, 10, 64); err == nil {
+		candidates = append(candidates, "gid://shopify/Product/"+shopifyID)
+	} else if idx := strings.LastIndex(shopifyID, "/"); idx >= 0 && idx < len(shopifyID)-1 {
+		candidates = append(candidates, shopifyID[idx+1:])
+	}
+	for _, id := range candidates {
+		if p, ok := m.Products[id]; ok {
+			p.Status = "deleted"
+		}
+	}
 	return nil
 }
 

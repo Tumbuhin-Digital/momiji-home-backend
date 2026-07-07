@@ -27,6 +27,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	webhooks.Post("/inventory_levels/update", h.withDedupe("inventory_levels/update", h.HandleInventoryUpdate))
 	webhooks.Post("/fulfillments/create", h.withDedupe("fulfillments/create", h.HandleFulfillment))
 	webhooks.Post("/fulfillments/update", h.withDedupe("fulfillments/update", h.HandleFulfillment))
+	webhooks.Post("/products/delete", h.withDedupe("products/delete", h.HandleProductDelete))
 }
 
 func (h *Handler) withDedupe(topic string, handler fiber.Handler) fiber.Handler {
@@ -135,5 +136,25 @@ func (h *Handler) HandleFulfillment(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server error"})
 	}
 
+	return c.SendStatus(fiber.StatusOK)
+}
+
+// @Summary Shopify Product Delete Webhook
+// @Tags Webhooks
+// @Accept json
+// @Produce json
+// @Param request body ShopifyProductDeleteWebhook true "Webhook Payload"
+// @Success 200 "OK"
+// @Router /webhooks/shopify/products/delete [post]
+func (h *Handler) HandleProductDelete(c *fiber.Ctx) error {
+	var payload ShopifyProductDeleteWebhook
+	if err := json.Unmarshal(c.Body(), &payload); err != nil {
+		slog.ErrorContext(c.Context(), "Failed to unmarshal product delete webhook payload", slog.Any("error", err))
+		return response.Error(c, err)
+	}
+
+	if err := h.service.HandleProductDelete(c.Context(), payload); err != nil {
+		return response.Error(c, err)
+	}
 	return c.SendStatus(fiber.StatusOK)
 }

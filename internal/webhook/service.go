@@ -25,6 +25,7 @@ type WebhookService interface {
 	HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebhook) error
 	HandleInventoryUpdate(ctx context.Context, payload ShopifyInventoryLevelWebhook) error
 	HandleFulfillment(ctx context.Context, payload ShopifyFulfillmentWebhook) error
+	HandleProductDelete(ctx context.Context, payload ShopifyProductDeleteWebhook) error
 	IsWebhookProcessed(ctx context.Context, webhookID string) (bool, error)
 	SaveWebhookEvent(ctx context.Context, webhookID, topic string) error
 }
@@ -678,6 +679,22 @@ func (s *service) HandleInventoryUpdate(ctx context.Context, payload ShopifyInve
 	}
 
 	slog.InfoContext(ctx, "inventory updated", slog.String("variant_id", variant.ShopifyVariantID), slog.Int("qty", payload.Available))
+	return nil
+}
+
+func (s *service) HandleProductDelete(ctx context.Context, payload ShopifyProductDeleteWebhook) error {
+	if payload.ID == 0 {
+		slog.WarnContext(ctx, "product delete webhook skipped: missing product id")
+		return nil
+	}
+
+	shopifyProductID := strconv.FormatInt(payload.ID, 10)
+	if err := s.productStore.MarkProductDeletedByShopifyID(ctx, shopifyProductID); err != nil {
+		return fmt.Errorf("failed to mark product deleted by shopify id %s: %w", shopifyProductID, err)
+	}
+
+	slog.InfoContext(ctx, "product marked deleted from Shopify webhook",
+		slog.String("shopify_product_id", shopifyProductID))
 	return nil
 }
 

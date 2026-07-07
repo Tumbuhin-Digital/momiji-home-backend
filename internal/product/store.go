@@ -58,10 +58,12 @@ type ProductVariant struct {
 
 type Store interface {
 	GetProducts(ctx context.Context, query ProductQuery) ([]Product, int64, error)
+	ListShopifyProductIDs(ctx context.Context) ([]string, error)
 	GetVariantByShopifyID(ctx context.Context, shopifyVariantID string) (*ProductVariant, error)
 	GetVariantByInventoryItemID(ctx context.Context, itemID string) (*ProductVariant, error)
 	GetProductByShopifyID(ctx context.Context, shopifyID string) (*Product, error)
 	UpsertProduct(ctx context.Context, product *Product) error
+	MarkProductDeletedByShopifyID(ctx context.Context, shopifyID string) error
 	UpsertVariant(ctx context.Context, variant *ProductVariant) error
 	UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64) error
 	GetProductByID(ctx context.Context, productID string) (*Product, error)

@@ -3,6 +3,8 @@ package product
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -22,6 +24,7 @@ func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Prod
 	var total int64
 
 	query := s.db.WithContext(ctx).Model(&Product{})
+	query = query.Where("LOWER(products.status) <> ?", "deleted")
 
 	if q.Search != "" {
 		searchPattern := "%" + q.Search + "%"
@@ -88,6 +91,16 @@ func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Prod
 	return products, total, err
 }
 
+func (s *PostgresStore) ListShopifyProductIDs(ctx context.Context) ([]string, error) {
+	var ids []string
+	if err := s.db.WithContext(ctx).Model(&Product{}).
+		Where("LOWER(status) <> ?", "deleted").
+		Pluck("shopify_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
 func (s *PostgresStore) GetVariantByShopifyID(ctx context.Context, shopifyVariantID string) (*ProductVariant, error) {
 	var variant ProductVariant
 	err := s.db.WithContext(ctx).Where("shopify_variant_id = ?", shopifyVariantID).First(&variant).Error
@@ -123,6 +136,21 @@ func (s *PostgresStore) UpsertProduct(ctx context.Context, product *Product) err
 			"updated_at",
 		}),
 	}).Create(product).Error
+}
+
+func (s *PostgresStore) MarkProductDeletedByShopifyID(ctx context.Context, shopifyID string) error {
+	candidates := []string{shopifyID}
+	if _, err := strconv.ParseInt(shopifyID, 10, 64); err == nil {
+		candidates = append(candidates, "gid://shopify/Product/"+shopifyID)
+	} else if idx := strings.LastIndex(shopifyID, "/"); idx >= 0 && idx < len(shopifyID)-1 {
+		numericID := shopifyID[idx+1:]
+		candidates = append(candidates, numericID)
+	}
+
+	return s.db.WithContext(ctx).Model(&Product{}).
+		Where("shopify_id IN ?", candidates).
+		Updates(map[string]interface{}{"status": "deleted", "updated_at": gorm.Expr("now()")}).
+		Error
 }
 
 func (s *PostgresStore) UpsertVariant(ctx context.Context, variant *ProductVariant) error {

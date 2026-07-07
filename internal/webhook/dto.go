@@ -71,3 +71,7 @@ type ShopifyFulfillmentWebhook struct {
 	ShipmentStatus  string                 `json:"shipment_status"`
 	LineItems       []ShopifyOrderLineItem `json:"line_items"`
 }
+
+type ShopifyProductDeleteWebhook struct {
+	ID int64 `json:"id"`
+}

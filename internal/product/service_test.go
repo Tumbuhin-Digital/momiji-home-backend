@@ -135,6 +135,40 @@ func TestSyncFromShopify_MultiPage(t *testing.T) {
 	}
 }
 
+func TestSyncFromShopify_MarksMissingProductsAsDeleted(t *testing.T) {
+	store := product.NewMockProductStore()
+	store.Products["gid://shopify/Product/1"] = &product.Product{
+		ID:        "product-1",
+		ShopifyID: "gid://shopify/Product/1",
+		Title:     "Product 1",
+		Status:    "active",
+	}
+	store.Products["gid://shopify/Product/2"] = &product.Product{
+		ID:        "product-2",
+		ShopifyID: "gid://shopify/Product/2",
+		Title:     "Product 2",
+		Status:    "active",
+	}
+
+	mockClient := &product.MockShopifyClient{
+		AdminGraphQLResponse: buildShopifyProductResponse(
+			"gid://shopify/Product/1", "gid://shopify/ProductVariant/1", "Rose Mug", "45.00",
+		),
+	}
+	svc := product.NewProductService(store, mockClient)
+
+	if err := svc.SyncFromShopify(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if store.Products["gid://shopify/Product/1"].Status == "deleted" {
+		t.Fatal("expected Shopify product still present to remain not deleted")
+	}
+	if store.Products["gid://shopify/Product/2"].Status != "deleted" {
+		t.Fatalf("expected missing product to be marked deleted, got status=%s", store.Products["gid://shopify/Product/2"].Status)
+	}
+}
+
 func TestGetProductByID_NotFound(t *testing.T) {
 	store := product.NewMockProductStore()
 	svc := product.NewProductService(store, &product.MockShopifyClient{})
