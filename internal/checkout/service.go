@@ -15,6 +15,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/config"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/settings"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/warehouse"
@@ -28,30 +29,36 @@ type CheckoutService interface {
 }
 
 type service struct {
-	cartService      cart.CartService
-	shopifyCli       shopify.Client
-	stockLockService StockLockService
-	store            StockLockStore
-	feURL            string
-	shipstationCli   shipstation.Client
-	shipstationCfg   config.ShipStationConfig
+	cartService       cart.CartService
+	shopifyCli        shopify.Client
+	stockLockService  StockLockService
+	store             StockLockStore
+	settingsStore     settings.SettingsStore
+	feURL             string
+	shipstationCli    shipstation.Client
+	shipstationCfg    config.ShipStationConfig
 	warehouseResolver warehouse.Resolver
 }
 
-func NewCheckoutService(cartService cart.CartService, shopifyCli shopify.Client, stockLockService StockLockService, store StockLockStore, feURL string, shipstationCli shipstation.Client, shipstationCfg config.ShipStationConfig, warehouseResolver warehouse.Resolver) CheckoutService {
+func NewCheckoutService(cartService cart.CartService, shopifyCli shopify.Client, stockLockService StockLockService, store StockLockStore, settingsStore settings.SettingsStore, feURL string, shipstationCli shipstation.Client, shipstationCfg config.ShipStationConfig, warehouseResolver warehouse.Resolver) CheckoutService {
 	return &service{
-		cartService:      cartService,
-		shopifyCli:       shopifyCli,
-		stockLockService: stockLockService,
-		store:            store,
-		feURL:            feURL,
-		shipstationCli:   shipstationCli,
-		shipstationCfg:   shipstationCfg,
+		cartService:       cartService,
+		shopifyCli:        shopifyCli,
+		stockLockService:  stockLockService,
+		store:             store,
+		settingsStore:     settingsStore,
+		feURL:             feURL,
+		shipstationCli:    shipstationCli,
+		shipstationCfg:    shipstationCfg,
 		warehouseResolver: warehouseResolver,
 	}
 }
 
 func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *string, req InitiateCheckoutRequest) (*InitiateCheckoutResponse, error) {
+	if isClosed, message := s.getStoreClosedStatus(ctx); isClosed {
+		return nil, apierror.New(403, "store_closed", message)
+	}
+
 	cartRes, err := s.cartService.GetCartResponse(ctx, userID, sessionID)
 	if err != nil {
 		return nil, apierror.ErrInternal
@@ -308,6 +315,36 @@ func (s *service) ValidateAddress(ctx context.Context, req ValidateAddressReques
 	}
 
 	return nil
+}
+
+func (s *service) getStoreClosedStatus(ctx context.Context) (bool, string) {
+	const defaultMessage = "Store is currently closed. Checkout is temporarily unavailable."
+
+	if s.settingsStore == nil {
+		return false, defaultMessage
+	}
+
+	storeClosedRaw, err := s.settingsStore.Get(ctx, settings.KeyStoreClosed)
+	if err != nil {
+		return false, defaultMessage
+	}
+
+	isClosed, err := strconv.ParseBool(strings.TrimSpace(storeClosedRaw))
+	if err != nil || !isClosed {
+		return false, defaultMessage
+	}
+
+	message, err := s.settingsStore.Get(ctx, settings.KeyStoreClosedMessage)
+	if err != nil {
+		return true, defaultMessage
+	}
+
+	trimmedMessage := strings.TrimSpace(message)
+	if trimmedMessage == "" {
+		return true, defaultMessage
+	}
+
+	return true, trimmedMessage
 }
 
 func (s *service) GetShippingRates(ctx context.Context, userID, sessionID *string, rateReq ShippingRatesRequest) ([]ShippingRateDTO, error) {

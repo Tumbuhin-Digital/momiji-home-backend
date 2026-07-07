@@ -13,8 +13,9 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/server/main.go
+# Build the application + seed helper
+RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/server/main.go && \
+    CGO_ENABLED=0 GOOS=linux go build -o seed_zips ./cmd/seed_zips/main.go
 
 # Run stage
 FROM alpine:latest
@@ -30,6 +31,7 @@ WORKDIR /app
 
 # Copy the binary from the builder stage
 COPY --from=builder /app/main .
+COPY --from=builder /app/seed_zips .
 COPY --from=builder /app/migrations ./migrations
 COPY --from=builder /app/config ./config
 COPY --from=builder /app/internal/platform/email/templates ./internal/platform/email/templates

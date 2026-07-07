@@ -8,6 +8,8 @@ import (
 const (
 	KeyCheckoutDueNowNote   = "checkout_due_now_note"
 	KeyCheckoutDueLaterNote = "checkout_due_later_note"
+	KeyStoreClosed          = "store_closed"
+	KeyStoreClosedMessage   = "store_closed_message"
 )
 
 type Setting struct {
