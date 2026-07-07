@@ -220,7 +220,12 @@ func (s *PostgresStore) UpdateVariantPrices(ctx context.Context, variantID strin
 
 func (s *PostgresStore) GetAllVariants(ctx context.Context) ([]ProductVariant, error) {
 	var variants []ProductVariant
-	if err := s.db.WithContext(ctx).Preload("Product").Find(&variants).Error; err != nil {
+	err := s.db.WithContext(ctx).
+		Joins("JOIN products ON products.id = product_variants.product_id").
+		Where("LOWER(products.status) <> ?", "deleted").
+		Preload("Product").
+		Find(&variants).Error
+	if err != nil {
 		return nil, err
 	}
 	return variants, nil
