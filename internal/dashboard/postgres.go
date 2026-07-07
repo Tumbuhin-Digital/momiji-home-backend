@@ -18,23 +18,32 @@ func (s *PostgresStore) GetDashboardStats(ctx context.Context) (*DashboardRawSta
 	var stats DashboardRawStats
 
 	var totalProducts int64
-	if err := s.db.WithContext(ctx).Table("products").Count(&totalProducts).Error; err != nil {
+	if err := s.db.WithContext(ctx).Table("products").
+		Where("LOWER(status) <> ?", "deleted").
+		Count(&totalProducts).Error; err != nil {
 		return nil, err
 	}
 	stats.TotalProducts = int(totalProducts)
 
-	// 2. Available Stock
+	// 2. Available Stock (ship_ready variants on non-deleted products only)
 	s.db.WithContext(ctx).Raw(`
-		SELECT COALESCE(SUM(inventory_quantity), 0) 
-		FROM product_variants 
-		WHERE inventory_quantity > 0
+		SELECT COALESCE(SUM(pv.inventory_quantity), 0)
+		FROM product_variants pv
+		JOIN products p ON p.id = pv.product_id
+		WHERE LOWER(p.status) <> 'deleted'
+		  AND pv.fulfillment_type = 'ship_ready'
+		  AND pv.inventory_quantity > 0
 	`).Scan(&stats.AvailableStockCount)
 
-	// Available Stock Delta (items created today) - assuming delta means items updated/created today
+	// Ship-ready SKUs updated today (not total inventory units)
 	s.db.WithContext(ctx).Raw(`
-		SELECT COALESCE(SUM(inventory_quantity), 0)
-		FROM product_variants
-		WHERE inventory_quantity > 0 AND DATE(updated_at) = CURRENT_DATE
+		SELECT COUNT(*)
+		FROM product_variants pv
+		JOIN products p ON p.id = pv.product_id
+		WHERE LOWER(p.status) <> 'deleted'
+		  AND pv.fulfillment_type = 'ship_ready'
+		  AND pv.inventory_quantity > 0
+		  AND DATE(pv.updated_at) = CURRENT_DATE
 	`).Scan(&stats.AvailableStockDelta)
 
 	// 3. Orders in Progress
