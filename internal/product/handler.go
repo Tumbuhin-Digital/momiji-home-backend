@@ -326,7 +326,7 @@ func (h *Handler) DownloadDimensionTemplate(c *fiber.Ctx) error {
 	c.Set("Content-Disposition", `attachment; filename="dimension-template.csv"`)
 
 	writer := csv.NewWriter(c.Response().BodyWriter())
-	header := []string{"variant_id", "product_title", "variant_title", "sku", "width_in", "height_in", "depth_in"}
+	header := []string{"variant_id", "product_title", "variant_title", "sku", "length_in", "width_in", "height_in"}
 	_ = writer.Write(header)
 
 	for _, v := range variants {
@@ -339,9 +339,9 @@ func (h *Handler) DownloadDimensionTemplate(c *fiber.Ctx) error {
 			productTitle,
 			v.Title,
 			v.SKU,
+			fmt.Sprintf("%.2f", units.CmToIn(v.DepthCm)),
 			fmt.Sprintf("%.2f", units.CmToIn(v.WidthCm)),
 			fmt.Sprintf("%.2f", units.CmToIn(v.HeightCm)),
-			fmt.Sprintf("%.2f", units.CmToIn(v.DepthCm)),
 		}
 		_ = writer.Write(row)
 	}
@@ -421,7 +421,11 @@ func (h *Handler) ImportDimensions(c *fiber.Ctx) error {
 		} else if idx, ok := idxMap["height_cm"]; ok && len(row) > idx && row[idx] != "" {
 			input.HeightCm = parseFloat(row[idx])
 		}
-		if idx, ok := idxMap["depth_in"]; ok && len(row) > idx && row[idx] != "" {
+		if idx, ok := idxMap["length_in"]; ok && len(row) > idx && row[idx] != "" {
+			input.DepthCm = units.InToCm(parseFloat(row[idx]))
+		} else if idx, ok := idxMap["length_cm"]; ok && len(row) > idx && row[idx] != "" {
+			input.DepthCm = parseFloat(row[idx])
+		} else if idx, ok := idxMap["depth_in"]; ok && len(row) > idx && row[idx] != "" {
 			input.DepthCm = units.InToCm(parseFloat(row[idx]))
 		} else if idx, ok := idxMap["depth_cm"]; ok && len(row) > idx && row[idx] != "" {
 			input.DepthCm = parseFloat(row[idx])
