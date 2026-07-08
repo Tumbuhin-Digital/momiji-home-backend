@@ -37,9 +37,10 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	admin.Use(middleware.Auth(h.jwtSecret))
 	admin.Use(middleware.RBAC("admin"))
 	admin.Post("/sync", h.SyncProducts)
+	admin.Patch("/variant/price", h.UpdateVariantPrice)
+	admin.Patch("/variant/status", h.UpdateVariantStatus)
 	admin.Patch("/:id/status", h.UpdateProductStatus)
 	admin.Patch("/:id/batch", h.UpdateVariantBatchLabel)
-	admin.Patch("/variant/price", h.UpdateVariantPrice)
 	admin.Get("/variants/dimensions/template", h.DownloadDimensionTemplate)
 	admin.Post("/variants/dimensions/import", h.ImportDimensions)
 }
@@ -110,6 +111,7 @@ func (h *Handler) GetCatalogProducts(c *fiber.Ctx) error {
 	}
 
 	query.ExcludeInactive = true
+	query.FilterVariantsInResponse = true
 
 	products, total, err := h.service.GetProducts(c.Context(), query)
 	if err != nil {
@@ -281,6 +283,34 @@ func (h *Handler) UpdateVariantBatchLabel(c *fiber.Ctx) error {
 	}
 
 	return response.Success(c, fiber.StatusOK, "Batch label updated", data)
+}
+
+// UpdateVariantStatus godoc
+// @Summary Update variant fulfillment type
+// @Tags Admin/Product
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body UpdateVariantStatusRequest true "Variant Status Request"
+// @Success 200 {object} response.Envelope{data=VariantDTO}
+// @Router /products/variant/status [patch]
+func (h *Handler) UpdateVariantStatus(c *fiber.Ctx) error {
+	var req UpdateVariantStatusRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	slog.InfoContext(c.Context(), "UpdateVariantStatus", slog.String("variant_id", req.VariantID))
+
+	dto, err := h.service.UpdateVariantStatus(c.Context(), req.VariantID, req.FulfillmentType)
+	if err != nil {
+		return response.Error(c, err)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Variant status updated", dto)
 }
 
 // UpdateVariantPrice godoc

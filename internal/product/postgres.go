@@ -28,10 +28,20 @@ func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Prod
 
 	if q.Search != "" {
 		searchPattern := "%" + q.Search + "%"
-		query = query.Where("title ILIKE ? OR description ILIKE ?", searchPattern, searchPattern)
+		query = query.Where("products.title ILIKE ? OR products.description ILIKE ?", searchPattern, searchPattern)
 	}
 
-	if q.FulfillmentType != "" {
+	switch q.FulfillmentType {
+	case "mixed":
+		query = query.Where(`products.id IN (
+			SELECT product_id
+			FROM product_variants
+			GROUP BY product_id
+			HAVING COUNT(DISTINCT fulfillment_type) > 1
+		)`)
+	case "":
+		// no fulfillment filter
+	default:
 		query = query.Joins("JOIN product_variants ON product_variants.product_id = products.id").
 			Where("product_variants.fulfillment_type = ?", q.FulfillmentType).
 			Group("products.id")
@@ -59,15 +69,15 @@ func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Prod
 	offset := (page - 1) * limit
 
 	orderStr := "products.created_at DESC" // Fix 1C: Default sorting
+	needsVariantJoin := q.FulfillmentType == "" || q.FulfillmentType == "mixed"
 	switch q.Sort {
 	case "price_asc":
-		// Ensure join is present if not already added by fulfillment_type filter
-		if q.FulfillmentType == "" {
+		if needsVariantJoin {
 			query = query.Joins("JOIN product_variants ON product_variants.product_id = products.id").Group("products.id")
 		}
 		orderStr = "MIN(COALESCE(product_variants.ws_price, product_variants.price)) ASC"
 	case "price_desc":
-		if q.FulfillmentType == "" {
+		if needsVariantJoin {
 			query = query.Joins("JOIN product_variants ON product_variants.product_id = products.id").Group("products.id")
 		}
 		orderStr = "MAX(COALESCE(product_variants.ws_price, product_variants.price)) DESC"
@@ -76,12 +86,12 @@ func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Prod
 	case "created_at":
 		orderStr = "products.created_at DESC"
 	case "stock_asc":
-		if q.FulfillmentType == "" {
+		if needsVariantJoin {
 			query = query.Joins("JOIN product_variants ON product_variants.product_id = products.id").Group("products.id")
 		}
 		orderStr = "SUM(product_variants.inventory_quantity) ASC"
 	case "stock_desc":
-		if q.FulfillmentType == "" {
+		if needsVariantJoin {
 			query = query.Joins("JOIN product_variants ON product_variants.product_id = products.id").Group("products.id")
 		}
 		orderStr = "SUM(product_variants.inventory_quantity) DESC"

@@ -188,3 +188,36 @@ func TestUpdateProductStatus_InvalidStatus(t *testing.T) {
 		t.Fatal("expected validation error for invalid status")
 	}
 }
+
+func TestUpdateVariantStatus_ShipReadyZeroInventory(t *testing.T) {
+	store := product.NewMockProductStore()
+	svc := product.NewProductService(store, &product.MockShopifyClient{})
+
+	store.Variants["gid://shopify/ProductVariant/1"] = &product.ProductVariant{
+		ID: "uuid-1", ShopifyVariantID: "gid://shopify/ProductVariant/1",
+		Title: "Peach / Peach", InventoryQuantity: 0, FulfillmentType: "pre_order",
+	}
+
+	_, err := svc.UpdateVariantStatus(context.Background(), "gid://shopify/ProductVariant/1", "ship_ready")
+	if err == nil {
+		t.Fatal("expected inventory error for ship_ready with 0 stock")
+	}
+}
+
+func TestUpdateVariantStatus_ShipReadyWithInventory(t *testing.T) {
+	store := product.NewMockProductStore()
+	svc := product.NewProductService(store, &product.MockShopifyClient{})
+
+	store.Variants["gid://shopify/ProductVariant/2"] = &product.ProductVariant{
+		ID: "uuid-2", ShopifyVariantID: "gid://shopify/ProductVariant/2",
+		Title: "Peach / Mint", InventoryQuantity: 1, FulfillmentType: "pre_order",
+	}
+
+	dto, err := svc.UpdateVariantStatus(context.Background(), "gid://shopify/ProductVariant/2", "ship_ready")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dto.FulfillmentType != product.FulfillmentTypeShipReady {
+		t.Fatalf("expected ship_ready, got %s", dto.FulfillmentType)
+	}
+}

@@ -20,6 +20,7 @@ type ProductService interface {
 	GetProductByID(ctx context.Context, id string) (*ProductDTO, error)
 	GetVariantsByProductID(ctx context.Context, productID string) ([]VariantDTO, error)
 	UpdateProductStatus(ctx context.Context, productID string, fulfillmentType string) (*ProductDTO, error)
+	UpdateVariantStatus(ctx context.Context, variantID string, fulfillmentType string) (*VariantDTO, error)
 	UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) (*ProductDTO, error)
 	UpdateVariantPrice(ctx context.Context, variantID string, wsPrice *float64) error
 	GetAllVariants(ctx context.Context) ([]ProductVariant, error)
@@ -67,14 +68,30 @@ func (s *service) GetProducts(ctx context.Context, query ProductQuery) ([]Produc
 		return nil, 0, apierror.ErrInternal
 	}
 
+	variantFilter := ""
+	if query.FilterVariantsInResponse && query.FulfillmentType != "" {
+		variantFilter = query.FulfillmentType
+	}
+
 	dtos := make([]ProductDTO, len(products))
 	for i, p := range products {
-		dtos[i] = mapProductToDTO(&p)
+		dtos[i] = mapProductToDTO(&p, variantFilter)
 	}
+
+	if query.FilterVariantsInResponse {
+		filtered := make([]ProductDTO, 0, len(dtos))
+		for _, dto := range dtos {
+			if len(dto.Variants) > 0 {
+				filtered = append(filtered, dto)
+			}
+		}
+		dtos = filtered
+	}
+
 	return dtos, total, nil
 }
 
-func mapProductToDTO(p *Product) ProductDTO {
+func mapProductToDTO(p *Product, fulfillmentTypeFilter string) ProductDTO {
 	images := make([]ProductImageDTO, len(p.Images))
 	for i, img := range p.Images {
 		images[i] = ProductImageDTO{
@@ -85,8 +102,19 @@ func mapProductToDTO(p *Product) ProductDTO {
 		}
 	}
 
-	variants := make([]VariantDTO, len(p.Variants))
-	for i, v := range p.Variants {
+	sourceVariants := p.Variants
+	if fulfillmentTypeFilter != "" {
+		filtered := make([]ProductVariant, 0, len(p.Variants))
+		for _, v := range p.Variants {
+			if string(v.FulfillmentType) == fulfillmentTypeFilter {
+				filtered = append(filtered, v)
+			}
+		}
+		sourceVariants = filtered
+	}
+
+	variants := make([]VariantDTO, len(sourceVariants))
+	for i, v := range sourceVariants {
 		vDto := mapVariantToDTO(&v)
 		if vDto.ImageSrc == "" && len(p.Images) > 0 {
 			vDto.ImageSrc = p.Images[0].Src
@@ -96,12 +124,12 @@ func mapProductToDTO(p *Product) ProductDTO {
 
 	// Determine product-level preorder_batch_label and expected_ship_date from first variant
 	var batchLabel, shipDate *string
-	if len(p.Variants) > 0 {
-		if p.Variants[0].PreorderBatchLabel != nil {
-			batchLabel = p.Variants[0].PreorderBatchLabel
+	if len(sourceVariants) > 0 {
+		if sourceVariants[0].PreorderBatchLabel != nil {
+			batchLabel = sourceVariants[0].PreorderBatchLabel
 		}
-		if p.Variants[0].ExpectedShipDate != nil {
-			dt := p.Variants[0].ExpectedShipDate.Format("2006-01-02T15:04:05Z07:00")
+		if sourceVariants[0].ExpectedShipDate != nil {
+			dt := sourceVariants[0].ExpectedShipDate.Format("2006-01-02T15:04:05Z07:00")
 			shipDate = &dt
 		}
 	}
@@ -405,7 +433,7 @@ func (s *service) GetProductByID(ctx context.Context, id string) (*ProductDTO, e
 	if p == nil {
 		return nil, apierror.ErrNotFound
 	}
-	dto := mapProductToDTO(p)
+	dto := mapProductToDTO(p, "")
 	return &dto, nil
 }
 
@@ -442,6 +470,30 @@ func (s *service) UpdateProductStatus(ctx context.Context, productID string, ful
 		return nil, apierror.ErrInternal
 	}
 	return s.GetProductByID(ctx, productID)
+}
+
+func (s *service) UpdateVariantStatus(ctx context.Context, variantID string, fulfillmentType string) (*VariantDTO, error) {
+	if fulfillmentType != "ship_ready" && fulfillmentType != "pre_order" && fulfillmentType != "inactive" {
+		return nil, apierror.New(400, "validation_error", "fulfillment_type must be ship_ready, pre_order, or inactive")
+	}
+
+	variant, err := s.store.GetVariantByShopifyID(ctx, variantID)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	if variant == nil {
+		return nil, apierror.ErrNotFound
+	}
+
+	if fulfillmentType == "ship_ready" && variant.InventoryQuantity <= 0 {
+		return nil, apierror.New(400, "inventory_error", "Cannot set status to ship_ready. Variant '"+variant.Title+"' has 0 inventory.")
+	}
+
+	if err := s.store.UpdateVariantFulfillmentType(ctx, variantID, fulfillmentType); err != nil {
+		return nil, apierror.ErrInternal
+	}
+
+	return s.GetVariantByID(ctx, variantID)
 }
 
 func (s *service) UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) (*ProductDTO, error) {

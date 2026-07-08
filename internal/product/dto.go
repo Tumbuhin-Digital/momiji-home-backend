@@ -49,12 +49,13 @@ type ProductDTO struct {
 }
 
 type ProductQuery struct {
-	Page            int    `query:"page"`
-	Limit           int    `query:"limit"`
-	Search          string `query:"search"`
-	Sort            string `query:"sort"`
-	FulfillmentType string `query:"fulfillment_type"`
-	ExcludeInactive bool   `query:"-"`
+	Page                       int    `query:"page"`
+	Limit                      int    `query:"limit"`
+	Search                     string `query:"search"`
+	Sort                       string `query:"sort"`
+	FulfillmentType            string `query:"fulfillment_type"`
+	ExcludeInactive            bool   `query:"-"`
+	FilterVariantsInResponse   bool   `query:"-"`
 }
 
 type UpdateProductStatusRequest struct {
@@ -69,4 +70,9 @@ type UpdateVariantBatchLabelRequest struct {
 type UpdateVariantPriceRequest struct {
 	VariantID   string   `json:"variant_id" validate:"required"`
 	WSPrice     *float64 `json:"ws_price" validate:"omitempty,min=0"`
+}
+
+type UpdateVariantStatusRequest struct {
+	VariantID       string `json:"variant_id" validate:"required"`
+	FulfillmentType string `json:"fulfillment_type" validate:"required"`
 }

@@ -154,6 +154,11 @@ func (m *MockProductStore) UpdateProductStatus(ctx context.Context, productID st
 }
 
 func (m *MockProductStore) UpdateVariantFulfillmentType(ctx context.Context, variantID string, fulfillmentType string) error {
+	v, ok := m.Variants[variantID]
+	if !ok {
+		return errors.New("variant not found")
+	}
+	v.FulfillmentType = fulfillmentType
 	return nil
 }
 
