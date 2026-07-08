@@ -4,7 +4,7 @@ ifneq (,$(wildcard .env))
     export
 endif
 
-.PHONY: dev test migrate-up migrate-down seed seed-zips db-clean
+.PHONY: dev test migrate-up migrate-down seed seed-zips db-clean db-clean-catalog
 
 dev:
 	go run cmd/server/main.go
@@ -33,4 +33,7 @@ seed-zips:
 
 db-clean:
 	go run cmd/dbclean/main.go
+
+db-clean-catalog:
+	go run cmd/dbclean/main.go -scope=products-orders
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 
@@ -8,7 +9,33 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/database"
 )
 
+const (
+	scopeAll            = "all"
+	scopeProductsOrders = "products-orders"
+)
+
+var productsOrdersTables = []string{
+	"orders",
+	"order_line_items",
+	"preorder_settlements",
+	"preorder_shipments",
+	"preorder_packing_items",
+	"fulfillment_orders",
+	"fulfillment_order_line_items",
+	"fulfillments",
+	"fulfillment_line_items",
+	"products",
+	"product_variants",
+}
+
 func main() {
+	scope := flag.String("scope", scopeAll, "cleanup scope: all (default) or products-orders")
+	flag.Parse()
+
+	if *scope != scopeAll && *scope != scopeProductsOrders {
+		log.Fatalf("invalid -scope %q: valid values are %q, %q", *scope, scopeAll, scopeProductsOrders)
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("load config: %v", err)
@@ -26,15 +53,20 @@ func main() {
 	defer sqlDB.Close()
 
 	var tables []string
-	err = db.Raw(`
-		SELECT tablename
-		FROM pg_tables
-		WHERE schemaname = 'public'
-		  AND tablename NOT IN ('users', 'schema_migrations')
-		ORDER BY tablename
-	`).Scan(&tables).Error
-	if err != nil {
-		log.Fatalf("list tables: %v", err)
+	switch *scope {
+	case scopeProductsOrders:
+		tables = productsOrdersTables
+	case scopeAll:
+		err = db.Raw(`
+			SELECT tablename
+			FROM pg_tables
+			WHERE schemaname = 'public'
+			  AND tablename NOT IN ('users', 'schema_migrations')
+			ORDER BY tablename
+		`).Scan(&tables).Error
+		if err != nil {
+			log.Fatalf("list tables: %v", err)
+		}
 	}
 
 	if len(tables) == 0 {
@@ -42,7 +74,12 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Truncating %d tables (keeping users + schema_migrations):\n", len(tables))
+	switch *scope {
+	case scopeProductsOrders:
+		fmt.Printf("Truncating %d tables (scope: products-orders, keeping users + other data):\n", len(tables))
+	default:
+		fmt.Printf("Truncating %d tables (keeping users + schema_migrations):\n", len(tables))
+	}
 	for _, t := range tables {
 		fmt.Printf("  - %s\n", t)
 	}
