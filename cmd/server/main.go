@@ -136,8 +136,11 @@ func main() {
 
 	// Initialize Handlers & Routes
 	secureCookie := cfg.App.Env == "production" || cfg.App.Env == "staging"
-	authHandler := auth.NewAuthHandler(authService, cfg.Auth.Secret, secureCookie)
+	authHandler := auth.NewAuthHandler(authService, cfg.Auth.Secret, secureCookie, cfg.Auth.EnablePublicRegister)
 	authHandler.SetupRoutes(api)
+	if cfg.Auth.EnablePublicRegister {
+		log.Warn("Public /auth/register is enabled — disable ENABLE_PUBLIC_REGISTER in production")
+	}
 
 	cartHandler := cart.NewCartHandler(cartService, cfg.Auth.Secret)
 	cartHandler.SetupRoutes(api)

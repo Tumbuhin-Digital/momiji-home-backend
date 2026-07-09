@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -47,8 +48,9 @@ type AuthConfig struct {
 		MaxAttempts int    `yaml:"max_attempts"`
 		Window      string `yaml:"window"`
 	} `yaml:"rate_limit"`
-	Secret        string
-	RefreshSecret string
+	Secret               string
+	RefreshSecret        string
+	EnablePublicRegister bool
 }
 
 type ShopifyConfig struct {
@@ -123,6 +125,13 @@ func Load() (*Config, error) {
 	}
 	cfg.Auth.Secret = os.Getenv("JWT_SECRET")
 	cfg.Auth.RefreshSecret = os.Getenv("JWT_REFRESH_SECRET")
+	if v := strings.TrimSpace(os.Getenv("ENABLE_PUBLIC_REGISTER")); v != "" {
+		enabled, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ENABLE_PUBLIC_REGISTER value %q: %w", v, err)
+		}
+		cfg.Auth.EnablePublicRegister = enabled
+	}
 
 	cfg.Shopify.StoreDomain = os.Getenv("SHOPIFY_STORE_DOMAIN")
 	cfg.Shopify.AdminAPIToken = os.Getenv("SHOPIFY_ADMIN_API_TOKEN")

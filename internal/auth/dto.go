@@ -1,8 +1,13 @@
 package auth
 
-// RegisterRequest is DEV ONLY — remove or gate behind feature flag before production.
-// Added temporarily to allow FE development without direct DB access.
+// RegisterRequest is only used when ENABLE_PUBLIC_REGISTER=true (local/staging).
 type RegisterRequest struct {
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required,min=8"`
+}
+
+// CreateAdminRequest creates a new admin; requires Auth + RBAC(admin).
+type CreateAdminRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required,min=8"`
 }

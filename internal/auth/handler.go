@@ -11,13 +11,19 @@ import (
 )
 
 type Handler struct {
-	service      AuthService
-	jwtSecret    string
-	secureCookie bool
+	service              AuthService
+	jwtSecret            string
+	secureCookie         bool
+	enablePublicRegister bool
 }
 
-func NewAuthHandler(service AuthService, jwtSecret string, secureCookie bool) *Handler {
-	return &Handler{service: service, jwtSecret: jwtSecret, secureCookie: secureCookie}
+func NewAuthHandler(service AuthService, jwtSecret string, secureCookie bool, enablePublicRegister bool) *Handler {
+	return &Handler{
+		service:              service,
+		jwtSecret:            jwtSecret,
+		secureCookie:         secureCookie,
+		enablePublicRegister: enablePublicRegister,
+	}
 }
 
 func (h *Handler) getSameSite() string {
@@ -67,8 +73,10 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 
 	rateLimit := middleware.RateLimit(5, 15*time.Minute)
 
-	// DEV ONLY — remove before production
-	group.Post("/register", rateLimit, h.Register)
+	// Public self-register (hardcodes admin) — only when ENABLE_PUBLIC_REGISTER=true
+	if h.enablePublicRegister {
+		group.Post("/register", rateLimit, h.Register)
+	}
 
 	group.Post("/login", rateLimit, h.Login)
 	group.Post("/refresh", h.Refresh)
@@ -78,11 +86,16 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	protected.Use(middleware.Auth(h.jwtSecret))
 	protected.Post("/logout", h.Logout)
 	protected.Get("/me", h.GetMe)
+
+	// Admin-only: create teammate accounts (replaces public register in production)
+	admin := group.Group("/users")
+	admin.Use(middleware.Auth(h.jwtSecret), middleware.RBAC("admin"))
+	admin.Post("/", h.CreateAdmin)
 }
 
 // Register godoc
-// @Summary Register a new user
-// @Description Register a new user and return tokens
+// @Summary Register a new admin (DEV ONLY)
+// @Description Creates an admin user when ENABLE_PUBLIC_REGISTER is true. Disabled by default.
 // @Tags Auth
 // @Accept json
 // @Produce json
@@ -109,6 +122,38 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 	h.setTokenCookies(c, res.AccessToken, res.RefreshToken)
 
 	return response.Success(c, fiber.StatusCreated, "User registered successfully", res)
+}
+
+// CreateAdmin godoc
+// @Summary Create an admin user
+// @Description Creates a new admin account. Requires an existing authenticated admin.
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body auth.CreateAdminRequest true "Create Admin Request"
+// @Success 201 {object} response.Envelope{data=auth.UserResponse}
+// @Failure 400 {object} response.Envelope{error=response.ErrorBlock}
+// @Failure 401 {object} response.Envelope{error=response.ErrorBlock}
+// @Failure 403 {object} response.Envelope{error=response.ErrorBlock}
+// @Failure 409 {object} response.Envelope{error=response.ErrorBlock}
+// @Router /auth/users [post]
+func (h *Handler) CreateAdmin(c *fiber.Ctx) error {
+	var req CreateAdminRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	res, err := h.service.CreateAdmin(c.Context(), req)
+	if err != nil {
+		return response.Error(c, err)
+	}
+
+	return response.Success(c, fiber.StatusCreated, "Admin created successfully", res)
 }
 
 // GetMe godoc

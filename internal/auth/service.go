@@ -12,8 +12,9 @@ import (
 )
 
 type AuthService interface {
-	// DEV ONLY — Register is a temporary endpoint for FE development.
+	// Register is only reachable when ENABLE_PUBLIC_REGISTER is true.
 	Register(ctx context.Context, req RegisterRequest) (*TokenResponse, error)
+	CreateAdmin(ctx context.Context, req CreateAdminRequest) (*UserResponse, error)
 	Login(ctx context.Context, req LoginRequest) (*TokenResponse, error)
 	Refresh(ctx context.Context, refreshToken string) (*TokenResponse, error)
 	GetMe(ctx context.Context, userID string) (*UserResponse, error)
@@ -28,9 +29,31 @@ func NewAuthService(store AuthStore, cfg config.AuthConfig) AuthService {
 	return &service{store: store, cfg: cfg}
 }
 
-// Register is DEV ONLY — creates a user account for FE development without direct DB access.
+// Register creates an admin account for local/staging when the public route is enabled.
 func (s *service) Register(ctx context.Context, req RegisterRequest) (*TokenResponse, error) {
-	existing, err := s.store.GetUserByEmail(ctx, req.Email)
+	user, err := s.createAdminUser(ctx, req.Email, req.Password)
+	if err != nil {
+		return nil, err
+	}
+	return s.generateTokens(user)
+}
+
+// CreateAdmin creates an admin account without issuing session tokens.
+func (s *service) CreateAdmin(ctx context.Context, req CreateAdminRequest) (*UserResponse, error) {
+	user, err := s.createAdminUser(ctx, req.Email, req.Password)
+	if err != nil {
+		return nil, err
+	}
+	return &UserResponse{
+		ID:                user.ID,
+		Email:             user.Email,
+		Role:              user.Role,
+		ShopifyCustomerID: user.ShopifyCustomerID,
+	}, nil
+}
+
+func (s *service) createAdminUser(ctx context.Context, email, password string) (*User, error) {
+	existing, err := s.store.GetUserByEmail(ctx, email)
 	if err != nil {
 		return nil, apierror.ErrInternal
 	}
@@ -38,13 +61,17 @@ func (s *service) Register(ctx context.Context, req RegisterRequest) (*TokenResp
 		return nil, apierror.New(http.StatusConflict, "conflict", "Email already registered")
 	}
 
-	hashed, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
+	cost := s.cfg.JWT.BcryptCost
+	if cost < 10 {
+		cost = 12
+	}
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), cost)
 	if err != nil {
 		return nil, apierror.ErrInternal
 	}
 
 	user := &User{
-		Email:        req.Email,
+		Email:        email,
 		PasswordHash: string(hashed),
 		Role:         "admin",
 	}
@@ -53,7 +80,7 @@ func (s *service) Register(ctx context.Context, req RegisterRequest) (*TokenResp
 		return nil, apierror.ErrInternal
 	}
 
-	return s.generateTokens(user)
+	return user, nil
 }
 
 func (s *service) GetMe(ctx context.Context, userID string) (*UserResponse, error) {
