@@ -2,6 +2,7 @@ package preorder
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -182,6 +183,28 @@ func (s *postgresStore) UpdateSettlementStatus(ctx context.Context, id, status s
 		Updates(updates).Error
 }
 
+func (s *postgresStore) MarkSettlementsInvoiced(ctx context.Context, ids []string, draftOrderID, invoiceURL string, invoicedAt time.Time) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{
+			"status":                  "invoiced",
+			"invoiced_at":             invoicedAt,
+			"shopify_invoice_url":     invoiceURL,
+			"shopify_draft_order_id":  draftOrderID,
+			"updated_at":              time.Now(),
+		}
+		result := tx.Model(&Settlement{}).
+			Where("id IN ? AND status = ?", ids, "pending").
+			Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if int(result.RowsAffected) != len(ids) {
+			return fmt.Errorf("expected to invoice %d settlements, updated %d", len(ids), result.RowsAffected)
+		}
+		return nil
+	})
+}
+
 // AllSettlementsPaid returns true if every settlement for the given orderID has status = 'paid'.
 func (s *postgresStore) AllSettlementsPaid(ctx context.Context, orderID string) (bool, error) {
 	var unpaidCount int64
@@ -220,6 +243,8 @@ func (s *postgresStore) GetSettlementsForReminder(ctx context.Context, daysSince
 			preorder_settlements.status as settlement_status,
 			preorder_settlements.due_date,
 			orders.shopify_order_id,
+			preorder_settlements.shopify_invoice_url,
+			preorder_settlements.shopify_draft_order_id,
 			preorder_settlements.created_at
 		`).
 		Joins("JOIN order_line_items ON order_line_items.id = preorder_settlements.order_line_item_id").

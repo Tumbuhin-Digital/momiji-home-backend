@@ -4,15 +4,17 @@ import "time"
 
 // SettlementResponse is the API representation of a preorder settlement.
 type SettlementResponse struct {
-	ID              string     `json:"id"`
-	OrderLineItemID string     `json:"order_line_item_id"`
-	OrderID         string     `json:"order_id,omitempty"`
-	Status          string     `json:"status"`
-	BalanceAmount   float64    `json:"balance_amount"`
-	DueDate         *time.Time `json:"due_date,omitempty"`
-	InvoicedAt      *time.Time `json:"invoiced_at,omitempty"`
-	PaidAt          *time.Time `json:"paid_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
+	ID                  string     `json:"id"`
+	OrderLineItemID     string     `json:"order_line_item_id"`
+	OrderID             string     `json:"order_id,omitempty"`
+	Status              string     `json:"status"`
+	BalanceAmount       float64    `json:"balance_amount"`
+	DueDate             *time.Time `json:"due_date,omitempty"`
+	InvoicedAt          *time.Time `json:"invoiced_at,omitempty"`
+	PaidAt              *time.Time `json:"paid_at,omitempty"`
+	ShopifyInvoiceURL   *string    `json:"shopify_invoice_url,omitempty"`
+	ShopifyDraftOrderID *string    `json:"shopify_draft_order_id,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
 }
 
 // PreorderGroupSettlement represents an individual order's settlement within a product group.

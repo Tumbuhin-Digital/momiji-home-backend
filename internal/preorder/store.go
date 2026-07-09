@@ -14,11 +14,13 @@ type Settlement struct {
 	OrderID         string     `gorm:"->"` // derived via join if needed
 	Status          string     `gorm:"not null;default:'pending'"` // pending | invoiced | paid
 	BalanceAmount   float64    `gorm:"not null"`
-	DueDate         *time.Time
-	InvoicedAt      *time.Time
-	PaidAt          *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	DueDate              *time.Time
+	InvoicedAt           *time.Time
+	PaidAt               *time.Time
+	ShopifyInvoiceURL    *string `gorm:"column:shopify_invoice_url"`
+	ShopifyDraftOrderID  *string `gorm:"column:shopify_draft_order_id"`
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 
 	// Joined fields (read-only)
 	Title         string `gorm:"->"`
@@ -43,9 +45,11 @@ type PreorderRow struct {
 	BalanceAmount    float64
 	BatchLabel       string
 	SettlementStatus string
-	DueDate          *time.Time
-	ShopifyOrderID   *string
-	CreatedAt        time.Time
+	DueDate             *time.Time
+	ShopifyOrderID      *string
+	ShopifyInvoiceURL   *string
+	ShopifyDraftOrderID *string
+	CreatedAt           time.Time
 }
 
 // SettlementFilter is used for listing settlements with optional filters.
@@ -64,6 +68,7 @@ type PreorderStore interface {
 	ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderRow, int64, error)
 	GetAllSettlementsForExport(ctx context.Context, filter SettlementFilter) ([]PreorderRow, error)
 	UpdateSettlementStatus(ctx context.Context, id, status string, ts *time.Time) error
+	MarkSettlementsInvoiced(ctx context.Context, ids []string, draftOrderID, invoiceURL string, invoicedAt time.Time) error
 	AllSettlementsPaid(ctx context.Context, orderID string) (bool, error)
 	GetSettlementsForReminder(ctx context.Context, daysSinceInvoiced int) ([]PreorderRow, error)
 }

@@ -232,30 +232,37 @@ func (s *service) InvoiceSettlementsWithShipping(ctx context.Context, ids []stri
 
 	// 3. Create Shopify Draft Order
 	draftRes, err := s.shopClient.CreateDraftOrder(ctx, draftInput)
-	var paymentLink string
-	if err == nil && draftRes != nil && draftRes.InvoiceUrl != "" {
-		paymentLink = draftRes.InvoiceUrl
-	} else {
+	if err != nil {
 		slog.ErrorContext(ctx, "failed to create shopify draft order for bulk settlements", "error", err)
-		// Fallback local link if Shopify fails (assuming first settlement ID as fallback reference)
-		paymentLink = "https://momiji-home.vercel.app/pay-settlement/" + settlements[0].ID
+		return nil, apierror.New(http.StatusBadGateway, "shopify_draft_order_error", "Failed to create Shopify draft order for settlement invoice")
+	}
+	if draftRes == nil || draftRes.InvoiceUrl == "" {
+		slog.ErrorContext(ctx, "shopify draft order missing invoice URL for bulk settlements")
+		return nil, apierror.New(http.StatusBadGateway, "shopify_draft_order_error", "Shopify draft order did not return an invoice URL")
+	}
+	paymentLink := draftRes.InvoiceUrl
+
+	// 4. Update Database (all-or-nothing)
+	now := time.Now()
+	settlementIDs := make([]string, len(settlements))
+	for i := range settlements {
+		settlementIDs[i] = settlements[i].ID
+	}
+	if err := s.store.MarkSettlementsInvoiced(ctx, settlementIDs, draftRes.ID, paymentLink, now); err != nil {
+		slog.ErrorContext(ctx, "failed to mark settlements invoiced", "error", err)
+		return nil, apierror.ErrInternal
 	}
 
-	// 4. Update Database
-	now := time.Now()
 	var responses []SettlementResponse
-	
 	for i := range settlements {
-		if err := s.store.UpdateSettlementStatus(ctx, settlements[i].ID, "invoiced", &now); err != nil {
-			slog.ErrorContext(ctx, "failed to update settlement status", "id", settlements[i].ID, "error", err)
-			continue
-		}
 		settlements[i].Status = "invoiced"
 		settlements[i].InvoicedAt = &now
+		settlements[i].ShopifyInvoiceURL = &paymentLink
+		settlements[i].ShopifyDraftOrderID = &draftRes.ID
 		responses = append(responses, toResponse(settlements[i]))
 	}
 
-	// 5. Send ONE Email
+	// 5. Send ONE Email (only after DB commit succeeds)
 	var dueDateStr string
 	if settlements[0].DueDate != nil {
 		dueDateStr = settlements[0].DueDate.Format("2006-01-02")
@@ -423,6 +430,10 @@ func (s *service) ProcessReminders(ctx context.Context) error {
 	rowsD3, err := s.store.GetSettlementsForReminder(ctx, 3)
 	if err == nil {
 		for _, r := range rowsD3 {
+			if r.ShopifyInvoiceURL == nil || *r.ShopifyInvoiceURL == "" {
+				slog.WarnContext(ctx, "skipping D+3 reminder: settlement missing shopify invoice URL", "settlement_id", r.ID)
+				continue
+			}
 			var dueDateStr string
 			if r.DueDate != nil {
 				dueDateStr = r.DueDate.Format("2006-01-02")
@@ -432,7 +443,7 @@ func (s *service) ProcessReminders(ctx context.Context) error {
 				ItemTitle:     r.Title,
 				BalanceAmount: fmt.Sprintf("$%.2f", r.BalanceAmount),
 				DueDate:       dueDateStr,
-				PaymentLink:   "https://momiji-home.com/checkout/settlement/" + r.ID,
+				PaymentLink:   *r.ShopifyInvoiceURL,
 			}
 			_ = s.emailService.SendReminder(ctx, r.CustomerEmail, emailData)
 		}
@@ -442,6 +453,10 @@ func (s *service) ProcessReminders(ctx context.Context) error {
 	rowsD6, err := s.store.GetSettlementsForReminder(ctx, 6)
 	if err == nil {
 		for _, r := range rowsD6 {
+			if r.ShopifyInvoiceURL == nil || *r.ShopifyInvoiceURL == "" {
+				slog.WarnContext(ctx, "skipping D+6 reminder: settlement missing shopify invoice URL", "settlement_id", r.ID)
+				continue
+			}
 			var dueDateStr string
 			if r.DueDate != nil {
 				dueDateStr = r.DueDate.Format("2006-01-02")
@@ -451,7 +466,7 @@ func (s *service) ProcessReminders(ctx context.Context) error {
 				ItemTitle:     r.Title,
 				BalanceAmount: fmt.Sprintf("$%.2f", r.BalanceAmount),
 				DueDate:       dueDateStr,
-				PaymentLink:   "https://momiji-home.com/checkout/settlement/" + r.ID,
+				PaymentLink:   *r.ShopifyInvoiceURL,
 			}
 			_ = s.emailService.SendReminder(ctx, r.CustomerEmail, emailData)
 		}
@@ -489,15 +504,17 @@ func (s *service) ProcessReminders(ctx context.Context) error {
 
 func toResponse(st Settlement) SettlementResponse {
 	return SettlementResponse{
-		ID:              st.ID,
-		OrderLineItemID: st.OrderLineItemID,
-		OrderID:         st.OrderID,
-		Status:          st.Status,
-		BalanceAmount:   st.BalanceAmount,
-		DueDate:         st.DueDate,
-		InvoicedAt:      st.InvoicedAt,
-		PaidAt:          st.PaidAt,
-		CreatedAt:       st.CreatedAt,
+		ID:                  st.ID,
+		OrderLineItemID:     st.OrderLineItemID,
+		OrderID:             st.OrderID,
+		Status:              st.Status,
+		BalanceAmount:       st.BalanceAmount,
+		DueDate:             st.DueDate,
+		InvoicedAt:          st.InvoicedAt,
+		PaidAt:              st.PaidAt,
+		ShopifyInvoiceURL:   st.ShopifyInvoiceURL,
+		ShopifyDraftOrderID: st.ShopifyDraftOrderID,
+		CreatedAt:           st.CreatedAt,
 	}
 }
 
