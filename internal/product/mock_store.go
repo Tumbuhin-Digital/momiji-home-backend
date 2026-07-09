@@ -47,7 +47,7 @@ func (m *MockProductStore) GetProducts(ctx context.Context, q ProductQuery) ([]P
 	if m.GetVariantsErr != nil { return nil, 0, m.GetVariantsErr }
 	out := make([]Product, 0, len(m.Products))
 	for _, p := range m.Products {
-		if strings.EqualFold(p.Status, "deleted") {
+		if !strings.EqualFold(p.Status, "active") {
 			continue
 		}
 		out = append(out, *p)
@@ -134,9 +134,27 @@ func (m *MockProductStore) UpdateVariantPrices(ctx context.Context, variantID st
 func (m *MockProductStore) GetProductByID(ctx context.Context, productID string) (*Product, error) {
 	if m.GetProductByIDErr != nil { return nil, m.GetProductByIDErr }
 	for _, p := range m.Products {
-		if p.ID == productID { return p, nil }
+		if p.ID == productID {
+			if !strings.EqualFold(p.Status, "active") {
+				return nil, nil
+			}
+			return p, nil
+		}
 	}
 	return nil, nil
+}
+
+func (m *MockProductStore) IsVariantFromActiveProduct(ctx context.Context, shopifyVariantID string) (bool, error) {
+	v, ok := m.Variants[shopifyVariantID]
+	if !ok {
+		return false, nil
+	}
+	for _, p := range m.Products {
+		if p.ID == v.ProductID && strings.EqualFold(p.Status, "active") {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (m *MockProductStore) GetVariantsByProductID(ctx context.Context, productID string) ([]ProductVariant, error) {
@@ -174,7 +192,12 @@ func (m *MockProductStore) UpsertProductImages(ctx context.Context, productID st
 func (m *MockProductStore) GetAllVariants(ctx context.Context) ([]ProductVariant, error) {
 	out := []ProductVariant{}
 	for _, v := range m.Variants {
-		out = append(out, *v)
+		for _, p := range m.Products {
+			if p.ID == v.ProductID && strings.EqualFold(p.Status, "active") {
+				out = append(out, *v)
+				break
+			}
+		}
 	}
 	return out, nil
 }

@@ -19,7 +19,7 @@ func (s *PostgresStore) GetDashboardStats(ctx context.Context) (*DashboardRawSta
 
 	var totalProducts int64
 	if err := s.db.WithContext(ctx).Table("products").
-		Where("LOWER(status) <> ?", "deleted").
+		Where("LOWER(status) = ?", "active").
 		Count(&totalProducts).Error; err != nil {
 		return nil, err
 	}
@@ -30,7 +30,7 @@ func (s *PostgresStore) GetDashboardStats(ctx context.Context) (*DashboardRawSta
 		SELECT COALESCE(SUM(pv.inventory_quantity), 0)
 		FROM product_variants pv
 		JOIN products p ON p.id = pv.product_id
-		WHERE LOWER(p.status) <> 'deleted'
+		WHERE LOWER(p.status) = 'active'
 		  AND pv.fulfillment_type = 'ship_ready'
 		  AND pv.inventory_quantity > 0
 	`).Scan(&stats.AvailableStockCount)
@@ -40,7 +40,7 @@ func (s *PostgresStore) GetDashboardStats(ctx context.Context) (*DashboardRawSta
 		SELECT COUNT(*)
 		FROM product_variants pv
 		JOIN products p ON p.id = pv.product_id
-		WHERE LOWER(p.status) <> 'deleted'
+		WHERE LOWER(p.status) = 'active'
 		  AND pv.fulfillment_type = 'ship_ready'
 		  AND pv.inventory_quantity > 0
 		  AND DATE(pv.updated_at) = CURRENT_DATE

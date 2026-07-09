@@ -91,6 +91,9 @@ func TestSyncFromShopify_Success(t *testing.T) {
 	if store.UpsertVariantCalls != 1 {
 		t.Fatalf("expected 1 UpsertVariant call, got %d", store.UpsertVariantCalls)
 	}
+	if p := store.Products["gid://shopify/Product/1"]; p == nil || p.Status != "active" {
+		t.Fatalf("expected synced product status to be lowercase active, got %+v", p)
+	}
 }
 
 func TestSyncFromShopify_ClientError(t *testing.T) {
@@ -176,6 +179,68 @@ func TestGetProductByID_NotFound(t *testing.T) {
 	_, err := svc.GetProductByID(context.Background(), "nonexistent-uuid")
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestGetProducts_ExcludesNonActive(t *testing.T) {
+	store := product.NewMockProductStore()
+	store.Products["gid://shopify/Product/1"] = &product.Product{
+		ID: "product-1", ShopifyID: "gid://shopify/Product/1", Title: "Active Product", Status: "active",
+	}
+	store.Products["gid://shopify/Product/2"] = &product.Product{
+		ID: "product-2", ShopifyID: "gid://shopify/Product/2", Title: "Draft Product", Status: "draft",
+	}
+	store.Products["gid://shopify/Product/3"] = &product.Product{
+		ID: "product-3", ShopifyID: "gid://shopify/Product/3", Title: "Archived Product", Status: "archived",
+	}
+	svc := product.NewProductService(store, &product.MockShopifyClient{})
+
+	products, total, err := svc.GetProducts(context.Background(), product.ProductQuery{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if total != 1 || len(products) != 1 {
+		t.Fatalf("expected 1 active product, got total=%d len=%d", total, len(products))
+	}
+	if products[0].Title != "Active Product" {
+		t.Fatalf("expected Active Product, got %s", products[0].Title)
+	}
+}
+
+func TestGetProductByID_NonActiveReturnsNotFound(t *testing.T) {
+	store := product.NewMockProductStore()
+	store.Products["gid://shopify/Product/2"] = &product.Product{
+		ID: "product-2", ShopifyID: "gid://shopify/Product/2", Title: "Draft Product", Status: "draft",
+	}
+	svc := product.NewProductService(store, &product.MockShopifyClient{})
+
+	_, err := svc.GetProductByID(context.Background(), "product-2")
+	if err != apierror.ErrNotFound {
+		t.Fatalf("expected not found for draft product, got %v", err)
+	}
+}
+
+func TestValidateVariantActive(t *testing.T) {
+	store := product.NewMockProductStore()
+	store.Products["gid://shopify/Product/1"] = &product.Product{
+		ID: "product-1", ShopifyID: "gid://shopify/Product/1", Title: "Active Product", Status: "active",
+	}
+	store.Products["gid://shopify/Product/2"] = &product.Product{
+		ID: "product-2", ShopifyID: "gid://shopify/Product/2", Title: "Archived Product", Status: "archived",
+	}
+	store.Variants["gid://shopify/ProductVariant/1"] = &product.ProductVariant{
+		ID: "uuid-1", ProductID: "product-1", ShopifyVariantID: "gid://shopify/ProductVariant/1",
+	}
+	store.Variants["gid://shopify/ProductVariant/2"] = &product.ProductVariant{
+		ID: "uuid-2", ProductID: "product-2", ShopifyVariantID: "gid://shopify/ProductVariant/2",
+	}
+	svc := product.NewProductService(store, &product.MockShopifyClient{})
+
+	if err := svc.ValidateVariantActive(context.Background(), "gid://shopify/ProductVariant/1"); err != nil {
+		t.Fatalf("expected active variant to pass validation, got %v", err)
+	}
+	if err := svc.ValidateVariantActive(context.Background(), "gid://shopify/ProductVariant/2"); err == nil {
+		t.Fatal("expected archived product variant to fail validation")
 	}
 }
 

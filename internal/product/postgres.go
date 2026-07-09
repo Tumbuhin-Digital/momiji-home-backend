@@ -19,12 +19,18 @@ func NewPostgresStore(db *gorm.DB) Store {
 	return &PostgresStore{db: db}
 }
 
+const activeProductStatus = "active"
+
+func scopeActiveProducts(query *gorm.DB) *gorm.DB {
+	return query.Where("LOWER(products.status) = ?", activeProductStatus)
+}
+
 func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Product, int64, error) {
 	var products []Product
 	var total int64
 
 	query := s.db.WithContext(ctx).Model(&Product{})
-	query = query.Where("LOWER(products.status) <> ?", "deleted")
+	query = scopeActiveProducts(query)
 
 	if q.Search != "" {
 		searchPattern := "%" + q.Search + "%"
@@ -232,7 +238,7 @@ func (s *PostgresStore) GetAllVariants(ctx context.Context) ([]ProductVariant, e
 	var variants []ProductVariant
 	err := s.db.WithContext(ctx).
 		Joins("JOIN products ON products.id = product_variants.product_id").
-		Where("LOWER(products.status) <> ?", "deleted").
+		Where("LOWER(products.status) = ?", activeProductStatus).
 		Preload("Product").
 		Find(&variants).Error
 	if err != nil {
@@ -275,7 +281,11 @@ func (s *PostgresStore) GetProductByShopifyID(ctx context.Context, shopifyID str
 
 func (s *PostgresStore) GetProductByID(ctx context.Context, productID string) (*Product, error) {
 	var p Product
-	err := s.db.WithContext(ctx).Preload("Images").Preload("Variants").Where("id = ?", productID).First(&p).Error
+	err := s.db.WithContext(ctx).
+		Preload("Images").
+		Preload("Variants").
+		Where("id = ? AND LOWER(status) = ?", productID, activeProductStatus).
+		First(&p).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -283,6 +293,19 @@ func (s *PostgresStore) GetProductByID(ctx context.Context, productID string) (*
 		return nil, err
 	}
 	return &p, nil
+}
+
+func (s *PostgresStore) IsVariantFromActiveProduct(ctx context.Context, shopifyVariantID string) (bool, error) {
+	var count int64
+	err := s.db.WithContext(ctx).
+		Model(&ProductVariant{}).
+		Joins("JOIN products ON products.id = product_variants.product_id").
+		Where("product_variants.shopify_variant_id = ? AND LOWER(products.status) = ?", shopifyVariantID, activeProductStatus).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (s *PostgresStore) GetVariantsByProductID(ctx context.Context, productID string) ([]ProductVariant, error) {

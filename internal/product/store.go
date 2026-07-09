@@ -67,6 +67,7 @@ type Store interface {
 	UpsertVariant(ctx context.Context, variant *ProductVariant) error
 	UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64) error
 	GetProductByID(ctx context.Context, productID string) (*Product, error)
+	IsVariantFromActiveProduct(ctx context.Context, shopifyVariantID string) (bool, error)
 	GetVariantsByProductID(ctx context.Context, productID string) ([]ProductVariant, error)
 	GetAllVariants(ctx context.Context) ([]ProductVariant, error)
 	UpdateProductStatus(ctx context.Context, productID string, fulfillmentType string) error

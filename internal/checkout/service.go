@@ -15,6 +15,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/config"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/settings"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
@@ -30,6 +31,7 @@ type CheckoutService interface {
 
 type service struct {
 	cartService       cart.CartService
+	productService    product.ProductService
 	shopifyCli        shopify.Client
 	stockLockService  StockLockService
 	store             StockLockStore
@@ -40,9 +42,10 @@ type service struct {
 	warehouseResolver warehouse.Resolver
 }
 
-func NewCheckoutService(cartService cart.CartService, shopifyCli shopify.Client, stockLockService StockLockService, store StockLockStore, settingsStore settings.SettingsStore, feURL string, shipstationCli shipstation.Client, shipstationCfg config.ShipStationConfig, warehouseResolver warehouse.Resolver) CheckoutService {
+func NewCheckoutService(cartService cart.CartService, productService product.ProductService, shopifyCli shopify.Client, stockLockService StockLockService, store StockLockStore, settingsStore settings.SettingsStore, feURL string, shipstationCli shipstation.Client, shipstationCfg config.ShipStationConfig, warehouseResolver warehouse.Resolver) CheckoutService {
 	return &service{
 		cartService:       cartService,
+		productService:    productService,
 		shopifyCli:        shopifyCli,
 		stockLockService:  stockLockService,
 		store:             store,
@@ -66,6 +69,12 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 
 	if len(cartRes.ShipReady) == 0 && len(cartRes.PreOrder) == 0 {
 		return nil, apierror.New(400, "bad_request", "cart is empty")
+	}
+
+	for _, item := range append(cartRes.ShipReady, cartRes.PreOrder...) {
+		if err := s.productService.ValidateVariantActive(ctx, item.VariantID); err != nil {
+			return nil, err
+		}
 	}
 
 	checkoutRef := uuid.NewString()

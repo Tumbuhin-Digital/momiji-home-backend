@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"strconv"
+	"strings"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
@@ -25,6 +26,7 @@ type ProductService interface {
 	UpdateVariantPrice(ctx context.Context, variantID string, wsPrice *float64) error
 	GetAllVariants(ctx context.Context) ([]ProductVariant, error)
 	BulkUpdateDimensions(ctx context.Context, rows []DimensionUpdateInput) error
+	ValidateVariantActive(ctx context.Context, variantID string) error
 }
 
 type service struct {
@@ -304,7 +306,7 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 				ShopifyID:   pNode.ID,
 				Title:       pNode.Title,
 				Description: pNode.DescriptionHtml,
-				Status:      pNode.Status,
+				Status:      strings.ToLower(pNode.Status),
 			}
 			if err := s.store.UpsertProduct(ctx, product); err != nil {
 				return fmt.Errorf("failed to upsert product %s: %w", product.ShopifyID, err)
@@ -519,4 +521,15 @@ func (s *service) GetAllVariants(ctx context.Context) ([]ProductVariant, error) 
 
 func (s *service) BulkUpdateDimensions(ctx context.Context, rows []DimensionUpdateInput) error {
 	return s.store.BulkUpdateVariantDimensions(ctx, rows)
+}
+
+func (s *service) ValidateVariantActive(ctx context.Context, variantID string) error {
+	active, err := s.store.IsVariantFromActiveProduct(ctx, variantID)
+	if err != nil {
+		return apierror.ErrInternal
+	}
+	if !active {
+		return apierror.New(400, "product_unavailable", "One or more cart items are no longer available for purchase")
+	}
+	return nil
 }
