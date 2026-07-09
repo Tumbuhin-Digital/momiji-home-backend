@@ -36,6 +36,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preordercustomtext"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/settings"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/warehouse"
@@ -115,7 +116,10 @@ func main() {
 
 	shipstationClient := shipstation.NewClient(cfg.ShipStation.APIKey, cfg.ShipStation.Sandbox)
 
-	productService := product.NewProductService(productStore, shopifyClient)
+	preorderCustomTextStore := preordercustomtext.NewPostgresStore(db)
+	preorderCustomTextService := preordercustomtext.NewService(preorderCustomTextStore)
+
+	productService := product.NewProductService(productStore, shopifyClient, preorderCustomTextService)
 	cartService := cart.NewCartService(cartStore, productService)
 	preorderService := preorder.NewPreorderService(preorderStore, orderStore, notificationService, shopifyClient, cfg.App.FrontendURL)
 	warehouseService := warehouse.NewService(warehouseStore, cfg.ShipStation)
@@ -169,6 +173,9 @@ func main() {
 
 	settingsHandler := settings.NewSettingsHandler(settingsService, cfg.Auth.Secret)
 	settingsHandler.SetupRoutes(api)
+
+	preorderCustomTextHandler := preordercustomtext.NewHandler(preorderCustomTextService, cfg.Auth.Secret)
+	preorderCustomTextHandler.SetupRoutes(api)
 
 	warehouseHandler := warehouse.NewHandler(warehouseService, cfg.Auth.Secret)
 	warehouseHandler.SetupRoutes(api)

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preordercustomtext"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/units"
 )
@@ -23,6 +24,7 @@ type ProductService interface {
 	UpdateProductStatus(ctx context.Context, productID string, fulfillmentType string) (*ProductDTO, error)
 	UpdateVariantStatus(ctx context.Context, variantID string, fulfillmentType string) (*VariantDTO, error)
 	UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) (*ProductDTO, error)
+	UpdateVariantBatchLabelByVariantID(ctx context.Context, variantID string, batchLabel string) (*VariantDTO, error)
 	UpdateVariantPrice(ctx context.Context, variantID string, wsPrice *float64) error
 	GetAllVariants(ctx context.Context) ([]ProductVariant, error)
 	BulkUpdateDimensions(ctx context.Context, rows []DimensionUpdateInput) error
@@ -30,12 +32,13 @@ type ProductService interface {
 }
 
 type service struct {
-	store  Store
-	client shopify.Client
+	store             Store
+	client            shopify.Client
+	customTextService preordercustomtext.Service
 }
 
-func NewProductService(store Store, client shopify.Client) ProductService {
-	return &service{store: store, client: client}
+func NewProductService(store Store, client shopify.Client, customTextService preordercustomtext.Service) ProductService {
+	return &service{store: store, client: client, customTextService: customTextService}
 }
 
 func (s *service) GetVariantByID(ctx context.Context, variantID string) (*VariantDTO, error) {
@@ -184,7 +187,8 @@ func mapVariantToDTO(variant *ProductVariant) *VariantDTO {
 		WeightKg:          variant.WeightKg,
 		LengthCm:          variant.DepthCm, // Mapping Depth to Length
 		WidthCm:           variant.WidthCm,
-		HeightCm:          variant.HeightCm,
+		HeightCm:           variant.HeightCm,
+		PreorderBatchLabel: variant.PreorderBatchLabel,
 	}
 }
 
@@ -503,6 +507,20 @@ func (s *service) UpdateVariantBatchLabel(ctx context.Context, productID string,
 		return nil, apierror.ErrInternal
 	}
 	return s.GetProductByID(ctx, productID)
+}
+
+func (s *service) UpdateVariantBatchLabelByVariantID(ctx context.Context, variantID string, batchLabel string) (*VariantDTO, error) {
+	batchLabel = strings.TrimSpace(batchLabel)
+	if batchLabel != "" {
+		if _, err := s.customTextService.EnsureByLabel(ctx, batchLabel); err != nil {
+			return nil, apierror.ErrInternal
+		}
+	}
+
+	if err := s.store.UpdateSingleVariantBatchLabel(ctx, variantID, batchLabel); err != nil {
+		return nil, apierror.ErrInternal
+	}
+	return s.GetVariantByID(ctx, variantID)
 }
 
 func (s *service) UpdateVariantPrice(ctx context.Context, variantID string, wsPrice *float64) error {

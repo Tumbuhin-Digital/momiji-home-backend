@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preordercustomtext"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/units"
 )
@@ -26,7 +27,7 @@ func TestBulkUpdateDimensionsPreservesShopifyWeight(t *testing.T) {
 		DepthCm:          1,
 	}
 
-	svc := product.NewProductService(store, &product.MockShopifyClient{})
+	svc := product.NewProductService(store, &product.MockShopifyClient{}, preordercustomtext.NewMockService())
 	err := svc.BulkUpdateDimensions(context.Background(), []product.DimensionUpdateInput{{
 		ShopifyVariantID: "gid://shopify/ProductVariant/1",
 		WidthCm:          units.InToCm(10),
@@ -53,7 +54,7 @@ func TestImportDimensionsIgnoresWeightColumnWithLengthHeader(t *testing.T) {
 		WeightKg:         shopifyWeightKg,
 	}
 
-	svc := product.NewProductService(store, &product.MockShopifyClient{})
+	svc := product.NewProductService(store, &product.MockShopifyClient{}, preordercustomtext.NewMockService())
 	h := product.NewProductHandler(svc, "test-secret")
 
 	app := fiber.New()
@@ -104,7 +105,7 @@ func TestImportDimensionsSupportsLegacyDepthHeader(t *testing.T) {
 		WeightKg:         shopifyWeightKg,
 	}
 
-	svc := product.NewProductService(store, &product.MockShopifyClient{})
+	svc := product.NewProductService(store, &product.MockShopifyClient{}, preordercustomtext.NewMockService())
 	h := product.NewProductHandler(svc, "test-secret")
 
 	app := fiber.New()

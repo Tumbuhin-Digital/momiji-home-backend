@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preordercustomtext"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 )
 
@@ -46,7 +47,7 @@ func buildShopifyProductResponseWithPageInfo(shopifyProductID, shopifyVariantID 
 
 func TestGetVariantByID_Found(t *testing.T) {
 	store := product.NewMockProductStore()
-	svc := product.NewProductService(store, &product.MockShopifyClient{})
+	svc := product.NewProductService(store, &product.MockShopifyClient{}, preordercustomtext.NewMockService())
 
 	store.Variants["gid://shopify/ProductVariant/1"] = &product.ProductVariant{
 		ID: "uuid-1", ShopifyVariantID: "gid://shopify/ProductVariant/1",
@@ -64,7 +65,7 @@ func TestGetVariantByID_Found(t *testing.T) {
 
 func TestGetVariantByID_NotFound(t *testing.T) {
 	store := product.NewMockProductStore()
-	svc := product.NewProductService(store, &product.MockShopifyClient{})
+	svc := product.NewProductService(store, &product.MockShopifyClient{}, preordercustomtext.NewMockService())
 
 	_, err := svc.GetVariantByID(context.Background(), "nonexistent")
 	if err != apierror.ErrNotFound {
@@ -79,7 +80,7 @@ func TestSyncFromShopify_Success(t *testing.T) {
 			"gid://shopify/Product/1", "gid://shopify/ProductVariant/1", "Rose Mug", "45.00",
 		),
 	}
-	svc := product.NewProductService(store, mockClient)
+	svc := product.NewProductService(store, mockClient, preordercustomtext.NewMockService())
 
 	err := svc.SyncFromShopify(context.Background())
 	if err != nil {
@@ -99,7 +100,7 @@ func TestSyncFromShopify_Success(t *testing.T) {
 func TestSyncFromShopify_ClientError(t *testing.T) {
 	store := product.NewMockProductStore()
 	mockClient := &product.MockShopifyClient{AdminGraphQLErr: errors.New("shopify timeout")}
-	svc := product.NewProductService(store, mockClient)
+	svc := product.NewProductService(store, mockClient, preordercustomtext.NewMockService())
 
 	err := svc.SyncFromShopify(context.Background())
 	if err == nil {
@@ -127,7 +128,7 @@ func TestSyncFromShopify_MultiPage(t *testing.T) {
 			return resp, nil
 		},
 	}
-	svc := product.NewProductService(store, mockClient)
+	svc := product.NewProductService(store, mockClient, preordercustomtext.NewMockService())
 
 	err := svc.SyncFromShopify(context.Background())
 	if err != nil {
@@ -158,7 +159,7 @@ func TestSyncFromShopify_MarksMissingProductsAsDeleted(t *testing.T) {
 			"gid://shopify/Product/1", "gid://shopify/ProductVariant/1", "Rose Mug", "45.00",
 		),
 	}
-	svc := product.NewProductService(store, mockClient)
+	svc := product.NewProductService(store, mockClient, preordercustomtext.NewMockService())
 
 	if err := svc.SyncFromShopify(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -174,7 +175,7 @@ func TestSyncFromShopify_MarksMissingProductsAsDeleted(t *testing.T) {
 
 func TestGetProductByID_NotFound(t *testing.T) {
 	store := product.NewMockProductStore()
-	svc := product.NewProductService(store, &product.MockShopifyClient{})
+	svc := product.NewProductService(store, &product.MockShopifyClient{}, preordercustomtext.NewMockService())
 
 	_, err := svc.GetProductByID(context.Background(), "nonexistent-uuid")
 	if err == nil {
@@ -193,7 +194,7 @@ func TestGetProducts_ExcludesNonActive(t *testing.T) {
 	store.Products["gid://shopify/Product/3"] = &product.Product{
 		ID: "product-3", ShopifyID: "gid://shopify/Product/3", Title: "Archived Product", Status: "archived",
 	}
-	svc := product.NewProductService(store, &product.MockShopifyClient{})
+	svc := product.NewProductService(store, &product.MockShopifyClient{}, preordercustomtext.NewMockService())
 
 	products, total, err := svc.GetProducts(context.Background(), product.ProductQuery{})
 	if err != nil {
@@ -212,7 +213,7 @@ func TestGetProductByID_NonActiveReturnsNotFound(t *testing.T) {
 	store.Products["gid://shopify/Product/2"] = &product.Product{
 		ID: "product-2", ShopifyID: "gid://shopify/Product/2", Title: "Draft Product", Status: "draft",
 	}
-	svc := product.NewProductService(store, &product.MockShopifyClient{})
+	svc := product.NewProductService(store, &product.MockShopifyClient{}, preordercustomtext.NewMockService())
 
 	_, err := svc.GetProductByID(context.Background(), "product-2")
 	if err != apierror.ErrNotFound {
@@ -234,7 +235,7 @@ func TestValidateVariantActive(t *testing.T) {
 	store.Variants["gid://shopify/ProductVariant/2"] = &product.ProductVariant{
 		ID: "uuid-2", ProductID: "product-2", ShopifyVariantID: "gid://shopify/ProductVariant/2",
 	}
-	svc := product.NewProductService(store, &product.MockShopifyClient{})
+	svc := product.NewProductService(store, &product.MockShopifyClient{}, preordercustomtext.NewMockService())
 
 	if err := svc.ValidateVariantActive(context.Background(), "gid://shopify/ProductVariant/1"); err != nil {
 		t.Fatalf("expected active variant to pass validation, got %v", err)
@@ -246,7 +247,7 @@ func TestValidateVariantActive(t *testing.T) {
 
 func TestUpdateProductStatus_InvalidStatus(t *testing.T) {
 	store := product.NewMockProductStore()
-	svc := product.NewProductService(store, &product.MockShopifyClient{})
+	svc := product.NewProductService(store, &product.MockShopifyClient{}, preordercustomtext.NewMockService())
 
 	_, err := svc.UpdateProductStatus(context.Background(), "any-id", "invalid_status")
 	if err == nil {
@@ -256,7 +257,7 @@ func TestUpdateProductStatus_InvalidStatus(t *testing.T) {
 
 func TestUpdateVariantStatus_ShipReadyZeroInventory(t *testing.T) {
 	store := product.NewMockProductStore()
-	svc := product.NewProductService(store, &product.MockShopifyClient{})
+	svc := product.NewProductService(store, &product.MockShopifyClient{}, preordercustomtext.NewMockService())
 
 	store.Variants["gid://shopify/ProductVariant/1"] = &product.ProductVariant{
 		ID: "uuid-1", ShopifyVariantID: "gid://shopify/ProductVariant/1",
@@ -271,7 +272,7 @@ func TestUpdateVariantStatus_ShipReadyZeroInventory(t *testing.T) {
 
 func TestUpdateVariantStatus_ShipReadyWithInventory(t *testing.T) {
 	store := product.NewMockProductStore()
-	svc := product.NewProductService(store, &product.MockShopifyClient{})
+	svc := product.NewProductService(store, &product.MockShopifyClient{}, preordercustomtext.NewMockService())
 
 	store.Variants["gid://shopify/ProductVariant/2"] = &product.ProductVariant{
 		ID: "uuid-2", ShopifyVariantID: "gid://shopify/ProductVariant/2",
@@ -284,5 +285,27 @@ func TestUpdateVariantStatus_ShipReadyWithInventory(t *testing.T) {
 	}
 	if dto.FulfillmentType != product.FulfillmentTypeShipReady {
 		t.Fatalf("expected ship_ready, got %s", dto.FulfillmentType)
+	}
+}
+
+func TestUpdateVariantBatchLabelByVariantID(t *testing.T) {
+	store := product.NewMockProductStore()
+	svc := product.NewProductService(store, &product.MockShopifyClient{}, preordercustomtext.NewMockService())
+
+	store.Variants["gid://shopify/ProductVariant/1"] = &product.ProductVariant{
+		ID: "uuid-1", ProductID: "product-1", ShopifyVariantID: "gid://shopify/ProductVariant/1",
+		Title: "August Variant", FulfillmentType: "pre_order",
+	}
+
+	dto, err := svc.UpdateVariantBatchLabelByVariantID(
+		context.Background(),
+		"gid://shopify/ProductVariant/1",
+		"August",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dto.PreorderBatchLabel == nil || *dto.PreorderBatchLabel != "August" {
+		t.Fatalf("expected batch label August, got %+v", dto.PreorderBatchLabel)
 	}
 }

@@ -73,6 +73,7 @@ type Store interface {
 	UpdateProductStatus(ctx context.Context, productID string, fulfillmentType string) error
 	UpdateVariantFulfillmentType(ctx context.Context, variantID string, fulfillmentType string) error
 	UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) error
+	UpdateSingleVariantBatchLabel(ctx context.Context, shopifyVariantID string, batchLabel string) error
 	UpsertProductImages(ctx context.Context, productID string, images []ProductImage) error
 	BulkUpdateVariantDimensions(ctx context.Context, inputs []DimensionUpdateInput) error
 }

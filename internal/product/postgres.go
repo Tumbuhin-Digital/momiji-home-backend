@@ -344,3 +344,24 @@ func (s *PostgresStore) UpdateVariantBatchLabel(ctx context.Context, productID s
 		Where("product_id = ?", productID).
 		Updates(updates).Error
 }
+
+func (s *PostgresStore) UpdateSingleVariantBatchLabel(ctx context.Context, shopifyVariantID string, batchLabel string) error {
+	updates := map[string]interface{}{
+		"updated_at": gorm.Expr("now()"),
+	}
+	if batchLabel == "" {
+		updates["preorder_batch_label"] = nil
+	} else {
+		updates["preorder_batch_label"] = batchLabel
+	}
+	result := s.db.WithContext(ctx).Model(&ProductVariant{}).
+		Where("shopify_variant_id = ?", shopifyVariantID).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}

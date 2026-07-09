@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preordercustomtext"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 )
 
@@ -13,7 +14,7 @@ import (
 func TestGetProductByIDHandler_NotFound(t *testing.T) {
 	app := fiber.New()
 	store := product.NewMockProductStore()
-	svc := product.NewProductService(store, &product.MockShopifyClient{})
+	svc := product.NewProductService(store, &product.MockShopifyClient{}, preordercustomtext.NewMockService())
 	h := product.NewProductHandler(svc, "test-secret")
 	api := app.Group("/api/v1")
 	h.SetupRoutes(api)

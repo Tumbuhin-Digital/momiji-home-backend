@@ -39,6 +39,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	admin.Post("/sync", h.SyncProducts)
 	admin.Patch("/variant/price", h.UpdateVariantPrice)
 	admin.Patch("/variant/status", h.UpdateVariantStatus)
+	admin.Patch("/variant/batch-label", h.UpdateVariantBatchLabelByVariantID)
 	admin.Patch("/:id/status", h.UpdateProductStatus)
 	admin.Patch("/:id/batch", h.UpdateVariantBatchLabel)
 	admin.Get("/variants/dimensions/template", h.DownloadDimensionTemplate)
@@ -249,12 +250,12 @@ func (h *Handler) UpdateProductStatus(c *fiber.Ctx) error {
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Product ID"
-// @Param body body UpdateVariantBatchLabelRequest true "Batch label and ship date update payload"
+// @Param body body UpdateProductBatchLabelRequest true "Batch label and ship date update payload"
 // @Success 200 {object} response.Envelope{data=map[string]interface{}}
 // @Router /products/{id}/batch [patch]
 func (h *Handler) UpdateVariantBatchLabel(c *fiber.Ctx) error {
 	slog.InfoContext(c.Context(), "UpdateVariantBatchLabel", slog.String("product_id", c.Params("id")))
-	var req UpdateVariantBatchLabelRequest
+	var req UpdateProductBatchLabelRequest
 	if err := c.BodyParser(&req); err != nil {
 		return response.Error(c, err)
 	}
@@ -311,6 +312,32 @@ func (h *Handler) UpdateVariantStatus(c *fiber.Ctx) error {
 	}
 
 	return response.Success(c, fiber.StatusOK, "Variant status updated", dto)
+}
+
+// UpdateVariantBatchLabelByVariantID godoc
+// @Summary Update preorder custom text for a single variant
+// @Tags Product
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body UpdateVariantBatchLabelRequest true "Variant batch label update payload"
+// @Success 200 {object} response.Envelope{data=VariantDTO}
+// @Router /products/variant/batch-label [patch]
+func (h *Handler) UpdateVariantBatchLabelByVariantID(c *fiber.Ctx) error {
+	var req UpdateVariantBatchLabelRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	dto, err := h.service.UpdateVariantBatchLabelByVariantID(c.Context(), req.VariantID, req.PreorderBatchLabel)
+	if err != nil {
+		return response.Error(c, err)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Variant batch label updated", dto)
 }
 
 // UpdateVariantPrice godoc

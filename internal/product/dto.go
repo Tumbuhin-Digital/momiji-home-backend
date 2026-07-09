@@ -20,8 +20,9 @@ type VariantDTO struct {
 	InventoryQuantity int             `json:"inventory_quantity"`
 	WeightKg          float64         `json:"weight_kg"`
 	LengthCm          float64         `json:"length_cm"`
-	WidthCm           float64         `json:"width_cm"`
-	HeightCm          float64         `json:"height_cm"`
+	WidthCm            float64         `json:"width_cm"`
+	HeightCm           float64         `json:"height_cm"`
+	PreorderBatchLabel *string         `json:"preorder_batch_label"`
 }
 
 type ProductImageDTO struct {
@@ -63,6 +64,11 @@ type UpdateProductStatusRequest struct {
 }
 
 type UpdateVariantBatchLabelRequest struct {
+	VariantID          string `json:"variant_id" validate:"required"`
+	PreorderBatchLabel string `json:"preorder_batch_label"`
+}
+
+type UpdateProductBatchLabelRequest struct {
 	PreorderBatchLabel string  `json:"preorder_batch_label" validate:"required"`
 	ExpectedShipDate   *string `json:"expected_ship_date"`
 }

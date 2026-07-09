@@ -185,6 +185,20 @@ func (m *MockProductStore) UpdateVariantBatchLabel(ctx context.Context, productI
 	return nil
 }
 
+func (m *MockProductStore) UpdateSingleVariantBatchLabel(ctx context.Context, shopifyVariantID string, batchLabel string) error {
+	v, ok := m.Variants[shopifyVariantID]
+	if !ok {
+		return errors.New("variant not found")
+	}
+	if batchLabel == "" {
+		v.PreorderBatchLabel = nil
+	} else {
+		label := batchLabel
+		v.PreorderBatchLabel = &label
+	}
+	return nil
+}
+
 func (m *MockProductStore) UpsertProductImages(ctx context.Context, productID string, images []ProductImage) error {
 	return nil
 }
