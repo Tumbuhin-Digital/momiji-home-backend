@@ -1,6 +1,8 @@
 package preorder
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server/middleware"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/response"
@@ -35,9 +37,11 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 // @Tags Preorder
 // @Produce json
 // @Security BearerAuth
-// @Param status query string false "Filter by status (pending|invoiced|paid)"
-// @Param page   query int    false "Page number (default 1)"
-// @Param limit  query int    false "Items per page (default 20)"
+// @Param status     query string false "Filter by status (pending|invoiced|paid)"
+// @Param start_date query string false "Filter from date (YYYY-MM-DD, inclusive)"
+// @Param end_date   query string false "Filter to date (YYYY-MM-DD, inclusive)"
+// @Param page       query int    false "Page number (default 1)"
+// @Param limit      query int    false "Items per page (default 20)"
 // @Success 200 {object} response.Envelope{data=response.PaginatedData{preorders=[]PreorderGroupResponse}}
 // @Router /preorders [get]
 func (h *Handler) ListSettlements(c *fiber.Ctx) error {
@@ -46,11 +50,9 @@ func (h *Handler) ListSettlements(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
-	filter := SettlementFilter{
-		Status:     q.Status,
-		BatchLabel: q.BatchLabel,
-		Page:       q.Page,
-		Limit:      q.Limit,
+	filter, err := buildSettlementFilter(q)
+	if err != nil {
+		return response.Error(c, err)
 	}
 
 	settlements, total, err := h.service.ListSettlements(c.Context(), filter)
@@ -148,8 +150,10 @@ func (h *Handler) MarkSettlementsPaid(c *fiber.Ctx) error {
 // @Tags Preorder
 // @Produce application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
 // @Security BearerAuth
-// @Param status query string false "Filter by status"
+// @Param status      query string false "Filter by status"
 // @Param batch_label query string false "Filter by batch label"
+// @Param start_date  query string false "Filter from date (YYYY-MM-DD, inclusive)"
+// @Param end_date    query string false "Filter to date (YYYY-MM-DD, inclusive)"
 // @Success 200 {file} file "preorder_list.xlsx"
 // @Router /preorders/export [get]
 func (h *Handler) ExportPreorders(c *fiber.Ctx) error {
@@ -158,9 +162,9 @@ func (h *Handler) ExportPreorders(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
-	filter := SettlementFilter{
-		Status:     q.Status,
-		BatchLabel: q.BatchLabel,
+	filter, err := buildSettlementFilter(q)
+	if err != nil {
+		return response.Error(c, err)
 	}
 
 	excelBytes, err := h.service.ExportPreordersToExcel(c.Context(), filter)
@@ -171,4 +175,33 @@ func (h *Handler) ExportPreorders(c *fiber.Ctx) error {
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	c.Set("Content-Disposition", `attachment; filename="preorder_list.xlsx"`)
 	return c.Send(excelBytes)
+}
+
+func buildSettlementFilter(q ListSettlementsQuery) (SettlementFilter, error) {
+	filter := SettlementFilter{
+		Status:     q.Status,
+		BatchLabel: q.BatchLabel,
+		Page:       q.Page,
+		Limit:      q.Limit,
+	}
+
+	if q.StartDate != "" {
+		t, err := time.Parse("2006-01-02", q.StartDate)
+		if err != nil {
+			return filter, fiber.NewError(fiber.StatusBadRequest, "invalid start_date format, expected YYYY-MM-DD")
+		}
+		startOfDay := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+		filter.StartDate = &startOfDay
+	}
+
+	if q.EndDate != "" {
+		t, err := time.Parse("2006-01-02", q.EndDate)
+		if err != nil {
+			return filter, fiber.NewError(fiber.StatusBadRequest, "invalid end_date format, expected YYYY-MM-DD")
+		}
+		startOfDay := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+		filter.EndDate = &startOfDay
+	}
+
+	return filter, nil
 }

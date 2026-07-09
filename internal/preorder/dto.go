@@ -42,6 +42,8 @@ type PreorderGroupResponse struct {
 type ListSettlementsQuery struct {
 	Status     string `query:"status"`
 	BatchLabel string `query:"batch_label"`
+	StartDate  string `query:"start_date"`
+	EndDate    string `query:"end_date"`
 	Page       int    `query:"page"`
 	Limit      int    `query:"limit"`
 }

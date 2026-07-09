@@ -56,6 +56,8 @@ type PreorderRow struct {
 type SettlementFilter struct {
 	Status     string
 	BatchLabel string
+	StartDate  *time.Time
+	EndDate    *time.Time
 	Page       int
 	Limit      int
 }

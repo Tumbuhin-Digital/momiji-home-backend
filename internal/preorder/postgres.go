@@ -51,6 +51,17 @@ func (s *postgresStore) GetSettlementByOrderLineItemID(ctx context.Context, item
 	return &settlement, nil
 }
 
+func applyDateFilter(q *gorm.DB, filter SettlementFilter) *gorm.DB {
+	if filter.StartDate != nil {
+		q = q.Where("preorder_settlements.created_at >= ?", *filter.StartDate)
+	}
+	if filter.EndDate != nil {
+		endExclusive := filter.EndDate.Add(24 * time.Hour)
+		q = q.Where("preorder_settlements.created_at < ?", endExclusive)
+	}
+	return q
+}
+
 func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderRow, int64, error) {
 	buildQuery := func() *gorm.DB {
 		q := s.db.WithContext(ctx).Table("preorder_settlements").
@@ -63,6 +74,7 @@ func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFi
 		if filter.BatchLabel != "" {
 			q = q.Where("product_variants.preorder_batch_label = ?", filter.BatchLabel)
 		}
+		q = applyDateFilter(q, filter)
 		return q
 	}
 
@@ -117,6 +129,7 @@ func (s *postgresStore) ListSettlements(ctx context.Context, filter SettlementFi
 	if filter.BatchLabel != "" {
 		query = query.Where("product_variants.preorder_batch_label = ?", filter.BatchLabel)
 	}
+	query = applyDateFilter(query, filter)
 
 	if err := query.Order("order_line_items.title ASC, preorder_settlements.created_at DESC").Find(&rows).Error; err != nil {
 		return nil, 0, err
@@ -156,6 +169,7 @@ func (s *postgresStore) GetAllSettlementsForExport(ctx context.Context, filter S
 	if filter.BatchLabel != "" {
 		query = query.Where("product_variants.preorder_batch_label = ?", filter.BatchLabel)
 	}
+	query = applyDateFilter(query, filter)
 
 	if err := query.Order("order_line_items.title ASC, preorder_settlements.created_at DESC").Find(&rows).Error; err != nil {
 		return nil, err
