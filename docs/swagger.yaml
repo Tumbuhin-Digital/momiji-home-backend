@@ -245,6 +245,10 @@ definitions:
     type: object
   checkout.ShippingRateDTO:
     properties:
+      base_cost:
+        type: string
+      buffer_amount:
+        type: string
       cost:
         type: string
       currency:

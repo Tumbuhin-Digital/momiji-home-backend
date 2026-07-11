@@ -119,6 +119,8 @@ type ValidateAddressRequest struct {
 type ShippingRateDTO struct {
 	ServiceCode  string `json:"service_code"`
 	Label        string `json:"label"`
+	BaseCost     string `json:"base_cost"`
+	BufferAmount string `json:"buffer_amount"`
 	Cost         string `json:"cost"`
 	Currency     string `json:"currency"`
 	DeliveryDays *int   `json:"delivery_days,omitempty"`

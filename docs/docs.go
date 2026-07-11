@@ -2711,6 +2711,12 @@ const docTemplate = `{
         "checkout.ShippingRateDTO": {
             "type": "object",
             "properties": {
+                "base_cost": {
+                    "type": "string"
+                },
+                "buffer_amount": {
+                    "type": "string"
+                },
                 "cost": {
                     "type": "string"
                 },

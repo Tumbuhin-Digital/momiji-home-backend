@@ -499,11 +499,15 @@ func (s *service) calculateRatesForItems(ctx context.Context, items []cart.CartI
 		groundCode = "ups_ground"
 	}
 
+	baseCost, bufferAmount, bufferedCost := shipping.ApplyShippingBuffer(amount)
+
 	return []ShippingRateDTO{{
-		ServiceCode: groundCode,
-		Label:       "Ground",
-		Cost:        fmt.Sprintf("%.2f", amount),
-		Currency:    currency,
+		ServiceCode:  groundCode,
+		Label:        "Ground",
+		BaseCost:     fmt.Sprintf("%.2f", baseCost),
+		BufferAmount: fmt.Sprintf("%.2f", bufferAmount),
+		Cost:         fmt.Sprintf("%.2f", bufferedCost),
+		Currency:     currency,
 	}}, nil
 }
 
