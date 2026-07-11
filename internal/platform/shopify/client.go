@@ -14,6 +14,7 @@ import (
 type Client interface {
 	QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error)
 	CreateDraftOrder(ctx context.Context, input DraftOrderInput) (*DraftOrderResponse, error)
+	SendDraftOrderInvoice(ctx context.Context, draftOrderID string, email *DraftOrderInvoiceEmailInput) error
 	CreateStorefrontCart(ctx context.Context, input CartCreateInput) (*CartCreateResponse, error)
 	CreateRefund(ctx context.Context, shopifyOrderID string, amount float64, currency string, reason string) error
 	GetVariantsInventory(ctx context.Context, variantIDs []string) (map[string]int, error)
@@ -21,6 +22,12 @@ type Client interface {
 	FetchFulfillmentOrders(ctx context.Context, shopifyOrderID string) ([]FulfillmentOrderData, error)
 	CreateFulfillmentV2(ctx context.Context, input CreateFulfillmentV2Input) (*CreateFulfillmentV2Result, error)
 	CreateFulfillmentEvent(ctx context.Context, shopifyFulfillmentID, status string) error
+}
+
+type DraftOrderInvoiceEmailInput struct {
+	To            string `json:"to,omitempty"`
+	Subject       string `json:"subject,omitempty"`
+	CustomMessage string `json:"customMessage,omitempty"`
 }
 
 type clientImpl struct {
@@ -179,6 +186,52 @@ func (c *clientImpl) CreateDraftOrder(ctx context.Context, input DraftOrderInput
 	}
 
 	return res.Data.DraftOrderCreate.DraftOrder, nil
+}
+
+func (c *clientImpl) SendDraftOrderInvoice(ctx context.Context, draftOrderID string, email *DraftOrderInvoiceEmailInput) error {
+	query := `
+		mutation draftOrderInvoiceSend($id: ID!, $email: EmailInput) {
+		  draftOrderInvoiceSend(id: $id, email: $email) {
+			draftOrder {
+			  id
+			}
+			userErrors {
+			  field
+			  message
+			}
+		  }
+		}
+	`
+	vars := map[string]interface{}{"id": draftOrderID}
+	if email != nil {
+		vars["email"] = email
+	}
+
+	resBytes, err := c.QueryAdminGraphQL(ctx, query, vars)
+	if err != nil {
+		return err
+	}
+
+	var res struct {
+		Data struct {
+			DraftOrderInvoiceSend struct {
+				DraftOrder *struct {
+					ID string `json:"id"`
+				} `json:"draftOrder"`
+				UserErrors []struct {
+					Message string `json:"message"`
+				} `json:"userErrors"`
+			} `json:"draftOrderInvoiceSend"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resBytes, &res); err != nil {
+		return fmt.Errorf("failed to unmarshal shopify invoice send response (body: %s): %w", string(resBytes), err)
+	}
+	if len(res.Data.DraftOrderInvoiceSend.UserErrors) > 0 {
+		return fmt.Errorf("shopify draft order invoice send error: %s", res.Data.DraftOrderInvoiceSend.UserErrors[0].Message)
+	}
+	return nil
 }
 
 type RefundTransaction struct {

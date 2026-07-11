@@ -24,6 +24,7 @@ import (
 
 type CheckoutService interface {
 	InitiateCheckout(ctx context.Context, userID, sessionID *string, req InitiateCheckoutRequest) (*InitiateCheckoutResponse, error)
+	CreateManualOrder(ctx context.Context, req ManualOrderRequest) (*ManualOrderResponse, error)
 	ReleaseCheckout(ctx context.Context, userID, sessionID *string, checkoutReference *string) error
 	ValidateAddress(ctx context.Context, req ValidateAddressRequest) map[string]string
 	GetShippingRates(ctx context.Context, userID, sessionID *string, req ShippingRatesRequest) ([]ShippingRateDTO, error)
@@ -101,31 +102,7 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	}
 
 	for _, item := range cartRes.PreOrder {
-		unitPrice, _ := strconv.ParseFloat(item.UnitPrice, 64)
-		deposit := unitPrice * 0.5
-
-		requiresShipping := false
-
-		draftLine := shopify.DraftOrderLineItem{
-			Title:             fmt.Sprintf("[PREORDER] %s (Deposit 50%%)", item.Title),
-			Quantity:          item.Quantity,
-			OriginalUnitPrice: fmt.Sprintf("%.2f", deposit),
-			RequiresShipping:  &requiresShipping,
-			CustomAttributes: []shopify.AttributeInput{
-				{Key: "type", Value: "preorder_dp"},
-				{Key: "full_price", Value: fmt.Sprintf("%.2f", unitPrice)},
-				{Key: "variant_ref", Value: item.VariantID},
-			},
-		}
-
-		if item.Weight > 0 {
-			draftLine.Weight = &shopify.DraftOrderLineItemWeightInput{
-				Unit:  "KILOGRAMS",
-				Value: item.Weight,
-			}
-		}
-
-		draftLines = append(draftLines, draftLine)
+		draftLines = append(draftLines, buildPreOrderDraftLine(item))
 	}
 
 	draftInput := shopify.DraftOrderInput{
@@ -357,17 +334,57 @@ func (s *service) getStoreClosedStatus(ctx context.Context) (bool, string) {
 }
 
 func (s *service) GetShippingRates(ctx context.Context, userID, sessionID *string, rateReq ShippingRatesRequest) ([]ShippingRateDTO, error) {
-	cartRes, err := s.cartService.GetCartResponse(ctx, userID, sessionID)
-	if err != nil {
-		return nil, apierror.ErrInternal
+	var items []cart.CartItem
+	if len(rateReq.LineItems) > 0 {
+		resolved, err := s.resolveExplicitLineItems(ctx, rateReq.LineItems)
+		if err != nil {
+			return nil, err
+		}
+		items = resolved
+	} else {
+		cartRes, err := s.cartService.GetCartResponse(ctx, userID, sessionID)
+		if err != nil {
+			return nil, apierror.ErrInternal
+		}
+		items = s.resolveCartItems(cartRes, rateReq.Segment)
 	}
 
-	items := s.resolveCartItems(cartRes, rateReq.Segment)
 	if len(items) == 0 {
 		return []ShippingRateDTO{}, nil
 	}
 
 	return s.calculateRatesForItems(ctx, items, rateReq)
+}
+
+func (s *service) resolveExplicitLineItems(ctx context.Context, lineItems []ShippingRateLineItem) ([]cart.CartItem, error) {
+	var items []cart.CartItem
+	for _, li := range lineItems {
+		variant, err := s.productService.GetVariantByID(ctx, li.VariantID)
+		if err != nil {
+			return nil, apierror.New(404, "not_found", "Variant not found: "+li.VariantID)
+		}
+		unitPrice := 0.0
+		fmt.Sscanf(variant.WSPrice, "%f", &unitPrice)
+		if unitPrice <= 0 {
+			fmt.Sscanf(variant.RetailPrice, "%f", &unitPrice)
+		}
+		items = append(items, cart.CartItem{
+			VariantID:         variant.ID,
+			Title:             variant.Title,
+			ImageSrc:          variant.ImageSrc,
+			Quantity:          li.Quantity,
+			InventoryQuantity: variant.InventoryQuantity,
+			UnitPrice:         fmt.Sprintf("%.2f", unitPrice),
+			RetailPrice:       variant.RetailPrice,
+			Subtotal:          fmt.Sprintf("%.2f", unitPrice*float64(li.Quantity)),
+			Weight:            variant.WeightKg,
+			WeightUnit:        "KILOGRAMS",
+			Length:            variant.LengthCm,
+			Width:             variant.WidthCm,
+			Height:            variant.HeightCm,
+		})
+	}
+	return items, nil
 }
 
 func (s *service) resolveCartItems(cartRes *cart.CartResponse, segment string) []cart.CartItem {

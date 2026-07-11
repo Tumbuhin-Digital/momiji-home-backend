@@ -39,6 +39,10 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	checkout.Post("/", h.InitiateCheckout)
 	checkout.Post("/release", h.ReleaseCheckout)
 	checkout.Get("/confirm", h.GetCheckoutConfirm)
+
+	// Admin manual order (registered here to avoid order↔checkout import cycle)
+	adminOrders := router.Group("/orders", middleware.Auth(h.jwtSecret), middleware.RBAC("admin"))
+	adminOrders.Post("/manual", h.CreateManualOrder)
 }
 
 func (h *Handler) extractIdentity(c *fiber.Ctx) (userID *string, sessionID *string) {
@@ -243,6 +247,36 @@ func (h *Handler) InitiateCheckout(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Checkout initiated", res)
+}
+
+// CreateManualOrder godoc
+// @Summary Create a manual order invoice (admin)
+// @Tags Order
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body ManualOrderRequest true "Manual Order Request"
+// @Success 201 {object} response.Envelope{data=ManualOrderResponse}
+// @Router /orders/manual [post]
+func (h *Handler) CreateManualOrder(c *fiber.Ctx) error {
+	var req ManualOrderRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, apierror.New(400, "invalid_request", "invalid request body"))
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	res, err := h.checkoutService.CreateManualOrder(c.Context(), req)
+	if err != nil {
+		return response.Error(c, err)
+	}
+
+	msg := "Manual order invoice created successfully"
+	if !res.InvoiceEmailSent {
+		msg = "Manual order invoice created, but Shopify email failed to send"
+	}
+	return response.Success(c, fiber.StatusCreated, msg, res)
 }
 
 // ReleaseCheckout godoc

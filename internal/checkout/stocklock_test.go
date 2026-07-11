@@ -127,6 +127,10 @@ func (m *mockShopifyInventoryClient) CreateDraftOrder(context.Context, shopify.D
 	return nil, nil
 }
 
+func (m *mockShopifyInventoryClient) SendDraftOrderInvoice(context.Context, string, *shopify.DraftOrderInvoiceEmailInput) error {
+	return nil
+}
+
 func (m *mockShopifyInventoryClient) CreateStorefrontCart(context.Context, shopify.CartCreateInput) (*shopify.CartCreateResponse, error) {
 	return nil, nil
 }

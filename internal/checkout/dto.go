@@ -64,16 +64,49 @@ type ReleaseCheckoutRequest struct {
 	CheckoutReference *string `json:"checkout_reference,omitempty"`
 }
 
+type ShippingRateLineItem struct {
+	VariantID string `json:"variant_id" validate:"required"`
+	Quantity  int    `json:"quantity" validate:"required,min=1"`
+}
+
 type ShippingRatesRequest struct {
-	Name     string `json:"name,omitempty"`
-	Phone    string `json:"phone,omitempty"`
-	Address1 string `json:"address1,omitempty"`
-	City     string `json:"city,omitempty"`
-	State    string `json:"state,omitempty"`
-	Zip      string `json:"zip" validate:"required"`
-	Country  string `json:"country" validate:"required"`
-	Segment  string `json:"segment,omitempty"` // "ship_ready" | "pre_order"
-	Origin   string `json:"origin,omitempty"`  // "east" | "west" (pre_order only)
+	Name      string                 `json:"name,omitempty"`
+	Phone     string                 `json:"phone,omitempty"`
+	Address1  string                 `json:"address1,omitempty"`
+	City      string                 `json:"city,omitempty"`
+	State     string                 `json:"state,omitempty"`
+	Zip       string                 `json:"zip" validate:"required"`
+	Country   string                 `json:"country" validate:"required"`
+	Segment   string                 `json:"segment,omitempty"` // "ship_ready" | "pre_order"
+	Origin    string                 `json:"origin,omitempty"`  // "east" | "west" (pre_order only)
+	LineItems []ShippingRateLineItem `json:"line_items,omitempty"`
+}
+
+type ManualOrderLineItem struct {
+	VariantID string `json:"variant_id" validate:"required"`
+	Quantity  int    `json:"quantity" validate:"required,min=1"`
+}
+
+type ManualOrderRequest struct {
+	Email          string                `json:"email" validate:"required,email"`
+	FirstName      string                `json:"first_name" validate:"required"`
+	LastName       string                `json:"last_name" validate:"required"`
+	Phone          string                `json:"phone,omitempty"`
+	Address1       string                `json:"address1" validate:"required"`
+	City           string                `json:"city" validate:"required"`
+	State          string                `json:"state" validate:"required"`
+	Zip            string                `json:"zip" validate:"required"`
+	Country        string                `json:"country" validate:"required"`
+	ShippingMethod string                `json:"shipping_method,omitempty"`
+	Origin         string                `json:"origin,omitempty"`
+	LineItems      []ManualOrderLineItem `json:"line_items" validate:"required,min=1,dive"`
+}
+
+type ManualOrderResponse struct {
+	InvoiceURL        string `json:"invoice_url"`
+	CheckoutReference string `json:"checkout_reference"`
+	DraftOrderID      string `json:"draft_order_id"`
+	InvoiceEmailSent  bool   `json:"invoice_email_sent"`
 }
 
 type ValidateAddressRequest struct {

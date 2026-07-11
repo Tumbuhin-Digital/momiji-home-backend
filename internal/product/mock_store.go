@@ -249,6 +249,10 @@ func (m *MockShopifyClient) CreateDraftOrder(ctx context.Context, input shopify.
 	return m.DraftOrderResponse, m.DraftOrderErr
 }
 
+func (m *MockShopifyClient) SendDraftOrderInvoice(ctx context.Context, draftOrderID string, email *shopify.DraftOrderInvoiceEmailInput) error {
+	return nil
+}
+
 func (m *MockShopifyClient) CreateStorefrontCart(ctx context.Context, input shopify.CartCreateInput) (*shopify.CartCreateResponse, error) {
 	return &shopify.CartCreateResponse{CheckoutUrl: "mock-url"}, nil
 }
@@ -291,6 +295,10 @@ func (m *MockShopifyClientFunc) QueryAdminGraphQL(ctx context.Context, query str
 
 func (m *MockShopifyClientFunc) CreateDraftOrder(ctx context.Context, input shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error) {
 	return m.CreateDraftOrderFn(ctx, input)
+}
+
+func (m *MockShopifyClientFunc) SendDraftOrderInvoice(ctx context.Context, draftOrderID string, email *shopify.DraftOrderInvoiceEmailInput) error {
+	return nil
 }
 
 func (m *MockShopifyClientFunc) CreateStorefrontCart(ctx context.Context, input shopify.CartCreateInput) (*shopify.CartCreateResponse, error) {

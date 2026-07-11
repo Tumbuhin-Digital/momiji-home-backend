@@ -119,6 +119,13 @@ func (s *service) getLocalVariant(ctx context.Context, item ShopifyOrderLineItem
 }
 
 func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebhook) error {
+	if !isWholesaleMomijiOrder(payload) {
+		slog.InfoContext(ctx, "Skipping non-wholesale Shopify order",
+			slog.Int64("shopify_order_id", payload.ID),
+			slog.Int("order_number", payload.OrderNumber))
+		return nil
+	}
+
 	// 1. Idempotency Check: check if order with this Shopify ID already exists
 	shopifyOrderIDStr := strconv.FormatInt(payload.ID, 10)
 	
