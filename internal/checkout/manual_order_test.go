@@ -48,8 +48,8 @@ func (s *stubProductService) UpdateVariantPrice(context.Context, string, *float6
 func (s *stubProductService) GetAllVariants(context.Context) ([]product.ProductVariant, error) {
 	return nil, nil
 }
-func (s *stubProductService) BulkUpdateDimensions(context.Context, []product.DimensionUpdateInput) error {
-	return nil
+func (s *stubProductService) BulkUpdateDimensions(context.Context, []product.DimensionUpdateInput) (product.BulkUpdateDimensionsResult, error) {
+	return product.BulkUpdateDimensionsResult{}, nil
 }
 func (s *stubProductService) ValidateVariantActive(_ context.Context, variantID string) error {
 	v, ok := s.variants[variantID]

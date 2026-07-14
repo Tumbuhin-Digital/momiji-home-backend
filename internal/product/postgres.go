@@ -176,7 +176,7 @@ func (s *PostgresStore) UpsertVariant(ctx context.Context, variant *ProductVaria
 		Columns:   []clause.Column{{Name: "shopify_variant_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"title", "sku", "price", "image_src",
-			"inventory_quantity", "shopify_inventory_item_id", "weight_kg", "updated_at",
+			"inventory_quantity", "shopify_inventory_item_id", "updated_at",
 		}),
 	}).Create(variant).Error
 }
@@ -247,24 +247,44 @@ func (s *PostgresStore) GetAllVariants(ctx context.Context) ([]ProductVariant, e
 	return variants, nil
 }
 
-func (s *PostgresStore) BulkUpdateVariantDimensions(ctx context.Context, inputs []DimensionUpdateInput) error {
+func (s *PostgresStore) BulkUpdateVariantDimensions(ctx context.Context, inputs []DimensionUpdateInput) (BulkUpdateDimensionsResult, error) {
+	var result BulkUpdateDimensionsResult
 	tx := s.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
-		return tx.Error
+		return result, tx.Error
 	}
 	defer tx.Rollback()
 
 	for _, input := range inputs {
-		res := tx.Model(&ProductVariant{}).Where("shopify_variant_id = ?", input.ShopifyVariantID).Updates(map[string]interface{}{
-			"width_cm":  input.WidthCm,
-			"height_cm": input.HeightCm,
-			"depth_cm":  input.DepthCm,
-		})
+		updates := map[string]interface{}{}
+		if input.UpdateDimensions {
+			updates["width_cm"] = input.WidthCm
+			updates["height_cm"] = input.HeightCm
+			updates["depth_cm"] = input.DepthCm
+		}
+		if input.WeightKg != nil {
+			updates["weight_kg"] = *input.WeightKg
+		}
+		if len(updates) == 0 {
+			continue
+		}
+		res := tx.Model(&ProductVariant{}).Where("shopify_variant_id = ?", input.ShopifyVariantID).Updates(updates)
 		if res.Error != nil {
-			return res.Error
+			return result, res.Error
+		}
+		if res.RowsAffected == 0 {
+			result.NotFoundIDs = append(result.NotFoundIDs, input.ShopifyVariantID)
+			continue
+		}
+		result.UpdatedCount++
+		if input.WeightKg != nil {
+			result.WeightUpdatedCount++
 		}
 	}
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 func (s *PostgresStore) GetProductByShopifyID(ctx context.Context, shopifyID string) (*Product, error) {

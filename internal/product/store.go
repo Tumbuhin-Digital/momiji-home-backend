@@ -75,7 +75,7 @@ type Store interface {
 	UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) error
 	UpdateSingleVariantBatchLabel(ctx context.Context, shopifyVariantID string, batchLabel string) error
 	UpsertProductImages(ctx context.Context, productID string, images []ProductImage) error
-	BulkUpdateVariantDimensions(ctx context.Context, inputs []DimensionUpdateInput) error
+	BulkUpdateVariantDimensions(ctx context.Context, inputs []DimensionUpdateInput) (BulkUpdateDimensionsResult, error)
 }
 
 type DimensionUpdateInput struct {
@@ -83,4 +83,21 @@ type DimensionUpdateInput struct {
 	WidthCm          float64
 	HeightCm         float64
 	DepthCm          float64
+	// UpdateDimensions when true writes width/height/depth (including zeros).
+	UpdateDimensions bool
+	// WeightKg nil means skip weight update for this row.
+	WeightKg *float64
+}
+
+type PackagingImportError struct {
+	Row       int    `json:"row"`
+	VariantID string `json:"variant_id,omitempty"`
+	Field     string `json:"field,omitempty"`
+	Message   string `json:"message"`
+}
+
+type BulkUpdateDimensionsResult struct {
+	UpdatedCount       int
+	WeightUpdatedCount int
+	NotFoundIDs        []string
 }

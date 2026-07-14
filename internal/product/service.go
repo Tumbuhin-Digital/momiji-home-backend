@@ -5,14 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
 	"strconv"
 	"strings"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preordercustomtext"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
-	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/units"
 )
 
 type ProductService interface {
@@ -27,7 +25,7 @@ type ProductService interface {
 	UpdateVariantBatchLabelByVariantID(ctx context.Context, variantID string, batchLabel string) (*VariantDTO, error)
 	UpdateVariantPrice(ctx context.Context, variantID string, wsPrice *float64) error
 	GetAllVariants(ctx context.Context) ([]ProductVariant, error)
-	BulkUpdateDimensions(ctx context.Context, rows []DimensionUpdateInput) error
+	BulkUpdateDimensions(ctx context.Context, rows []DimensionUpdateInput) (BulkUpdateDimensionsResult, error)
 	ValidateVariantActive(ctx context.Context, variantID string) error
 }
 
@@ -211,14 +209,9 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 				}
 				variants(first: 10) {
 				  edges {
-					node { 
-						id title sku price inventoryQuantity image { url } 
-						inventoryItem { 
-							id 
-							measurement { 
-								weight { value unit } 
-							} 
-						} 
+					node {
+						id title sku price inventoryQuantity image { url }
+						inventoryItem { id }
 					}
 				  }
 				}
@@ -272,13 +265,7 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 											Url string `json:"url"`
 										} `json:"image"`
 										InventoryItem struct {
-											ID          string `json:"id"`
-											Measurement struct {
-												Weight struct {
-													Value float64 `json:"value"`
-													Unit  string  `json:"unit"`
-												} `json:"weight"`
-											} `json:"measurement"`
+											ID string `json:"id"`
 										} `json:"inventoryItem"`
 									} `json:"node"`
 								} `json:"edges"`
@@ -346,32 +333,10 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 				vNode := vEdge.Node
 				price, _ := strconv.ParseFloat(vNode.Price, 64)
 
-				wVal := vNode.InventoryItem.Measurement.Weight.Value
-				wUnit := vNode.InventoryItem.Measurement.Weight.Unit
-
-				weightKg, unitOK := units.ShopifyWeightToKg(wVal, wUnit)
-				if !unitOK {
-					slog.WarnContext(ctx, "unknown shopify weight unit, treating value as kg",
-						slog.String("shopify_variant_id", vNode.ID),
-						slog.String("sku", vNode.Sku),
-						slog.String("unit", wUnit),
-						slog.Float64("value", wVal),
-					)
-				}
-
 				fulfillmentType := "ship_ready"
 
-				// Try to preserve existing fulfillment type from DB if > 0
+				// Weight is managed via CSV packaging import — never overwrite from Shopify.
 				existing, _ := s.store.GetVariantByShopifyID(ctx, vNode.ID)
-				if existing != nil && existing.WeightKg > 0 && math.Abs(existing.WeightKg-weightKg) > 0.01 {
-					slog.WarnContext(ctx, "shopify weight differs from db weight_kg",
-						slog.String("shopify_variant_id", vNode.ID),
-						slog.String("sku", vNode.Sku),
-						slog.Float64("db_kg", existing.WeightKg),
-						slog.Float64("shopify_kg", weightKg),
-						slog.String("shopify_unit", wUnit),
-					)
-				}
 				if existing != nil && existing.FulfillmentType != "" {
 					fulfillmentType = existing.FulfillmentType
 				}
@@ -392,7 +357,6 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 					ImageSrc:               vNode.Image.Url,
 					InventoryQuantity:      vNode.InventoryQuantity,
 					ShopifyInventoryItemID: vNode.InventoryItem.ID,
-					WeightKg:               weightKg,
 					FulfillmentType:        fulfillmentType,
 				}
 				if err := s.store.UpsertVariant(ctx, variant); err != nil {
@@ -537,7 +501,7 @@ func (s *service) GetAllVariants(ctx context.Context) ([]ProductVariant, error) 
 	return s.store.GetAllVariants(ctx)
 }
 
-func (s *service) BulkUpdateDimensions(ctx context.Context, rows []DimensionUpdateInput) error {
+func (s *service) BulkUpdateDimensions(ctx context.Context, rows []DimensionUpdateInput) (BulkUpdateDimensionsResult, error) {
 	return s.store.BulkUpdateVariantDimensions(ctx, rows)
 }
 

@@ -117,6 +117,28 @@ func (m *MockProductStore) MarkProductDeletedByShopifyID(ctx context.Context, sh
 func (m *MockProductStore) UpsertVariant(ctx context.Context, variant *ProductVariant) error {
 	m.UpsertVariantCalls++
 	if m.UpsertVariantErr != nil { return m.UpsertVariantErr }
+	if existing, ok := m.Variants[variant.ShopifyVariantID]; ok {
+		// Match Postgres DoUpdates: preserve weight and packaging dims on conflict.
+		variant.WeightKg = existing.WeightKg
+		variant.WidthCm = existing.WidthCm
+		variant.HeightCm = existing.HeightCm
+		variant.DepthCm = existing.DepthCm
+		if variant.ID == "" {
+			variant.ID = existing.ID
+		}
+		if variant.FulfillmentType == "" {
+			variant.FulfillmentType = existing.FulfillmentType
+		}
+		if variant.PreorderBatchLabel == nil {
+			variant.PreorderBatchLabel = existing.PreorderBatchLabel
+		}
+		if variant.RetailPrice == nil {
+			variant.RetailPrice = existing.RetailPrice
+		}
+		if variant.WSPrice == nil {
+			variant.WSPrice = existing.WSPrice
+		}
+	}
 	if variant.ID == "" { variant.ID = "mock-variant-uuid" }
 	m.Variants[variant.ShopifyVariantID] = variant
 	m.VariantsByID[variant.ID] = variant
@@ -216,17 +238,29 @@ func (m *MockProductStore) GetAllVariants(ctx context.Context) ([]ProductVariant
 	return out, nil
 }
 
-func (m *MockProductStore) BulkUpdateVariantDimensions(ctx context.Context, inputs []DimensionUpdateInput) error {
+func (m *MockProductStore) BulkUpdateVariantDimensions(ctx context.Context, inputs []DimensionUpdateInput) (BulkUpdateDimensionsResult, error) {
+	var result BulkUpdateDimensionsResult
 	for _, input := range inputs {
 		v, ok := m.Variants[input.ShopifyVariantID]
 		if !ok {
+			result.NotFoundIDs = append(result.NotFoundIDs, input.ShopifyVariantID)
 			continue
 		}
-		v.WidthCm = input.WidthCm
-		v.HeightCm = input.HeightCm
-		v.DepthCm = input.DepthCm
+		if !input.UpdateDimensions && input.WeightKg == nil {
+			continue
+		}
+		if input.UpdateDimensions {
+			v.WidthCm = input.WidthCm
+			v.HeightCm = input.HeightCm
+			v.DepthCm = input.DepthCm
+		}
+		if input.WeightKg != nil {
+			v.WeightKg = *input.WeightKg
+			result.WeightUpdatedCount++
+		}
+		result.UpdatedCount++
 	}
-	return nil
+	return result, nil
 }
 
 // MockShopifyClient is a test double for shopify.Client.

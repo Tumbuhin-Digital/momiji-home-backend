@@ -4,7 +4,10 @@ import (
 	"encoding/csv"
 	"fmt"
 	"log/slog"
+	"math"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server/middleware"
@@ -368,7 +371,7 @@ func (h *Handler) UpdateVariantPrice(c *fiber.Ctx) error {
 }
 
 // DownloadDimensionTemplate godoc
-// @Summary Download product dimension CSV template
+// @Summary Download variant packaging CSV template (weight + dimensions)
 // @Tags Admin/Product
 // @Produce text/csv
 // @Security BearerAuth
@@ -379,11 +382,33 @@ func (h *Handler) DownloadDimensionTemplate(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
+	sort.SliceStable(variants, func(i, j int) bool {
+		zi := variants[i].WeightKg == 0
+		zj := variants[j].WeightKg == 0
+		if zi != zj {
+			return zi // zero-weight rows first
+		}
+		pi, pj := "", ""
+		if variants[i].Product != nil {
+			pi = variants[i].Product.Title
+		}
+		if variants[j].Product != nil {
+			pj = variants[j].Product.Title
+		}
+		if pi != pj {
+			return pi < pj
+		}
+		if variants[i].SKU != variants[j].SKU {
+			return variants[i].SKU < variants[j].SKU
+		}
+		return variants[i].ShopifyVariantID < variants[j].ShopifyVariantID
+	})
+
 	c.Set("Content-Type", "text/csv")
-	c.Set("Content-Disposition", `attachment; filename="dimension-template.csv"`)
+	c.Set("Content-Disposition", `attachment; filename="variant-packaging-template.csv"`)
 
 	writer := csv.NewWriter(c.Response().BodyWriter())
-	header := []string{"variant_id", "product_title", "variant_title", "sku", "length_in", "width_in", "height_in"}
+	header := []string{"variant_id", "product_title", "variant_title", "sku", "weight_lb", "length_in", "width_in", "height_in"}
 	_ = writer.Write(header)
 
 	for _, v := range variants {
@@ -391,11 +416,13 @@ func (h *Handler) DownloadDimensionTemplate(c *fiber.Ctx) error {
 		if v.Product != nil {
 			productTitle = v.Product.Title
 		}
+		weightLb := math.Round(units.KgToLb(v.WeightKg)*100) / 100
 		row := []string{
 			v.ShopifyVariantID,
 			productTitle,
 			v.Title,
 			v.SKU,
+			fmt.Sprintf("%.2f", weightLb),
 			fmt.Sprintf("%.2f", units.CmToIn(v.DepthCm)),
 			fmt.Sprintf("%.2f", units.CmToIn(v.WidthCm)),
 			fmt.Sprintf("%.2f", units.CmToIn(v.HeightCm)),
@@ -407,7 +434,7 @@ func (h *Handler) DownloadDimensionTemplate(c *fiber.Ctx) error {
 }
 
 // ImportDimensions godoc
-// @Summary Import product dimensions via CSV
+// @Summary Import variant packaging (weight lb + dimensions) via CSV
 // @Tags Admin/Product
 // @Accept mpfd
 // @Produce json
@@ -437,12 +464,10 @@ func (h *Handler) ImportDimensions(c *fiber.Ctx) error {
 		return response.Error(c, apierror.New(400, "bad_request", "CSV is empty"))
 	}
 
-	var updates []DimensionUpdateInput
-	// Map header indices
 	headers := records[0]
 	idxMap := make(map[string]int)
 	for i, h := range headers {
-		idxMap[h] = i
+		idxMap[strings.TrimSpace(h)] = i
 	}
 
 	vidIdx, ok := idxMap["variant_id"]
@@ -450,56 +475,120 @@ func (h *Handler) ImportDimensions(c *fiber.Ctx) error {
 		return response.Error(c, apierror.New(400, "bad_request", "Missing variant_id column"))
 	}
 
-	parseFloat := func(s string) float64 {
-		if s == "" {
-			return 0
+	cell := func(row []string, col string) (string, bool) {
+		idx, found := idxMap[col]
+		if !found || len(row) <= idx {
+			return "", false
 		}
-		f, _ := strconv.ParseFloat(s, 64)
-		return f
+		return strings.TrimSpace(row[idx]), true
 	}
 
-	for _, row := range records[1:] {
+	parseDimInchesOrCm := func(row []string, inCol, cmCol string) (float64, bool) {
+		if raw, ok := cell(row, inCol); ok && raw != "" {
+			if f, err := strconv.ParseFloat(raw, 64); err == nil {
+				return units.InToCm(f), true
+			}
+			return 0, true
+		}
+		if raw, ok := cell(row, cmCol); ok && raw != "" {
+			if f, err := strconv.ParseFloat(raw, 64); err == nil {
+				return f, true
+			}
+			return 0, true
+		}
+		return 0, false
+	}
+
+	type pendingRow struct {
+		csvRow int
+		input  DimensionUpdateInput
+	}
+	var pending []pendingRow
+	importErrors := make([]PackagingImportError, 0)
+
+	for rowNum, row := range records[1:] {
+		csvRow := rowNum + 2
 		if len(row) <= vidIdx {
 			continue
 		}
-		vid := row[vidIdx]
+		vid := strings.TrimSpace(row[vidIdx])
 		if vid == "" {
 			continue
 		}
 
 		input := DimensionUpdateInput{ShopifyVariantID: vid}
-		if idx, ok := idxMap["width_in"]; ok && len(row) > idx && row[idx] != "" {
-			input.WidthCm = units.InToCm(parseFloat(row[idx]))
-		} else if idx, ok := idxMap["width_cm"]; ok && len(row) > idx && row[idx] != "" {
-			input.WidthCm = parseFloat(row[idx])
+		hasDimCol := false
+
+		if v, ok := parseDimInchesOrCm(row, "width_in", "width_cm"); ok {
+			input.WidthCm = v
+			hasDimCol = true
 		}
-		if idx, ok := idxMap["height_in"]; ok && len(row) > idx && row[idx] != "" {
-			input.HeightCm = units.InToCm(parseFloat(row[idx]))
-		} else if idx, ok := idxMap["height_cm"]; ok && len(row) > idx && row[idx] != "" {
-			input.HeightCm = parseFloat(row[idx])
+		if v, ok := parseDimInchesOrCm(row, "height_in", "height_cm"); ok {
+			input.HeightCm = v
+			hasDimCol = true
 		}
-		if idx, ok := idxMap["length_in"]; ok && len(row) > idx && row[idx] != "" {
-			input.DepthCm = units.InToCm(parseFloat(row[idx]))
-		} else if idx, ok := idxMap["length_cm"]; ok && len(row) > idx && row[idx] != "" {
-			input.DepthCm = parseFloat(row[idx])
-		} else if idx, ok := idxMap["depth_in"]; ok && len(row) > idx && row[idx] != "" {
-			input.DepthCm = units.InToCm(parseFloat(row[idx]))
-		} else if idx, ok := idxMap["depth_cm"]; ok && len(row) > idx && row[idx] != "" {
-			input.DepthCm = parseFloat(row[idx])
+		if v, ok := parseDimInchesOrCm(row, "length_in", "length_cm"); ok {
+			input.DepthCm = v
+			hasDimCol = true
+		} else if v, ok := parseDimInchesOrCm(row, "depth_in", "depth_cm"); ok {
+			input.DepthCm = v
+			hasDimCol = true
 		}
-		if input.WidthCm == 0 && input.HeightCm == 0 && input.DepthCm == 0 {
-			slog.Warn("dimension import: all dimensions are zero",
+
+		if raw, hasCol := cell(row, "weight_lb"); hasCol && raw != "" {
+			lb, err := strconv.ParseFloat(raw, 64)
+			if err != nil || lb <= 0 {
+				importErrors = append(importErrors, PackagingImportError{
+					Row: csvRow, VariantID: vid, Field: "weight_lb",
+					Message: "must be a number > 0",
+				})
+			} else {
+				kg := units.LbToKg(lb)
+				input.WeightKg = &kg
+			}
+		}
+
+		if !hasDimCol && input.WeightKg == nil {
+			continue
+		}
+
+		if hasDimCol && input.WidthCm == 0 && input.HeightCm == 0 && input.DepthCm == 0 {
+			slog.Warn("packaging import: all dimensions are zero",
 				slog.String("variant_id", vid),
 			)
 		}
-		updates = append(updates, input)
+
+		input.UpdateDimensions = hasDimCol
+		pending = append(pending, pendingRow{csvRow: csvRow, input: input})
 	}
 
-	if err := h.service.BulkUpdateDimensions(c.Context(), updates); err != nil {
+	updates := make([]DimensionUpdateInput, len(pending))
+	for i, p := range pending {
+		updates[i] = p.input
+	}
+
+	result, err := h.service.BulkUpdateDimensions(c.Context(), updates)
+	if err != nil {
 		return response.Error(c, err)
 	}
 
-	return response.Success(c, fiber.StatusOK, "Dimensions imported successfully", map[string]interface{}{
-		"updated_count": len(updates),
+	notFoundSet := make(map[string]struct{}, len(result.NotFoundIDs))
+	for _, id := range result.NotFoundIDs {
+		notFoundSet[id] = struct{}{}
+	}
+	for _, p := range pending {
+		if _, missing := notFoundSet[p.input.ShopifyVariantID]; missing {
+			importErrors = append(importErrors, PackagingImportError{
+				Row:       p.csvRow,
+				VariantID: p.input.ShopifyVariantID,
+				Message:   "variant_id not found",
+			})
+		}
+	}
+
+	return response.Success(c, fiber.StatusOK, "Packaging data imported successfully", map[string]interface{}{
+		"updated_count":        result.UpdatedCount,
+		"weight_updated_count": result.WeightUpdatedCount,
+		"errors":               importErrors,
 	})
 }
