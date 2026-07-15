@@ -14,19 +14,21 @@ type RateOptions struct {
 
 type Shipment struct {
 	ValidateAddress string    `json:"validate_address"` // "no_validation"
+	Confirmation    string    `json:"confirmation,omitempty"`
 	ShipFrom        Address   `json:"ship_from"`
 	ShipTo          Address   `json:"ship_to"`
 	Packages        []Package `json:"packages"`
 }
 
 type Address struct {
-	Name          string `json:"name"`
-	Phone         string `json:"phone"`
-	AddressLine1  string `json:"address_line1"`
-	CityLocality  string `json:"city_locality"`
-	StateProvince string `json:"state_province"`
-	PostalCode    string `json:"postal_code"`
-	CountryCode   string `json:"country_code"` // "US"
+	Name                        string `json:"name"`
+	Phone                       string `json:"phone"`
+	AddressLine1                string `json:"address_line1"`
+	CityLocality                string `json:"city_locality"`
+	StateProvince               string `json:"state_province"`
+	PostalCode                  string `json:"postal_code"`
+	CountryCode                 string `json:"country_code"` // "US"
+	AddressResidentialIndicator string `json:"address_residential_indicator,omitempty"`
 }
 
 type Package struct {
@@ -65,6 +67,9 @@ type Rate struct {
 	CarrierFriendlyName string `json:"carrier_friendly_name"`
 	ServiceType         string `json:"service_type"`
 	ShippingAmount      Money  `json:"shipping_amount"`
+	ConfirmationAmount  Money  `json:"confirmation_amount"`
+	InsuranceAmount     Money  `json:"insurance_amount"`
+	OtherAmount         Money  `json:"other_amount"`
 	DeliveryDays        *int   `json:"delivery_days"`
 }
 

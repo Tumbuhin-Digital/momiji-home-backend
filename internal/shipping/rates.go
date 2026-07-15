@@ -22,9 +22,9 @@ type PackableUnit struct {
 	BoxCount int
 
 	// Metadata for logging when fallbacks apply.
-	LineItemID        string
-	SKU               string
-	ShopifyVariantID  string
+	LineItemID       string
+	SKU              string
+	ShopifyVariantID string
 }
 
 // ShipFromAddress is the origin warehouse for rate calculation.
@@ -180,23 +180,27 @@ func CalculateGroundRate(
 		},
 		Shipment: shipstation.Shipment{
 			ValidateAddress: "no_validation",
+			// UI "Online" maps to API "none" — Rates enum rejects "online".
+			Confirmation: "none",
 			ShipFrom: shipstation.Address{
-				Name:          shipFrom.Name,
-				Phone:         shipFrom.Phone,
-				AddressLine1:  shipFrom.Address1,
-				CityLocality:  shipFrom.City,
-				StateProvince: resolveState(ctx, fromCountry, shipFrom.Zip, shipFrom.State, zipLookup),
-				PostalCode:    shipFrom.Zip,
-				CountryCode:   fromCountry,
+				Name:                        shipFrom.Name,
+				Phone:                       shipFrom.Phone,
+				AddressLine1:                shipFrom.Address1,
+				CityLocality:                shipFrom.City,
+				StateProvince:               resolveState(ctx, fromCountry, shipFrom.Zip, shipFrom.State, zipLookup),
+				PostalCode:                  shipFrom.Zip,
+				CountryCode:                 fromCountry,
+				AddressResidentialIndicator: "unknown",
 			},
 			ShipTo: shipstation.Address{
-				Name:          shipTo.Name,
-				Phone:         shipTo.Phone,
-				AddressLine1:  shipTo.Address1,
-				CityLocality:  shipTo.City,
-				StateProvince: resolveState(ctx, country, shipTo.Zip, shipTo.State, zipLookup),
-				PostalCode:    shipTo.Zip,
-				CountryCode:   country,
+				Name:                        shipTo.Name,
+				Phone:                       shipTo.Phone,
+				AddressLine1:                shipTo.Address1,
+				CityLocality:                shipTo.City,
+				StateProvince:               resolveState(ctx, country, shipTo.Zip, shipTo.State, zipLookup),
+				PostalCode:                  shipTo.Zip,
+				CountryCode:                 country,
+				AddressResidentialIndicator: "unknown",
 			},
 			Packages: packages,
 		},
@@ -210,7 +214,12 @@ func CalculateGroundRate(
 
 	for _, r := range rates {
 		if r.ServiceCode == groundCode {
-			return r.ShippingAmount.Amount, r.ShippingAmount.Currency, nil
+			total := r.ShippingAmount.Amount + r.ConfirmationAmount.Amount + r.InsuranceAmount.Amount + r.OtherAmount.Amount
+			currency := r.ShippingAmount.Currency
+			if currency == "" {
+				currency = "USD"
+			}
+			return total, currency, nil
 		}
 	}
 

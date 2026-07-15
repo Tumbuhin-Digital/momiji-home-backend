@@ -5,9 +5,32 @@ import (
 	"math"
 	"testing"
 
-	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/units"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 )
+
+type mockShipStationClient struct {
+	lastReq shipstation.RateRequest
+	rates   []shipstation.Rate
+	err     error
+}
+
+func (m *mockShipStationClient) GetRates(_ context.Context, req shipstation.RateRequest) ([]shipstation.Rate, error) {
+	m.lastReq = req
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.rates, nil
+}
+
+func (m *mockShipStationClient) ListCarriers(context.Context) ([]shipstation.Carrier, error) {
+	return nil, nil
+}
+
+func (m *mockShipStationClient) TrackShipment(context.Context, string, string) (*shipstation.TrackingResponse, error) {
+	return nil, nil
+}
 
 func TestBuildPackages_ConvertsKgToLbOnce(t *testing.T) {
 	ctx := context.Background()
@@ -83,5 +106,82 @@ func TestPackableUnitFromCartItem_KilogramsPassthrough(t *testing.T) {
 	}
 	if unit.BoxCount != 2 {
 		t.Fatalf("expected box count 2, got %d", unit.BoxCount)
+	}
+}
+
+func TestCalculateGroundRate_SumsAllAmountComponents(t *testing.T) {
+	client := &mockShipStationClient{
+		rates: []shipstation.Rate{{
+			ServiceCode: "ups_ground",
+			ShippingAmount: shipstation.Money{
+				Currency: "USD",
+				Amount:   69.01,
+			},
+			ConfirmationAmount: shipstation.Money{Currency: "USD", Amount: 0},
+			InsuranceAmount:    shipstation.Money{Currency: "USD", Amount: 0},
+			OtherAmount:        shipstation.Money{Currency: "USD", Amount: 21.20},
+		}},
+	}
+
+	amount, currency, err := shipping.CalculateGroundRate(
+		context.Background(),
+		client,
+		shipping.ShipFromAddress{
+			Name: "Momiji Home", Phone: "555-123-4567", Address1: "100 Momiji Way",
+			City: "Passaic", State: "NJ", Zip: "07055", Country: "US",
+		},
+		[]string{"se-1730633"},
+		"ups_ground",
+		shipping.ShipToAddress{
+			Name: "Customer", Phone: "555-555-5555", Address1: "123 Main St",
+			City: "Los Angeles", State: "CA", Zip: "90001", Country: "US",
+		},
+		[]shipstation.Package{{
+			Weight: shipstation.Weight{Value: 102, Unit: "pound"},
+		}},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if currency != "USD" {
+		t.Fatalf("expected USD, got %q", currency)
+	}
+	if math.Abs(amount-90.21) > 1e-9 {
+		t.Fatalf("expected total 90.21, got %f", amount)
+	}
+	if client.lastReq.Shipment.Confirmation != "none" {
+		t.Fatalf("expected confirmation none (UI Online), got %q", client.lastReq.Shipment.Confirmation)
+	}
+	if client.lastReq.Shipment.ShipTo.AddressResidentialIndicator != "unknown" {
+		t.Fatalf("expected residential indicator unknown, got %q", client.lastReq.Shipment.ShipTo.AddressResidentialIndicator)
+	}
+}
+
+func TestCalculateGroundRate_IncludesConfirmationAmount(t *testing.T) {
+	client := &mockShipStationClient{
+		rates: []shipstation.Rate{{
+			ServiceCode:        "ups_ground",
+			ShippingAmount:     shipstation.Money{Currency: "USD", Amount: 69.01},
+			ConfirmationAmount: shipstation.Money{Currency: "USD", Amount: 7.50},
+			OtherAmount:        shipstation.Money{Currency: "USD", Amount: 21.20},
+		}},
+	}
+
+	amount, _, err := shipping.CalculateGroundRate(
+		context.Background(),
+		client,
+		shipping.ShipFromAddress{Zip: "07055", State: "NJ", Country: "US"},
+		[]string{"se-1730633"},
+		"ups_ground",
+		shipping.ShipToAddress{Zip: "90001", State: "CA", Country: "US"},
+		[]shipstation.Package{{Weight: shipstation.Weight{Value: 102, Unit: "pound"}}},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if math.Abs(amount-97.71) > 1e-9 {
+		t.Fatalf("expected total 97.71, got %f", amount)
 	}
 }
