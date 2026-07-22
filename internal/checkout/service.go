@@ -15,6 +15,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/config"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorderbatch"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/settings"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
@@ -41,6 +42,12 @@ type service struct {
 	shipstationCli    shipstation.Client
 	shipstationCfg    config.ShipStationConfig
 	warehouseResolver warehouse.Resolver
+	batchService      BatchPreviewer
+	batchLockService  preorderbatch.BatchLockService
+}
+
+type BatchPreviewer interface {
+	PreviewAllocation(ctx context.Context, shopifyVariantID string, qty int, userID, sessionID *string) (*preorderbatch.AllocateResult, error)
 }
 
 func NewCheckoutService(cartService cart.CartService, productService product.ProductService, shopifyCli shopify.Client, stockLockService StockLockService, store StockLockStore, settingsStore settings.SettingsStore, feURL string, shipstationCli shipstation.Client, shipstationCfg config.ShipStationConfig, warehouseResolver warehouse.Resolver) CheckoutService {
@@ -56,6 +63,14 @@ func NewCheckoutService(cartService cart.CartService, productService product.Pro
 		shipstationCfg:    shipstationCfg,
 		warehouseResolver: warehouseResolver,
 	}
+}
+
+func (s *service) SetBatchPreviewer(batchService BatchPreviewer) {
+	s.batchService = batchService
+}
+
+func (s *service) SetBatchLockService(batchLockService preorderbatch.BatchLockService) {
+	s.batchLockService = batchLockService
 }
 
 func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *string, req InitiateCheckoutRequest) (*InitiateCheckoutResponse, error) {
@@ -102,7 +117,38 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	}
 
 	for _, item := range cartRes.PreOrder {
+		if s.batchService != nil {
+			preview, err := s.batchService.PreviewAllocation(ctx, item.VariantID, item.Quantity, userID, sessionID)
+			if err != nil {
+				return nil, err
+			}
+			if preview != nil && preview.Depletion != nil && !req.AcceptBatchDepletion {
+				return nil, apierror.NewWithDetails(409, "batch_depletion_confirmation_required", "Current pre-order batch has depleted", preview.Depletion)
+			}
+		}
 		draftLines = append(draftLines, buildPreOrderDraftLine(item))
+	}
+
+	if s.batchLockService != nil && len(cartRes.PreOrder) > 0 {
+		batchLockReqs := make([]preorderbatch.BatchLockRequest, 0, len(cartRes.PreOrder))
+		for _, item := range cartRes.PreOrder {
+			batchLockReqs = append(batchLockReqs, preorderbatch.BatchLockRequest{
+				ShopifyVariantID: item.VariantID,
+				Quantity:         item.Quantity,
+				ProductTitle:     item.Title,
+				ImageURL:         item.ImageSrc,
+			})
+		}
+		expiresAt, err := s.batchLockService.AcquireBatchLocks(ctx, userID, sessionID, checkoutRef, batchLockReqs)
+		if err != nil {
+			_ = s.stockLockService.ReleaseLocksByCheckoutReference(ctx, checkoutRef)
+			return nil, err
+		}
+		if lockExpiresAt.IsZero() || expiresAt.Before(lockExpiresAt) {
+			if !expiresAt.IsZero() {
+				lockExpiresAt = expiresAt
+			}
+		}
 	}
 
 	draftInput := shopify.DraftOrderInput{
@@ -123,6 +169,27 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	if req.ShippingMethod != "" {
 		draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
 			Key: "preorder_shipping_method", Value: req.ShippingMethod,
+		})
+	}
+
+	hasLtl := false
+	for _, item := range cartRes.ShipReady {
+		if item.IsLtl {
+			hasLtl = true
+			break
+		}
+	}
+	if !hasLtl {
+		for _, item := range cartRes.PreOrder {
+			if item.IsLtl {
+				hasLtl = true
+				break
+			}
+		}
+	}
+	if hasLtl {
+		draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
+			Key: "has_ltl", Value: "true",
 		})
 	}
 
@@ -202,8 +269,19 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	}
 
 	// Persist pre-order shipping estimate for admin fulfillment (balance-due invoice).
+	// Skip when every pre-order line is LTL — freight is calculated manually by the team.
 	if len(cartRes.PreOrder) > 0 {
-		if req.Zip == "" {
+		allPreOrderLtl := true
+		for _, item := range cartRes.PreOrder {
+			if !item.IsLtl {
+				allPreOrderLtl = false
+				break
+			}
+		}
+		if allPreOrderLtl {
+			slog.InfoContext(ctx, "pre-order shipping estimate skipped: all LTL items",
+				slog.String("checkout_reference", checkoutRef))
+		} else if req.Zip == "" {
 			slog.WarnContext(ctx, "pre-order shipping estimate skipped: zip code missing",
 				slog.String("checkout_reference", checkoutRef))
 		} else {
@@ -247,8 +325,9 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 
 	res, err := s.shopifyCli.CreateDraftOrder(ctx, draftInput)
 	if err != nil {
-		if len(lockReqs) > 0 {
-			_ = s.stockLockService.ReleaseLocksByCheckoutReference(ctx, checkoutRef)
+		_ = s.stockLockService.ReleaseLocksByCheckoutReference(ctx, checkoutRef)
+		if s.batchLockService != nil {
+			_ = s.batchLockService.ReleaseBatchLocksByCheckoutReference(ctx, checkoutRef)
 		}
 		slog.ErrorContext(ctx, "Failed to create shopify draft order", slog.Any("error", err), slog.String("checkout_reference", checkoutRef))
 		return nil, fmt.Errorf("failed to create shopify draft order: %w", err)
@@ -273,7 +352,13 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 }
 
 func (s *service) ReleaseCheckout(ctx context.Context, userID, sessionID *string, checkoutReference *string) error {
-	return s.stockLockService.ReleaseLocksForIdentity(ctx, userID, sessionID, checkoutReference)
+	if err := s.stockLockService.ReleaseLocksForIdentity(ctx, userID, sessionID, checkoutReference); err != nil {
+		return err
+	}
+	if s.batchLockService != nil {
+		return s.batchLockService.ReleaseBatchLocksForIdentity(ctx, userID, sessionID, checkoutReference)
+	}
+	return nil
 }
 
 func (s *service) ValidateAddress(ctx context.Context, req ValidateAddressRequest) map[string]string {
@@ -382,6 +467,7 @@ func (s *service) resolveExplicitLineItems(ctx context.Context, lineItems []Ship
 			Length:            variant.LengthCm,
 			Width:             variant.WidthCm,
 			Height:            variant.HeightCm,
+			IsLtl:             variant.IsLtl,
 		})
 	}
 	return items, nil
@@ -436,6 +522,9 @@ func (s *service) matchShippingRate(rates []ShippingRateDTO, shippingMethod, ori
 func (s *service) calculateRatesForItems(ctx context.Context, items []cart.CartItem, rateReq ShippingRatesRequest) ([]ShippingRateDTO, error) {
 	var units []shipping.PackableUnit
 	for _, item := range items {
+		if item.IsLtl {
+			continue
+		}
 		qty := item.Quantity
 		if qty < 1 {
 			qty = 1

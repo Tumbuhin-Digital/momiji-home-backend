@@ -30,12 +30,43 @@ type InvoiceOptions struct {
 	ShippingAddress *shopify.AddressInput
 }
 
+// GroupInvoiceLine is a prorated remaining-balance line for one order line slice.
+type GroupInvoiceLine struct {
+	Title           string
+	Amount          float64
+	OrderLineItemID string
+	Quantity        int
+	ShipmentID      string
+	OrderID         string
+}
+
+// GroupInvoiceOptions creates a Shopify draft invoice for one fulfillment group
+// without marking preorder_settlements as invoiced (supports split-line proration).
+type GroupInvoiceOptions struct {
+	CustomerEmail   string
+	CustomerName    string
+	OrderID         string
+	ShipmentID      string
+	Lines           []GroupInvoiceLine
+	ShippingTitle   string
+	ShippingPrice   float64
+	ShippingNotes   string
+	ShippingAddress *shopify.AddressInput
+}
+
+// GroupInvoiceResult is the draft order created for a group second payment.
+type GroupInvoiceResult struct {
+	DraftOrderID string
+	InvoiceURL   string
+}
+
 // PreorderService defines the settlement state machine operations.
 type PreorderService interface {
 	ListSettlements(ctx context.Context, filter SettlementFilter) ([]PreorderGroupResponse, int64, error)
 	GetSettlement(ctx context.Context, id string) (*SettlementResponse, error)
 	InvoiceSettlements(ctx context.Context, ids []string) ([]SettlementResponse, error)
 	InvoiceSettlementsWithShipping(ctx context.Context, ids []string, opts InvoiceOptions) ([]SettlementResponse, error)
+	CreateGroupSecondPaymentInvoice(ctx context.Context, opts GroupInvoiceOptions) (*GroupInvoiceResult, error)
 	MarkSettlementsPaid(ctx context.Context, ids []string) ([]SettlementResponse, error)
 	ProcessReminders(ctx context.Context) error
 	ExportPreordersToExcel(ctx context.Context, filter SettlementFilter) ([]byte, error)
@@ -298,6 +329,139 @@ func (s *service) InvoiceSettlementsWithShipping(ctx context.Context, ids []stri
 	}()
 
 	return responses, nil
+}
+
+// CreateGroupSecondPaymentInvoice builds a Shopify draft for one pre-order group
+// using explicit prorated amounts. It does not change settlement status.
+func (s *service) CreateGroupSecondPaymentInvoice(ctx context.Context, opts GroupInvoiceOptions) (*GroupInvoiceResult, error) {
+	if opts.CustomerEmail == "" {
+		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Customer email is required")
+	}
+	if opts.ShipmentID == "" || opts.OrderID == "" {
+		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Shipment and order IDs are required")
+	}
+	if len(opts.Lines) == 0 && opts.ShippingPrice <= 0 {
+		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Invoice must include balance lines or shipping")
+	}
+
+	var lineItems []shopify.DraftOrderLineItem
+	var emailItems []email.SettlementItemData
+	var emailTitles []string
+	var totalBalance float64
+
+	for _, line := range opts.Lines {
+		if line.Amount <= 0 {
+			continue
+		}
+		totalBalance += line.Amount
+		title := line.Title
+		if line.Quantity > 0 {
+			title = fmt.Sprintf("Remaining Balance: %s (%d pcs)", line.Title, line.Quantity)
+		} else {
+			title = fmt.Sprintf("Remaining Balance: %s", line.Title)
+		}
+		emailTitles = append(emailTitles, title)
+		emailItems = append(emailItems, email.SettlementItemData{
+			Title:  title,
+			Amount: fmt.Sprintf("$%.2f", line.Amount),
+		})
+		lineItems = append(lineItems, shopify.DraftOrderLineItem{
+			Title:             title,
+			OriginalUnitPrice: fmt.Sprintf("%.2f", line.Amount),
+			Quantity:          1,
+			CustomAttributes: []shopify.AttributeInput{
+				{Key: "charge_type", Value: "pre_order_group_balance"},
+				{Key: "shipment_id", Value: opts.ShipmentID},
+				{Key: "original_order_id", Value: opts.OrderID},
+				{Key: "order_line_item_id", Value: line.OrderLineItemID},
+			},
+		})
+	}
+
+	draftInput := shopify.DraftOrderInput{
+		Email:     opts.CustomerEmail,
+		LineItems: lineItems,
+		CustomAttributes: []shopify.AttributeInput{
+			shopify.WholesaleSourceAttribute,
+			{Key: "charge_type", Value: "pre_order_group_invoice"},
+			{Key: "shipment_id", Value: opts.ShipmentID},
+			{Key: "original_order_id", Value: opts.OrderID},
+		},
+	}
+
+	if opts.ShippingAddress != nil {
+		draftInput.ShippingAddress = opts.ShippingAddress
+		draftInput.BillingAddress = opts.ShippingAddress
+	}
+
+	if opts.ShippingPrice > 0 {
+		shippingTitle := opts.ShippingTitle
+		if shippingTitle == "" {
+			shippingTitle = "Pre-Order Shipping"
+		}
+		lineItems = append(lineItems, shopify.DraftOrderLineItem{
+			Title:             shippingTitle,
+			OriginalUnitPrice: fmt.Sprintf("%.2f", opts.ShippingPrice),
+			Quantity:          1,
+			CustomAttributes: []shopify.AttributeInput{
+				{Key: "charge_type", Value: "pre_order_shipping"},
+				{Key: "shipment_id", Value: opts.ShipmentID},
+				{Key: "original_order_id", Value: opts.OrderID},
+			},
+		})
+		draftInput.LineItems = lineItems
+		if opts.ShippingNotes != "" {
+			draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
+				Key: "shipping_notes", Value: opts.ShippingNotes,
+			})
+		}
+	}
+
+	draftRes, err := s.shopClient.CreateDraftOrder(ctx, draftInput)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to create shopify draft order for group invoice", "error", err)
+		return nil, apierror.New(http.StatusBadGateway, "shopify_draft_order_error", "Failed to create Shopify draft order for group invoice")
+	}
+	if draftRes == nil || draftRes.InvoiceUrl == "" {
+		return nil, apierror.New(http.StatusBadGateway, "shopify_draft_order_error", "Shopify draft order did not return an invoice URL")
+	}
+
+	paymentLink := draftRes.InvoiceUrl
+	totalDue := totalBalance + opts.ShippingPrice
+	customerName := opts.CustomerName
+	if customerName == "" {
+		customerName = "Customer"
+	}
+	combinedTitle := strings.Join(emailTitles, ", ")
+
+	go func() {
+		bgCtx := context.Background()
+		emailData := email.SettlementEmailData{
+			CustomerName:   customerName,
+			ItemTitle:      combinedTitle,
+			Items:          emailItems,
+			BalanceAmount:  fmt.Sprintf("$%.2f", totalBalance),
+			ShippingAmount: "",
+			TotalDue:       fmt.Sprintf("$%.2f", totalDue),
+			ShippingNotes:  opts.ShippingNotes,
+			PaymentLink:    paymentLink,
+		}
+		if opts.ShippingPrice > 0 {
+			emailData.ShippingAmount = fmt.Sprintf("$%.2f", opts.ShippingPrice)
+			emailData.ShippingTitle = opts.ShippingTitle
+			if emailData.ShippingTitle == "" {
+				emailData.ShippingTitle = "Shipping"
+			}
+		}
+		if err := s.emailService.SendInvoice(bgCtx, opts.CustomerEmail, emailData); err != nil {
+			slog.Error("failed to send group settlement email", "error", err, "email", opts.CustomerEmail)
+		}
+	}()
+
+	return &GroupInvoiceResult{
+		DraftOrderID: draftRes.ID,
+		InvoiceURL:   paymentLink,
+	}, nil
 }
 
 // MarkSettlementsPaid transitions: invoiced → paid for multiple settlements

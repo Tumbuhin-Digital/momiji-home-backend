@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorderbatch"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 )
@@ -19,22 +20,31 @@ type CartService interface {
 	RemoveItem(ctx context.Context, userID, sessionID *string, itemID string) error
 	ClearCart(ctx context.Context, userID, sessionID *string) error
 	MergeCarts(ctx context.Context, userID string, guestSessionID string) error
-	SetVariantQuantity(ctx context.Context, userID, sessionID *string, variantID string, totalQty int) error
+	SetVariantQuantity(ctx context.Context, userID, sessionID *string, variantID string, totalQty int, acceptBatchDepletion bool, validateBatch bool) (*SetVariantQuantityResponse, error)
 }
 
 type service struct {
 	store          CartStore
 	productService product.ProductService
+	batchService   BatchPreviewer
+}
+
+type BatchPreviewer interface {
+	PreviewAllocation(ctx context.Context, shopifyVariantID string, qty int, userID, sessionID *string) (*preorderbatch.AllocateResult, error)
 }
 
 func NewCartService(store CartStore, productService product.ProductService) CartService {
 	return &service{store: store, productService: productService}
 }
 
+func (s *service) SetBatchPreviewer(batchService BatchPreviewer) {
+	s.batchService = batchService
+}
+
 func (s *service) CreateGuestSession(ctx context.Context) (*GuestSessionResponse, error) {
 	sessionID := "sess_" + uuid.NewString()
 	expires := time.Now().Add(30 * 24 * time.Hour)
-	
+
 	cart := &Cart{
 		SessionID: &sessionID,
 		ExpiresAt: expires,
@@ -56,7 +66,7 @@ func (s *service) getOrCreateCart(ctx context.Context, userID, sessionID *string
 	if err != nil {
 		return nil, apierror.ErrInternal
 	}
-	
+
 	if cart == nil {
 		newCart := &Cart{
 			UserID:    userID,
@@ -121,6 +131,7 @@ func (s *service) GetCartResponse(ctx context.Context, userID, sessionID *string
 			Length:            variant.LengthCm, // Mapping Depth to Length
 			Width:             variant.WidthCm,
 			Height:            variant.HeightCm,
+			IsLtl:             variant.IsLtl,
 		}
 
 		if item.FulfillmentType == string(product.FulfillmentTypePreOrder) {
@@ -134,7 +145,7 @@ func (s *service) GetCartResponse(ctx context.Context, userID, sessionID *string
 			totalDeposit += deposit
 			totalBalanceDue += balance
 			totalChargedNow += deposit
-			
+
 			res.PreOrder = append(res.PreOrder, cItem)
 		} else {
 			totalShipReady += subtotal
@@ -168,7 +179,7 @@ func (s *service) AddItem(ctx context.Context, userID, sessionID *string, req Ca
 	if err != nil {
 		return apierror.ErrNotFound
 	}
-	
+
 	cart, err := s.getOrCreateCart(ctx, userID, sessionID)
 	if err != nil {
 		return err
@@ -238,15 +249,15 @@ func (s *service) MergeCarts(ctx context.Context, userID string, guestSessionID 
 	return s.store.MergeCarts(ctx, guestCart.ID, userCart.ID)
 }
 
-func (s *service) SetVariantQuantity(ctx context.Context, userID, sessionID *string, variantID string, totalQty int) error {
+func (s *service) SetVariantQuantity(ctx context.Context, userID, sessionID *string, variantID string, totalQty int, acceptBatchDepletion bool, validateBatch bool) (*SetVariantQuantityResponse, error) {
 	variant, err := s.productService.GetVariantByID(ctx, variantID)
 	if err != nil {
-		return apierror.ErrNotFound
+		return nil, apierror.ErrNotFound
 	}
 
 	cart, err := s.getOrCreateCart(ctx, userID, sessionID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var shipReadyQty, preOrderQty int
@@ -275,5 +286,22 @@ func (s *service) SetVariantQuantity(ctx context.Context, userID, sessionID *str
 		fmt.Sscanf(variant.RetailPrice, "%f", &price)
 	}
 
-	return s.store.UpsertVariantItems(ctx, cart.ID, variantID, shipReadyQty, preOrderQty, price)
+	response := &SetVariantQuantityResponse{}
+	if validateBatch && preOrderQty > 0 && s.batchService != nil {
+		preview, err := s.batchService.PreviewAllocation(ctx, variantID, preOrderQty, userID, sessionID)
+		if err != nil {
+			return nil, err
+		}
+		if preview != nil && preview.Depletion != nil {
+			response.BatchDepletion = preview.Depletion
+			if !acceptBatchDepletion {
+				return nil, apierror.NewWithDetails(409, "batch_depletion_confirmation_required", "Current pre-order batch has depleted", preview.Depletion)
+			}
+		}
+	}
+
+	if err := s.store.UpsertVariantItems(ctx, cart.ID, variantID, shipReadyQty, preOrderQty, price); err != nil {
+		return nil, err
+	}
+	return response, nil
 }

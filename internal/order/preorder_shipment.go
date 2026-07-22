@@ -2,20 +2,25 @@ package order
 
 import "time"
 
-// PreorderShipment stores pre-order fulfillment shipping state per order.
+// PreorderShipment stores pre-order fulfillment shipping state per order group.
+// BatchID nil means the unbatched (regular) pre-order group.
 type PreorderShipment struct {
 	ID                 string     `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
-	OrderID            string     `gorm:"not null;uniqueIndex"`
+	OrderID            string     `gorm:"not null;index"`
+	BatchID            *string    `gorm:"type:uuid;index"`
 	EstimatedShipping  *float64
 	FinalShippingPrice *float64
 	ShippingNotes      *string
 	CreditAmount       float64    `gorm:"not null;default:0"`
 	TotalBoxes         int        `gorm:"not null;default:0"`
 	TotalWeightLb      *float64
-	WarehouseOrigin    string     `gorm:"not null;default:east"`
-	InvoiceSentAt      *time.Time
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	WarehouseOrigin      string     `gorm:"not null;default:east"`
+	InvoiceSentAt        *time.Time
+	ShopifyDraftOrderID  *string    `gorm:"column:shopify_draft_order_id"`
+	InvoiceURL           *string    `gorm:"column:invoice_url"`
+	InvoicePaidAt        *time.Time `gorm:"column:invoice_paid_at"`
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 
 	PackingItems []PreorderPackingItem `gorm:"foreignKey:PreorderShipmentID"`
 }
@@ -24,11 +29,13 @@ func (PreorderShipment) TableName() string {
 	return "preorder_shipments"
 }
 
-// PreorderPackingItem stores per-line-item box packing for pre-order fulfillment.
+// PreorderPackingItem stores per-line-item box packing for a pre-order shipment group.
+// Quantity is the slice qty for this shipment (may be less than the full line qty).
 type PreorderPackingItem struct {
 	ID                   string  `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
 	PreorderShipmentID   string  `gorm:"not null"`
-	OrderLineItemID      string  `gorm:"not null;uniqueIndex"`
+	OrderLineItemID      string  `gorm:"not null;index"`
+	Quantity             int     `gorm:"not null;default:0"`
 	BoxCount             int     `gorm:"not null;default:0"`
 	IsNested             bool    `gorm:"not null;default:false"`
 	NestedInLineItemID   *string

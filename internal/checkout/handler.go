@@ -9,6 +9,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/order"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/server/middleware"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/response"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/validator"
@@ -18,11 +19,18 @@ type Handler struct {
 	cartService     cart.CartService
 	checkoutService CheckoutService
 	orderService    order.OrderService
+	productService  product.ProductService
 	jwtSecret       string
 }
 
-func NewCheckoutHandler(cartService cart.CartService, checkoutService CheckoutService, orderService order.OrderService, jwtSecret string) *Handler {
-	return &Handler{cartService: cartService, checkoutService: checkoutService, orderService: orderService, jwtSecret: jwtSecret}
+func NewCheckoutHandler(cartService cart.CartService, checkoutService CheckoutService, orderService order.OrderService, productService product.ProductService, jwtSecret string) *Handler {
+	return &Handler{
+		cartService:     cartService,
+		checkoutService: checkoutService,
+		orderService:    orderService,
+		productService:  productService,
+		jwtSecret:       jwtSecret,
+	}
 }
 
 func (h *Handler) SetupRoutes(router fiber.Router) {
@@ -393,6 +401,36 @@ func (h *Handler) GetCheckoutConfirm(c *fiber.Ctx) error {
 		preorderShippingEstimate = *orderRes.PreorderShipment.EstimatedShipping
 	}
 
+	hasLtl := false
+	allLtl := true
+	itemCount := 0
+	checkItems := func(items []order.OrderItemDetail) {
+		for _, it := range items {
+			itemCount++
+			isItemLtl := false
+			if it.VariantID != "" {
+				variant, err := h.productService.GetVariantByID(c.Context(), it.VariantID)
+				if err == nil && variant != nil && variant.IsLtl {
+					isItemLtl = true
+					hasLtl = true
+				}
+			}
+			if !isItemLtl {
+				allLtl = false
+			}
+		}
+	}
+	checkItems(orderRes.LineItems.ShipReady)
+	checkItems(orderRes.LineItems.PreOrder)
+	if itemCount == 0 {
+		allLtl = false
+	}
+
+	// LTL-only orders never use auto carrier estimates — team calculates freight.
+	if allLtl {
+		preorderShippingEstimate = ""
+	}
+
 	return response.Success(c, fiber.StatusOK, "Order confirmed", fiber.Map{
 		"order_id":                     orderRes.ID,
 		"order_number":                 orderRes.OrderNumber,
@@ -405,6 +443,8 @@ func (h *Handler) GetCheckoutConfirm(c *fiber.Ctx) error {
 		"financial_status":             orderRes.FinancialStatus,
 		"ship_ready_shipping":          fmt.Sprintf("%.2f", shipReadyShipping),
 		"preorder_shipping_estimate":   preorderShippingEstimate,
+		"has_ltl":                      hasLtl,
+		"all_ltl":                      allLtl,
 		"items":                        items,
 	})
 }

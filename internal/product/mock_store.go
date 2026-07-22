@@ -15,10 +15,10 @@ type MockProductStore struct {
 	Variants     map[string]*ProductVariant // keyed by ShopifyVariantID
 	VariantsByID map[string]*ProductVariant // keyed by UUID ID
 
-	GetProductByShopifyIDCalls int
-	UpsertProductCalls         int
-	UpsertVariantCalls         int
-	UpdateProductStatusCalls   int
+	GetProductByShopifyIDCalls   int
+	UpsertProductCalls           int
+	UpsertVariantCalls           int
+	UpdateProductStatusCalls     int
 	UpdateVariantBatchLabelCalls int
 
 	// Injectable errors
@@ -44,7 +44,9 @@ func NewMockProductStore() *MockProductStore {
 }
 
 func (m *MockProductStore) GetProducts(ctx context.Context, q ProductQuery) ([]Product, int64, error) {
-	if m.GetVariantsErr != nil { return nil, 0, m.GetVariantsErr }
+	if m.GetVariantsErr != nil {
+		return nil, 0, m.GetVariantsErr
+	}
 	out := make([]Product, 0, len(m.Products))
 	for _, p := range m.Products {
 		if !strings.EqualFold(p.Status, "active") {
@@ -67,14 +69,20 @@ func (m *MockProductStore) ListShopifyProductIDs(ctx context.Context) ([]string,
 }
 
 func (m *MockProductStore) GetVariantByShopifyID(ctx context.Context, id string) (*ProductVariant, error) {
-	if m.GetVariantByShopifyIDErr != nil { return nil, m.GetVariantByShopifyIDErr }
+	if m.GetVariantByShopifyIDErr != nil {
+		return nil, m.GetVariantByShopifyIDErr
+	}
 	v, ok := m.Variants[id]
-	if !ok { return nil, nil }
+	if !ok {
+		return nil, nil
+	}
 	return v, nil
 }
 
 func (m *MockProductStore) GetVariantByInventoryItemID(ctx context.Context, id string) (*ProductVariant, error) {
-	if m.GetVariantByShopifyIDErr != nil { return nil, m.GetVariantByShopifyIDErr } // reuse err for simplicity
+	if m.GetVariantByShopifyIDErr != nil {
+		return nil, m.GetVariantByShopifyIDErr
+	} // reuse err for simplicity
 	for _, v := range m.Variants {
 		if v.ShopifyInventoryItemID == id {
 			return v, nil
@@ -85,16 +93,24 @@ func (m *MockProductStore) GetVariantByInventoryItemID(ctx context.Context, id s
 
 func (m *MockProductStore) GetProductByShopifyID(ctx context.Context, shopifyID string) (*Product, error) {
 	m.GetProductByShopifyIDCalls++
-	if m.GetProductByShopifyIDErr != nil { return nil, m.GetProductByShopifyIDErr }
+	if m.GetProductByShopifyIDErr != nil {
+		return nil, m.GetProductByShopifyIDErr
+	}
 	p, ok := m.Products[shopifyID]
-	if !ok { return nil, nil }
+	if !ok {
+		return nil, nil
+	}
 	return p, nil
 }
 
 func (m *MockProductStore) UpsertProduct(ctx context.Context, product *Product) error {
 	m.UpsertProductCalls++
-	if m.UpsertProductErr != nil { return m.UpsertProductErr }
-	if product.ID == "" { product.ID = "mock-product-uuid" }
+	if m.UpsertProductErr != nil {
+		return m.UpsertProductErr
+	}
+	if product.ID == "" {
+		product.ID = "mock-product-uuid"
+	}
 	m.Products[product.ShopifyID] = product
 	return nil
 }
@@ -116,7 +132,9 @@ func (m *MockProductStore) MarkProductDeletedByShopifyID(ctx context.Context, sh
 
 func (m *MockProductStore) UpsertVariant(ctx context.Context, variant *ProductVariant) error {
 	m.UpsertVariantCalls++
-	if m.UpsertVariantErr != nil { return m.UpsertVariantErr }
+	if m.UpsertVariantErr != nil {
+		return m.UpsertVariantErr
+	}
 	if existing, ok := m.Variants[variant.ShopifyVariantID]; ok {
 		// Match Postgres DoUpdates: preserve weight and packaging dims on conflict.
 		variant.WeightKg = existing.WeightKg
@@ -139,22 +157,39 @@ func (m *MockProductStore) UpsertVariant(ctx context.Context, variant *ProductVa
 			variant.WSPrice = existing.WSPrice
 		}
 	}
-	if variant.ID == "" { variant.ID = "mock-variant-uuid" }
+	if variant.ID == "" {
+		variant.ID = "mock-variant-uuid"
+	}
 	m.Variants[variant.ShopifyVariantID] = variant
 	m.VariantsByID[variant.ID] = variant
 	return nil
 }
 
 func (m *MockProductStore) UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64) error {
-	if m.UpdateVariantPricesErr != nil { return m.UpdateVariantPricesErr }
+	if m.UpdateVariantPricesErr != nil {
+		return m.UpdateVariantPricesErr
+	}
 	v, ok := m.VariantsByID[variantID]
-	if !ok { return errors.New("variant not found") }
+	if !ok {
+		return errors.New("variant not found")
+	}
 	v.WSPrice = wsPrice
 	return nil
 }
 
+func (m *MockProductStore) UpdateVariantLtl(ctx context.Context, variantID string, isLtl bool) error {
+	v, ok := m.Variants[variantID]
+	if !ok {
+		return errors.New("variant not found")
+	}
+	v.IsLtl = isLtl
+	return nil
+}
+
 func (m *MockProductStore) GetProductByID(ctx context.Context, productID string) (*Product, error) {
-	if m.GetProductByIDErr != nil { return nil, m.GetProductByIDErr }
+	if m.GetProductByIDErr != nil {
+		return nil, m.GetProductByIDErr
+	}
 	for _, p := range m.Products {
 		if p.ID == productID {
 			if !strings.EqualFold(p.Status, "active") {
@@ -180,10 +215,14 @@ func (m *MockProductStore) IsVariantFromActiveProduct(ctx context.Context, shopi
 }
 
 func (m *MockProductStore) GetVariantsByProductID(ctx context.Context, productID string) ([]ProductVariant, error) {
-	if m.GetVariantsByProductIDErr != nil { return nil, m.GetVariantsByProductIDErr }
+	if m.GetVariantsByProductIDErr != nil {
+		return nil, m.GetVariantsByProductIDErr
+	}
 	out := []ProductVariant{}
 	for _, v := range m.Variants {
-		if v.ProductID == productID { out = append(out, *v) }
+		if v.ProductID == productID {
+			out = append(out, *v)
+		}
 	}
 	return out, nil
 }
@@ -238,6 +277,16 @@ func (m *MockProductStore) GetAllVariants(ctx context.Context) ([]ProductVariant
 	return out, nil
 }
 
+func (m *MockProductStore) GetBatchSummariesByVariantIDs(ctx context.Context, variantIDs []string) (map[string]VariantBatchSummary, error) {
+	result := make(map[string]VariantBatchSummary, len(variantIDs))
+	for _, variantID := range variantIDs {
+		if v, ok := m.Variants[variantID]; ok && v.BatchSummary != nil {
+			result[variantID] = *v.BatchSummary
+		}
+	}
+	return result, nil
+}
+
 func (m *MockProductStore) BulkUpdateVariantDimensions(ctx context.Context, inputs []DimensionUpdateInput) (BulkUpdateDimensionsResult, error) {
 	var result BulkUpdateDimensionsResult
 	for _, input := range inputs {
@@ -265,12 +314,12 @@ func (m *MockProductStore) BulkUpdateVariantDimensions(ctx context.Context, inpu
 
 // MockShopifyClient is a test double for shopify.Client.
 type MockShopifyClient struct {
-	AdminGraphQLResponse []byte
-	AdminGraphQLErr      error
-	DraftOrderResponse   *shopify.DraftOrderResponse
-	DraftOrderErr        error
-	CartResponse     *shopify.CartCreateResponse
-	CartErr          error
+	AdminGraphQLResponse         []byte
+	AdminGraphQLErr              error
+	DraftOrderResponse           *shopify.DraftOrderResponse
+	DraftOrderErr                error
+	CartResponse                 *shopify.CartCreateResponse
+	CartErr                      error
 	GetVariantsInventoryResponse map[string]int
 	GetVariantsInventoryErr      error
 }
@@ -318,9 +367,9 @@ func (m *MockShopifyClient) CreateFulfillmentEvent(ctx context.Context, shopifyF
 type MockShopifyClientFunc struct {
 	QueryAdminGraphQLFn      func(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error)
 	CreateDraftOrderFn       func(ctx context.Context, input shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error)
-	CreateStorefrontCartFunc   func(ctx context.Context, input shopify.CartCreateInput) (*shopify.CartCreateResponse, error)
-	CreateRefundFunc           func(ctx context.Context, shopifyOrderID string, amount float64, currency string, reason string) error
-	GetVariantsInventoryFunc   func(ctx context.Context, variantIDs []string) (map[string]int, error)
+	CreateStorefrontCartFunc func(ctx context.Context, input shopify.CartCreateInput) (*shopify.CartCreateResponse, error)
+	CreateRefundFunc         func(ctx context.Context, shopifyOrderID string, amount float64, currency string, reason string) error
+	GetVariantsInventoryFunc func(ctx context.Context, variantIDs []string) (map[string]int, error)
 }
 
 func (m *MockShopifyClientFunc) QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error) {

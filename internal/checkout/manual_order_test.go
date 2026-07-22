@@ -82,8 +82,8 @@ func (s *stubCartService) UpdateItemQuantity(context.Context, *string, *string, 
 func (s *stubCartService) RemoveItem(context.Context, *string, *string, string) error { return nil }
 func (s *stubCartService) ClearCart(context.Context, *string, *string) error          { return nil }
 func (s *stubCartService) MergeCarts(context.Context, string, string) error           { return nil }
-func (s *stubCartService) SetVariantQuantity(context.Context, *string, *string, string, int) error {
-	return nil
+func (s *stubCartService) SetVariantQuantity(context.Context, *string, *string, string, int, bool, bool) (*cart.SetVariantQuantityResponse, error) {
+	return &cart.SetVariantQuantityResponse{}, nil
 }
 
 type recordingManualShopClient struct {

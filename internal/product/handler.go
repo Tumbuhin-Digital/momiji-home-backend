@@ -1,6 +1,7 @@
 package product
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
 	"log/slog"
@@ -18,12 +19,21 @@ import (
 )
 
 type Handler struct {
-	service   ProductService
-	jwtSecret string
+	service      ProductService
+	batchService BatchManager
+	jwtSecret    string
+}
+
+type BatchManager interface {
+	CancelOpenBatchesForVariant(ctx context.Context, shopifyVariantID string) error
 }
 
 func NewProductHandler(service ProductService, jwtSecret string) *Handler {
 	return &Handler{service: service, jwtSecret: jwtSecret}
+}
+
+func (h *Handler) SetBatchManager(batchService BatchManager) {
+	h.batchService = batchService
 }
 
 func (h *Handler) SetupRoutes(router fiber.Router) {
@@ -42,6 +52,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	admin.Post("/sync", h.SyncProducts)
 	admin.Patch("/variant/price", h.UpdateVariantPrice)
 	admin.Patch("/variant/status", h.UpdateVariantStatus)
+	admin.Patch("/variant/ltl", h.UpdateVariantLtl)
 	admin.Patch("/variant/batch-label", h.UpdateVariantBatchLabelByVariantID)
 	admin.Patch("/:id/status", h.UpdateProductStatus)
 	admin.Patch("/:id/batch", h.UpdateVariantBatchLabel)
@@ -221,6 +232,9 @@ func (h *Handler) UpdateProductStatus(c *fiber.Ctx) error {
 	if err := validator.ValidateStruct(&req); err != nil {
 		return response.Error(c, err)
 	}
+	if err := h.cancelOpenVariantBatchesForProductIfNeeded(c.Context(), c.Params("id"), req.FulfillmentType, req.ConfirmBatchCancel); err != nil {
+		return response.Error(c, err)
+	}
 
 	p, err := h.service.UpdateProductStatus(c.Context(), c.Params("id"), req.FulfillmentType)
 	if err != nil {
@@ -308,6 +322,9 @@ func (h *Handler) UpdateVariantStatus(c *fiber.Ctx) error {
 	}
 
 	slog.InfoContext(c.Context(), "UpdateVariantStatus", slog.String("variant_id", req.VariantID))
+	if err := h.cancelOpenVariantBatchesIfNeeded(c.Context(), req.VariantID, req.FulfillmentType, req.ConfirmBatchCancel); err != nil {
+		return response.Error(c, err)
+	}
 
 	dto, err := h.service.UpdateVariantStatus(c.Context(), req.VariantID, req.FulfillmentType)
 	if err != nil {
@@ -368,6 +385,74 @@ func (h *Handler) UpdateVariantPrice(c *fiber.Ctx) error {
 	}
 
 	return response.Success(c, fiber.StatusOK, "Variant price updated", nil)
+}
+
+// UpdateVariantLtl godoc
+// @Summary Update variant LTL (less than truckload) flag
+// @Tags Admin/Product
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body UpdateVariantLtlRequest true "Variant LTL Request"
+// @Success 200 {object} response.Envelope{data=VariantDTO}
+// @Router /products/variant/ltl [patch]
+func (h *Handler) UpdateVariantLtl(c *fiber.Ctx) error {
+	var req UpdateVariantLtlRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	slog.InfoContext(c.Context(), "UpdateVariantLtl",
+		slog.String("variant_id", req.VariantID),
+		slog.Bool("is_ltl", req.IsLtl),
+	)
+
+	dto, err := h.service.UpdateVariantLtl(c.Context(), req.VariantID, req.IsLtl)
+	if err != nil {
+		return response.Error(c, err)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Variant LTL status updated", dto)
+}
+
+func (h *Handler) cancelOpenVariantBatchesForProductIfNeeded(ctx context.Context, productID string, nextFulfillmentType string, confirm bool) error {
+	variants, err := h.service.GetVariantsByProductID(ctx, productID)
+	if err != nil {
+		return err
+	}
+	for _, variant := range variants {
+		if err := h.cancelOpenVariantBatchesIfNeeded(ctx, variant.ID, nextFulfillmentType, confirm); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *Handler) cancelOpenVariantBatchesIfNeeded(ctx context.Context, variantID string, nextFulfillmentType string, confirm bool) error {
+	if h.batchService == nil {
+		return nil
+	}
+	if nextFulfillmentType == string(FulfillmentTypePreOrder) {
+		return nil
+	}
+
+	variant, err := h.service.GetVariantByID(ctx, variantID)
+	if err != nil {
+		return err
+	}
+	if variant.FulfillmentType != FulfillmentTypePreOrder {
+		return nil
+	}
+	if variant.BatchSummary == nil || (variant.BatchSummary.ActiveCount == 0 && variant.BatchSummary.QueuedCount == 0) {
+		return nil
+	}
+	if !confirm {
+		return apierror.New(fiber.StatusConflict, "batch_cancel_confirmation_required", "Changing this variant status will cancel active and queued pre-order batches")
+	}
+	return h.batchService.CancelOpenBatchesForVariant(ctx, variantID)
 }
 
 // DownloadDimensionTemplate godoc

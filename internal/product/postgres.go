@@ -145,7 +145,7 @@ func (s *PostgresStore) UpsertProduct(ctx context.Context, product *Product) err
 	// If ID were an empty string, GORM would try INSERT with id='' which fails on UUID column.
 	product.ID = ""
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "shopify_id"}},
+		Columns: []clause.Column{{Name: "shopify_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"title", "description", "status",
 			"handle", "vendor", "product_type", "tags", "body_html",
@@ -173,7 +173,7 @@ func (s *PostgresStore) UpsertVariant(ctx context.Context, variant *ProductVaria
 	// Clear ID so Postgres generates a fresh UUID on insert (avoids empty-string UUID error).
 	variant.ID = ""
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "shopify_variant_id"}},
+		Columns: []clause.Column{{Name: "shopify_variant_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"title", "sku", "price", "image_src",
 			"inventory_quantity", "shopify_inventory_item_id", "updated_at",
@@ -234,6 +234,22 @@ func (s *PostgresStore) UpdateVariantPrices(ctx context.Context, variantID strin
 	return nil
 }
 
+func (s *PostgresStore) UpdateVariantLtl(ctx context.Context, variantID string, isLtl bool) error {
+	result := s.db.WithContext(ctx).Model(&ProductVariant{}).
+		Where("shopify_variant_id = ?", variantID).
+		Updates(map[string]interface{}{
+			"is_ltl":     isLtl,
+			"updated_at": gorm.Expr("now()"),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 func (s *PostgresStore) GetAllVariants(ctx context.Context) ([]ProductVariant, error) {
 	var variants []ProductVariant
 	err := s.db.WithContext(ctx).
@@ -245,6 +261,147 @@ func (s *PostgresStore) GetAllVariants(ctx context.Context) ([]ProductVariant, e
 		return nil, err
 	}
 	return variants, nil
+}
+
+func (s *PostgresStore) GetBatchSummariesByVariantIDs(ctx context.Context, variantIDs []string) (map[string]VariantBatchSummary, error) {
+	summaries := make(map[string]VariantBatchSummary, len(variantIDs))
+	if len(variantIDs) == 0 {
+		return summaries, nil
+	}
+
+	type countRow struct {
+		ShopifyVariantID string `gorm:"column:shopify_variant_id"`
+		TotalCount       int    `gorm:"column:total_count"`
+		ActiveCount      int    `gorm:"column:active_count"`
+		QueuedCount      int    `gorm:"column:queued_count"`
+	}
+
+	var countRows []countRow
+	err := s.db.WithContext(ctx).
+		Table("preorder_batches pb").
+		Select(`
+			pv.shopify_variant_id AS shopify_variant_id,
+			COUNT(*) FILTER (WHERE pb.status <> 'cancelled') AS total_count,
+			COUNT(*) FILTER (WHERE pb.status = 'active') AS active_count,
+			COUNT(*) FILTER (WHERE pb.status = 'queued') AS queued_count
+		`).
+		Joins("JOIN product_variants pv ON pv.id = pb.variant_id").
+		Where("pv.shopify_variant_id IN ?", variantIDs).
+		Group("pv.shopify_variant_id").
+		Scan(&countRows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	for _, item := range countRows {
+		summaries[item.ShopifyVariantID] = VariantBatchSummary{
+			TotalCount:  item.TotalCount,
+			ActiveCount: item.ActiveCount,
+			QueuedCount: item.QueuedCount,
+			HasBatches:  item.TotalCount > 0,
+		}
+	}
+
+	type detailRow struct {
+		ShopifyVariantID string `gorm:"column:shopify_variant_id"`
+		BatchID          string `gorm:"column:batch_id"`
+		Name             string `gorm:"column:name"`
+		Status           string `gorm:"column:status"`
+		Sequence         int    `gorm:"column:sequence"`
+		QtyAllocated     int    `gorm:"column:qty_allocated"`
+		QtySold          int    `gorm:"column:qty_sold"`
+		LockedQty        int    `gorm:"column:locked_qty"`
+	}
+
+	var detailRows []detailRow
+	err = s.db.WithContext(ctx).
+		Table("preorder_batches pb").
+		Select(`
+			pv.shopify_variant_id AS shopify_variant_id,
+			pb.id AS batch_id,
+			pb.name AS name,
+			pb.status AS status,
+			pb.sequence AS sequence,
+			pb.qty_allocated AS qty_allocated,
+			pb.qty_sold AS qty_sold,
+			COALESCE((
+				SELECT SUM(pbl.quantity)
+				FROM preorder_batch_locks pbl
+				WHERE pbl.batch_id = pb.id AND pbl.expires_at > now()
+			), 0) AS locked_qty
+		`).
+		Joins("JOIN product_variants pv ON pv.id = pb.variant_id").
+		Where("pv.shopify_variant_id IN ? AND pb.status IN ?", variantIDs, []string{"active", "queued"}).
+		Order("pv.shopify_variant_id ASC, pb.sequence ASC, pb.created_at ASC").
+		Scan(&detailRows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	type openBatch struct {
+		id        string
+		name      string
+		status    string
+		remaining int
+	}
+	grouped := make(map[string][]openBatch)
+	for _, row := range detailRows {
+		remaining := row.QtyAllocated - row.QtySold - row.LockedQty
+		if remaining < 0 {
+			remaining = 0
+		}
+		grouped[row.ShopifyVariantID] = append(grouped[row.ShopifyVariantID], openBatch{
+			id:        row.BatchID,
+			name:      row.Name,
+			status:    row.Status,
+			remaining: remaining,
+		})
+	}
+
+	for variantID, batches := range grouped {
+		summary := summaries[variantID]
+		maxOrderable := 0
+		var activeFound, nextFound bool
+		for _, batch := range batches {
+			maxOrderable += batch.remaining
+			if !activeFound && batch.status == "active" {
+				id := batch.id
+				name := batch.name
+				remaining := batch.remaining
+				summary.ActiveBatchID = &id
+				summary.ActiveBatchName = &name
+				summary.ActiveBatchRemaining = &remaining
+				activeFound = true
+				continue
+			}
+			if activeFound && !nextFound && batch.status == "queued" {
+				name := batch.name
+				remaining := batch.remaining
+				summary.NextBatchName = &name
+				summary.NextBatchRemaining = &remaining
+				nextFound = true
+			}
+		}
+		if !activeFound {
+			for _, batch := range batches {
+				if batch.status != "queued" {
+					continue
+				}
+				id := batch.id
+				name := batch.name
+				remaining := batch.remaining
+				summary.ActiveBatchID = &id
+				summary.ActiveBatchName = &name
+				summary.ActiveBatchRemaining = &remaining
+				break
+			}
+		}
+		summary.MaxBatchOrderableQty = &maxOrderable
+		summary.HasBatches = summary.TotalCount > 0
+		summaries[variantID] = summary
+	}
+
+	return summaries, nil
 }
 
 func (s *PostgresStore) BulkUpdateVariantDimensions(ctx context.Context, inputs []DimensionUpdateInput) (BulkUpdateDimensionsResult, error) {

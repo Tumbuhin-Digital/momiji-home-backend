@@ -18,6 +18,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorderbatch"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/warehouse"
 	"github.com/xuri/excelize/v2"
@@ -41,7 +42,7 @@ type OrderService interface {
 	ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]byte, error)
 	CalculatePreorderShipping(ctx context.Context, userID, orderID string, req CalculatePreorderShippingRequest) (*CalculatePreorderShippingResponse, error)
 	UpdatePreorderShipping(ctx context.Context, userID, orderID string, req UpdatePreorderShippingRequest) (*PreorderShipmentDTO, error)
-	RequestSecondPayment(ctx context.Context, userID, orderID string) error
+	RequestSecondPayment(ctx context.Context, userID, orderID string, req RequestSecondPaymentRequest) error
 }
 
 type service struct {
@@ -55,7 +56,17 @@ type service struct {
 	preorderStore     preorder.PreorderStore
 	preorderService   preorder.PreorderService
 	emailService      email.NotificationService
+	batchService      BatchAllocationService
 }
+
+type BatchAllocationService interface {
+	ReleaseAllocationsByOrderLineItemID(ctx context.Context, orderLineItemID string) error
+	GetCommittedAllocationsByOrderLineItemIDs(ctx context.Context, orderLineItemIDs []string) ([]preorderbatch.BatchAllocation, error)
+	GetBatchesByIDs(ctx context.Context, batchIDs []string) ([]preorderbatch.PreorderBatch, error)
+}
+
+// BatchAllocationReleaser is kept for wiring compatibility.
+type BatchAllocationReleaser = BatchAllocationService
 
 func NewOrderService(store Store, cartService cart.CartService, authStore auth.AuthStore, shopClient shopify.Client,
 	preorderStore preorder.PreorderStore,
@@ -77,6 +88,10 @@ func NewOrderService(store Store, cartService cart.CartService, authStore auth.A
 		preorderService:   preorderService,
 		emailService:      notificationService,
 	}
+}
+
+func (s *service) SetBatchAllocationReleaser(batchService BatchAllocationService) {
+	s.batchService = batchService
 }
 
 func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, req CreateOrderRequest) (*OrderResponse, error) {
@@ -302,21 +317,21 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 		}
 
 		detail := OrderItemDetail{
-			ID:              it.ID,
-			VariantID:       it.ShopifyVariantID,
-			Type:            it.Type,
-			Quantity:        it.Quantity,
-			ItemStatus:      it.ItemStatus,
-			FulfillmentStep: it.FulfillmentStep,
-			ItemsReceived:   it.ItemsReceived,
-			Title:           itemTitle,
-			UnitPrice:       unitPrice,
-			AmountCharged:   amountCharged,
-			BalanceDue:      balanceDue,
-			ImageSrc:        it.ImageSrc,
-			TrackingNumber:  it.TrackingNumber,
-			TrackingURL:     it.TrackingURL,
-			TrackingCompany: it.TrackingCompany,
+			ID:                it.ID,
+			VariantID:         it.ShopifyVariantID,
+			Type:              it.Type,
+			Quantity:          it.Quantity,
+			ItemStatus:        it.ItemStatus,
+			FulfillmentStep:   it.FulfillmentStep,
+			ItemsReceived:     it.ItemsReceived,
+			Title:             itemTitle,
+			UnitPrice:         unitPrice,
+			AmountCharged:     amountCharged,
+			BalanceDue:        balanceDue,
+			ImageSrc:          it.ImageSrc,
+			TrackingNumber:    it.TrackingNumber,
+			TrackingURL:       it.TrackingURL,
+			TrackingCompany:   it.TrackingCompany,
 			TrackingLastEvent: it.TrackingLastEvent,
 		}
 		if it.DpAmount != nil {
@@ -362,10 +377,16 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 	if order.Customer != nil {
 		firstName := ""
 		lastName := ""
-		if order.Customer.FirstName != nil { firstName = *order.Customer.FirstName }
-		if order.Customer.LastName != nil { lastName = *order.Customer.LastName }
+		if order.Customer.FirstName != nil {
+			firstName = *order.Customer.FirstName
+		}
+		if order.Customer.LastName != nil {
+			lastName = *order.Customer.LastName
+		}
 		phone := ""
-		if order.Customer.Phone != nil { phone = *order.Customer.Phone }
+		if order.Customer.Phone != nil {
+			phone = *order.Customer.Phone
+		}
 
 		response.Customer = &CustomerDTO{
 			ID:        order.Customer.ID,
@@ -379,12 +400,20 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 	if order.ShippingAddress != nil {
 		firstName := ""
 		lastName := ""
-		if order.ShippingAddress.FirstName != nil { firstName = *order.ShippingAddress.FirstName }
-		if order.ShippingAddress.LastName != nil { lastName = *order.ShippingAddress.LastName }
+		if order.ShippingAddress.FirstName != nil {
+			firstName = *order.ShippingAddress.FirstName
+		}
+		if order.ShippingAddress.LastName != nil {
+			lastName = *order.ShippingAddress.LastName
+		}
 		address2 := ""
-		if order.ShippingAddress.Address2 != nil { address2 = *order.ShippingAddress.Address2 }
+		if order.ShippingAddress.Address2 != nil {
+			address2 = *order.ShippingAddress.Address2
+		}
 		phone := ""
-		if order.ShippingAddress.Phone != nil { phone = *order.ShippingAddress.Phone }
+		if order.ShippingAddress.Phone != nil {
+			phone = *order.ShippingAddress.Phone
+		}
 
 		response.ShippingAddress = &AddressDTO{
 			FirstName: firstName,
@@ -431,21 +460,21 @@ func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery
 			}
 
 			detail := OrderItemDetail{
-				ID:              it.ID,
-				VariantID:       it.ShopifyVariantID,
-				Type:            it.Type,
-				Quantity:        it.Quantity,
-				ItemStatus:      it.ItemStatus,
-				FulfillmentStep: it.FulfillmentStep,
-				ItemsReceived:   it.ItemsReceived,
-				Title:           itemTitle,
-				UnitPrice:       unitPrice,
-				AmountCharged:   amountCharged,
-				BalanceDue:      balanceDue,
-				ImageSrc:        it.ImageSrc,
-				TrackingNumber:  it.TrackingNumber,
-				TrackingURL:     it.TrackingURL,
-				TrackingCompany: it.TrackingCompany,
+				ID:                it.ID,
+				VariantID:         it.ShopifyVariantID,
+				Type:              it.Type,
+				Quantity:          it.Quantity,
+				ItemStatus:        it.ItemStatus,
+				FulfillmentStep:   it.FulfillmentStep,
+				ItemsReceived:     it.ItemsReceived,
+				Title:             itemTitle,
+				UnitPrice:         unitPrice,
+				AmountCharged:     amountCharged,
+				BalanceDue:        balanceDue,
+				ImageSrc:          it.ImageSrc,
+				TrackingNumber:    it.TrackingNumber,
+				TrackingURL:       it.TrackingURL,
+				TrackingCompany:   it.TrackingCompany,
 				TrackingLastEvent: it.TrackingLastEvent,
 			}
 			if it.DpAmount != nil {
@@ -489,10 +518,16 @@ func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery
 		if o.Customer != nil {
 			firstName := ""
 			lastName := ""
-			if o.Customer.FirstName != nil { firstName = *o.Customer.FirstName }
-			if o.Customer.LastName != nil { lastName = *o.Customer.LastName }
+			if o.Customer.FirstName != nil {
+				firstName = *o.Customer.FirstName
+			}
+			if o.Customer.LastName != nil {
+				lastName = *o.Customer.LastName
+			}
 			phone := ""
-			if o.Customer.Phone != nil { phone = *o.Customer.Phone }
+			if o.Customer.Phone != nil {
+				phone = *o.Customer.Phone
+			}
 
 			dto.Customer = &CustomerDTO{
 				ID:        o.Customer.ID,
@@ -506,12 +541,20 @@ func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery
 		if o.ShippingAddress != nil {
 			firstName := ""
 			lastName := ""
-			if o.ShippingAddress.FirstName != nil { firstName = *o.ShippingAddress.FirstName }
-			if o.ShippingAddress.LastName != nil { lastName = *o.ShippingAddress.LastName }
+			if o.ShippingAddress.FirstName != nil {
+				firstName = *o.ShippingAddress.FirstName
+			}
+			if o.ShippingAddress.LastName != nil {
+				lastName = *o.ShippingAddress.LastName
+			}
 			address2 := ""
-			if o.ShippingAddress.Address2 != nil { address2 = *o.ShippingAddress.Address2 }
+			if o.ShippingAddress.Address2 != nil {
+				address2 = *o.ShippingAddress.Address2
+			}
 			phone := ""
-			if o.ShippingAddress.Phone != nil { phone = *o.ShippingAddress.Phone }
+			if o.ShippingAddress.Phone != nil {
+				phone = *o.ShippingAddress.Phone
+			}
 
 			dto.ShippingAddress = &AddressDTO{
 				FirstName: firstName,
@@ -564,21 +607,21 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 		}
 
 		detail := OrderItemDetail{
-			ID:              it.ID,
-			VariantID:       it.ShopifyVariantID,
-			Type:            it.Type,
-			Quantity:        it.Quantity,
-			ItemStatus:      it.ItemStatus,
-			FulfillmentStep: it.FulfillmentStep,
-			ItemsReceived:   it.ItemsReceived,
-			Title:           itemTitle,
-			UnitPrice:       unitPrice,
-			AmountCharged:   amountCharged,
-			BalanceDue:      balanceDue,
-			ImageSrc:        it.ImageSrc,
-			TrackingNumber:  it.TrackingNumber,
-			TrackingURL:     it.TrackingURL,
-			TrackingCompany: it.TrackingCompany,
+			ID:                it.ID,
+			VariantID:         it.ShopifyVariantID,
+			Type:              it.Type,
+			Quantity:          it.Quantity,
+			ItemStatus:        it.ItemStatus,
+			FulfillmentStep:   it.FulfillmentStep,
+			ItemsReceived:     it.ItemsReceived,
+			Title:             itemTitle,
+			UnitPrice:         unitPrice,
+			AmountCharged:     amountCharged,
+			BalanceDue:        balanceDue,
+			ImageSrc:          it.ImageSrc,
+			TrackingNumber:    it.TrackingNumber,
+			TrackingURL:       it.TrackingURL,
+			TrackingCompany:   it.TrackingCompany,
 			TrackingLastEvent: it.TrackingLastEvent,
 		}
 		if it.DpAmount != nil {
@@ -647,13 +690,33 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 	s.enrichRemainingQuantities(ctx, orderID, preOrder)
 	dto.Fulfillments = s.loadFulfillmentDTOs(ctx, o)
 
+	detailsByID := make(map[string]OrderItemDetail, len(shipReady)+len(preOrder))
+	for _, d := range shipReady {
+		detailsByID[d.ID] = d
+	}
+	for _, d := range preOrder {
+		detailsByID[d.ID] = d
+	}
+	groups, secondPayment, err := s.buildFulfillmentGroups(ctx, o, detailsByID, dto.Fulfillments)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	dto.FulfillmentGroups = groups
+	dto.SecondPayment = secondPayment
+
 	if o.Customer != nil {
 		firstName := ""
 		lastName := ""
-		if o.Customer.FirstName != nil { firstName = *o.Customer.FirstName }
-		if o.Customer.LastName != nil { lastName = *o.Customer.LastName }
+		if o.Customer.FirstName != nil {
+			firstName = *o.Customer.FirstName
+		}
+		if o.Customer.LastName != nil {
+			lastName = *o.Customer.LastName
+		}
 		phone := ""
-		if o.Customer.Phone != nil { phone = *o.Customer.Phone }
+		if o.Customer.Phone != nil {
+			phone = *o.Customer.Phone
+		}
 
 		dto.Customer = &CustomerDTO{
 			ID:        o.Customer.ID,
@@ -667,12 +730,20 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 	if o.ShippingAddress != nil {
 		firstName := ""
 		lastName := ""
-		if o.ShippingAddress.FirstName != nil { firstName = *o.ShippingAddress.FirstName }
-		if o.ShippingAddress.LastName != nil { lastName = *o.ShippingAddress.LastName }
+		if o.ShippingAddress.FirstName != nil {
+			firstName = *o.ShippingAddress.FirstName
+		}
+		if o.ShippingAddress.LastName != nil {
+			lastName = *o.ShippingAddress.LastName
+		}
 		address2 := ""
-		if o.ShippingAddress.Address2 != nil { address2 = *o.ShippingAddress.Address2 }
+		if o.ShippingAddress.Address2 != nil {
+			address2 = *o.ShippingAddress.Address2
+		}
 		phone := ""
-		if o.ShippingAddress.Phone != nil { phone = *o.ShippingAddress.Phone }
+		if o.ShippingAddress.Phone != nil {
+			phone = *o.ShippingAddress.Phone
+		}
 
 		dto.ShippingAddress = &AddressDTO{
 			FirstName: firstName,
@@ -721,21 +792,21 @@ func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string
 		}
 
 		detail := OrderItemDetail{
-			ID:              it.ID,
-			VariantID:       it.ShopifyVariantID,
-			Type:            it.Type,
-			Quantity:        it.Quantity,
-			ItemStatus:      it.ItemStatus,
-			FulfillmentStep: it.FulfillmentStep,
-			ItemsReceived:   it.ItemsReceived,
-			Title:           itemTitle,
-			UnitPrice:       unitPrice,
-			AmountCharged:   amountCharged,
-			BalanceDue:      balanceDue,
-			ImageSrc:        it.ImageSrc,
-			TrackingNumber:  it.TrackingNumber,
-			TrackingURL:     it.TrackingURL,
-			TrackingCompany: it.TrackingCompany,
+			ID:                it.ID,
+			VariantID:         it.ShopifyVariantID,
+			Type:              it.Type,
+			Quantity:          it.Quantity,
+			ItemStatus:        it.ItemStatus,
+			FulfillmentStep:   it.FulfillmentStep,
+			ItemsReceived:     it.ItemsReceived,
+			Title:             itemTitle,
+			UnitPrice:         unitPrice,
+			AmountCharged:     amountCharged,
+			BalanceDue:        balanceDue,
+			ImageSrc:          it.ImageSrc,
+			TrackingNumber:    it.TrackingNumber,
+			TrackingURL:       it.TrackingURL,
+			TrackingCompany:   it.TrackingCompany,
 			TrackingLastEvent: it.TrackingLastEvent,
 		}
 		if it.DpAmount != nil {
@@ -779,10 +850,16 @@ func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string
 	if o.Customer != nil {
 		firstName := ""
 		lastName := ""
-		if o.Customer.FirstName != nil { firstName = *o.Customer.FirstName }
-		if o.Customer.LastName != nil { lastName = *o.Customer.LastName }
+		if o.Customer.FirstName != nil {
+			firstName = *o.Customer.FirstName
+		}
+		if o.Customer.LastName != nil {
+			lastName = *o.Customer.LastName
+		}
 		phone := ""
-		if o.Customer.Phone != nil { phone = *o.Customer.Phone }
+		if o.Customer.Phone != nil {
+			phone = *o.Customer.Phone
+		}
 
 		dto.Customer = &CustomerDTO{
 			ID:        o.Customer.ID,
@@ -796,12 +873,20 @@ func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string
 	if o.ShippingAddress != nil {
 		firstName := ""
 		lastName := ""
-		if o.ShippingAddress.FirstName != nil { firstName = *o.ShippingAddress.FirstName }
-		if o.ShippingAddress.LastName != nil { lastName = *o.ShippingAddress.LastName }
+		if o.ShippingAddress.FirstName != nil {
+			firstName = *o.ShippingAddress.FirstName
+		}
+		if o.ShippingAddress.LastName != nil {
+			lastName = *o.ShippingAddress.LastName
+		}
 		address2 := ""
-		if o.ShippingAddress.Address2 != nil { address2 = *o.ShippingAddress.Address2 }
+		if o.ShippingAddress.Address2 != nil {
+			address2 = *o.ShippingAddress.Address2
+		}
 		phone := ""
-		if o.ShippingAddress.Phone != nil { phone = *o.ShippingAddress.Phone }
+		if o.ShippingAddress.Phone != nil {
+			phone = *o.ShippingAddress.Phone
+		}
 
 		dto.ShippingAddress = &AddressDTO{
 			FirstName: firstName,
@@ -892,6 +977,17 @@ func (s *service) CancelOrder(ctx context.Context, userID, orderID, fulfillmentT
 		return apierror.ErrInternal
 	}
 
+	if fulfillmentType == "pre_order" && s.batchService != nil {
+		for _, item := range o.Items {
+			if item.Type != "pre_order" {
+				continue
+			}
+			if err := s.batchService.ReleaseAllocationsByOrderLineItemID(ctx, item.ID); err != nil {
+				return err
+			}
+		}
+	}
+
 	// Check if ALL items are cancelled, if so, cancel the whole order
 	allCancelled := true
 	for _, it := range o.Items {
@@ -946,7 +1042,7 @@ func (s *service) UpdateItemsReceived(ctx context.Context, userID, orderID strin
 		if err := s.store.UpdateOrderItemReceived(ctx, item.ItemID, item.ItemsReceived, deliveredStep); err != nil {
 			slog.WarnContext(ctx, "failed to update item received", slog.String("item_id", item.ItemID), slog.Any("error", err))
 		}
-		
+
 		// Update the item status in our memory object so we can check it below
 		for i, dbItem := range o.Items {
 			if dbItem.ID == item.ItemID {
@@ -1028,7 +1124,7 @@ func (s *service) ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]
 	f := excelize.NewFile()
 	sheetName := "Sales Report"
 	f.SetSheetName("Sheet1", sheetName)
-	
+
 	headers := []string{"Order ID", "Date", "Customer Name", "Customer Email", "Ship Ready Items", "Pre-Order Items", "Total Price", "Financial Status", "Fulfillment Status"}
 	for i, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
@@ -1051,8 +1147,12 @@ func (s *service) ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]
 		f.SetCellValue(sheetName, fmt.Sprintf("B%d", rowNum), o.CreatedAt.Format("2006-01-02"))
 		if o.Customer != nil {
 			var fname, lname string
-			if o.Customer.FirstName != nil { fname = *o.Customer.FirstName }
-			if o.Customer.LastName != nil { lname = *o.Customer.LastName }
+			if o.Customer.FirstName != nil {
+				fname = *o.Customer.FirstName
+			}
+			if o.Customer.LastName != nil {
+				lname = *o.Customer.LastName
+			}
 			f.SetCellValue(sheetName, fmt.Sprintf("C%d", rowNum), fname+" "+lname)
 			f.SetCellValue(sheetName, fmt.Sprintf("D%d", rowNum), o.Customer.Email)
 		}
@@ -1101,7 +1201,7 @@ func (s *service) GetOrderTracking(ctx context.Context, userID, orderID string) 
 			if targetItem.TrackingCompany != nil {
 				carrierCode = strings.ToLower(*targetItem.TrackingCompany)
 			}
-			
+
 			if carrierCode != "" {
 				res, err := s.shipstationClient.TrackShipment(ctx, carrierCode, trackingNum)
 				if err == nil && res != nil {
@@ -1124,7 +1224,7 @@ func (s *service) GetOrderTracking(ctx context.Context, userID, orderID string) 
 			if targetItem.TrackingCompany != nil {
 				currentRes.CarrierCode = *targetItem.TrackingCompany
 			}
-			
+
 			if targetItem.ShippedAt != nil {
 				currentRes.ShipDate = targetItem.ShippedAt.Format(time.RFC3339)
 			}

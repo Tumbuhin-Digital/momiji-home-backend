@@ -3,6 +3,7 @@ package order
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/warehouse"
 )
 
 const (
@@ -37,6 +39,27 @@ func (s *service) getPreOrderItems(o *Order) []OrderItem {
 	return items
 }
 
+func ensurePackingQuantities(packing []PackingItemDTO, groupItems []OrderItem) []PackingItemDTO {
+	qtyByID := make(map[string]int, len(groupItems))
+	for _, it := range groupItems {
+		qtyByID[it.ID] = it.Quantity
+	}
+	out := make([]PackingItemDTO, len(packing))
+	copy(out, packing)
+	for i := range out {
+		sliceQty, ok := qtyByID[out[i].LineItemID]
+		if !ok {
+			continue
+		}
+		// Group slice qty is authoritative — clients/legacy packing may still send full line qty.
+		out[i].Quantity = sliceQty
+		if !out[i].IsNested && out[i].BoxCount > sliceQty {
+			out[i].BoxCount = sliceQty
+		}
+	}
+	return out
+}
+
 func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID string, req CalculatePreorderShippingRequest) (*CalculatePreorderShippingResponse, error) {
 	o, err := s.store.GetOrder(ctx, orderID, userID)
 	if err != nil {
@@ -46,18 +69,23 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 		return nil, apierror.ErrNotFound
 	}
 
-	preItems := s.getPreOrderItems(o)
-	if len(preItems) == 0 {
-		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Order has no pre-order items")
+	batchID := normalizeBatchIDPtr(req.BatchID)
+	groupItems, err := s.resolveGroupSlices(ctx, o, batchID)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	if len(groupItems) == 0 {
+		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "No pre-order items for this fulfillment group")
 	}
 
-	if err := ValidatePacking(req.Packing, preItems); err != nil {
+	packing := ensurePackingQuantities(req.Packing, groupItems)
+	if err := ValidatePacking(packing, groupItems); err != nil {
 		return nil, err
 	}
 
 	itemMap := make(map[string]OrderItem)
 	var variantIDs []string
-	for _, it := range preItems {
+	for _, it := range groupItems {
 		itemMap[it.ID] = it
 		variantIDs = append(variantIDs, it.ShopifyVariantID)
 	}
@@ -67,7 +95,7 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 		return nil, apierror.ErrInternal
 	}
 
-	units, err := BuildPackableUnits(orderID, req.Packing, itemMap, dims)
+	units, err := BuildPackableUnits(orderID, packing, itemMap, dims)
 	if err != nil {
 		return nil, err
 	}
@@ -91,13 +119,18 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 	if addr.Phone != nil {
 		phone = *addr.Phone
 	}
-	province := addr.Province
 
-	existingShipment, err := s.store.GetPreorderShipment(ctx, orderID)
+	existingShipment, err := s.store.GetPreorderShipmentByBatch(ctx, orderID, batchID)
 	if err != nil {
 		return nil, apierror.ErrInternal
 	}
 	originCode := resolveWarehouseOrigin(existingShipment)
+	// New batch groups should inherit warehouse from the order-level/legacy shipment.
+	if existingShipment == nil {
+		if legacy, lerr := s.store.GetPreorderShipment(ctx, orderID); lerr == nil && legacy != nil && legacy.WarehouseOrigin != "" {
+			originCode = warehouse.NormalizeCode(legacy.WarehouseOrigin)
+		}
+	}
 	origin, err := s.warehouseResolver.GetOrigin(ctx, originCode)
 	if err != nil {
 		return nil, apierror.New(http.StatusInternalServerError, "shipping_rate_error", "Failed to resolve warehouse origin")
@@ -122,7 +155,7 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 			Phone:    phone,
 			Address1: addr.Address1,
 			City:     addr.City,
-			State:    province,
+			State:    addr.Province,
 			Zip:      addr.Zip,
 			Country:  addr.Country,
 		},
@@ -130,15 +163,22 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 		s.zipLookup,
 	)
 	if err != nil {
-		return nil, apierror.New(http.StatusInternalServerError, "shipping_rate_error", "Failed to fetch shipping rates from carriers")
+		slog.ErrorContext(ctx, "preorder calculate shipping rate failed",
+			"order_id", orderID,
+			"batch_id", batchID,
+			"package_count", len(packages),
+			"error", err,
+		)
+		return nil, apierror.New(http.StatusInternalServerError, "shipping_rate_error", fmt.Sprintf("Failed to fetch shipping rates from carriers: %v", err))
 	}
 
 	totalBoxes, totalWeight := PackingTotals(units)
-	liveEstimate := amount
-	dbPacking := PackingToDBItems(req.Packing)
+	baseCost, bufferAmount, liveEstimate := shipping.ApplyShippingBuffer(amount)
+	dbPacking := PackingToDBItems(packing)
 
 	shipment := &PreorderShipment{
 		OrderID:         orderID,
+		BatchID:         batchID,
 		TotalBoxes:      totalBoxes,
 		TotalWeightLb:   &totalWeight,
 		WarehouseOrigin: originCode,
@@ -167,11 +207,14 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 
 	return &CalculatePreorderShippingResponse{
 		EstimatedShipping: fmt.Sprintf("%.2f", liveEstimate),
+		BaseCost:          fmt.Sprintf("%.2f", baseCost),
+		BufferAmount:      fmt.Sprintf("%.2f", bufferAmount),
 		TotalBoxes:        totalBoxes,
 		TotalWeightLb:     fmt.Sprintf("%.2f", totalWeight),
-		Packing:           req.Packing,
+		Packing:           packing,
 		ServiceCode:       groundCode,
 		Currency:          currency,
+		BatchID:           batchID,
 	}, nil
 }
 
@@ -184,23 +227,32 @@ func (s *service) UpdatePreorderShipping(ctx context.Context, userID, orderID st
 		return nil, apierror.ErrNotFound
 	}
 
-	shipment, err := s.store.GetPreorderShipment(ctx, orderID)
+	batchID := normalizeBatchIDPtr(req.BatchID)
+	groupItems, err := s.resolveGroupSlices(ctx, o, batchID)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	if len(groupItems) == 0 {
+		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "No pre-order items for this fulfillment group")
+	}
+
+	shipment, err := s.store.GetPreorderShipmentByBatch(ctx, orderID, batchID)
 	if err != nil {
 		return nil, apierror.ErrInternal
 	}
 	if shipment == nil || shipment.EstimatedShipping == nil {
-		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Checkout shipping estimate required before setting final price")
+		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Shipping estimate required before setting final price")
 	}
 
 	if len(req.Packing) > 0 {
-		preItems := s.getPreOrderItems(o)
-		if err := ValidatePacking(req.Packing, preItems); err != nil {
+		packing := ensurePackingQuantities(req.Packing, groupItems)
+		if err := ValidatePacking(packing, groupItems); err != nil {
 			return nil, err
 		}
 
 		itemMap := make(map[string]OrderItem)
 		var variantIDs []string
-		for _, it := range preItems {
+		for _, it := range groupItems {
 			itemMap[it.ID] = it
 			variantIDs = append(variantIDs, it.ShopifyVariantID)
 		}
@@ -210,7 +262,7 @@ func (s *service) UpdatePreorderShipping(ctx context.Context, userID, orderID st
 			return nil, apierror.ErrInternal
 		}
 
-		units, packErr := BuildPackableUnits(orderID, req.Packing, itemMap, dims)
+		units, packErr := BuildPackableUnits(orderID, packing, itemMap, dims)
 		if packErr != nil {
 			return nil, packErr
 		}
@@ -221,31 +273,34 @@ func (s *service) UpdatePreorderShipping(ctx context.Context, userID, orderID st
 		totalBoxes, totalWeight := PackingTotals(units)
 		packingShipment := &PreorderShipment{
 			OrderID:           orderID,
+			BatchID:           batchID,
 			EstimatedShipping: shipment.EstimatedShipping,
 			TotalBoxes:        totalBoxes,
 			TotalWeightLb:     &totalWeight,
 			WarehouseOrigin:   shipment.WarehouseOrigin,
 		}
-		if err := s.store.UpsertPreorderShipment(ctx, packingShipment, PackingToDBItems(req.Packing)); err != nil {
+		if err := s.store.UpsertPreorderShipment(ctx, packingShipment, PackingToDBItems(packing)); err != nil {
 			return nil, apierror.ErrInternal
 		}
+		shipment.ID = packingShipment.ID
 	}
 
 	credit := math.Max(0, *shipment.EstimatedShipping-req.FinalShippingPrice)
-	if err := s.store.UpdatePreorderShipping(ctx, orderID, req.FinalShippingPrice, req.ShippingNotes, credit); err != nil {
+	if err := s.store.UpdatePreorderShippingByShipmentID(ctx, shipment.ID, req.FinalShippingPrice, req.ShippingNotes, credit); err != nil {
 		return nil, apierror.ErrInternal
 	}
 
-	for _, it := range s.getPreOrderItems(o) {
+	// Advance this group's items toward shipping-configured as soon as THIS shipment has a final price.
+	// Per-group second payment no longer waits for all groups.
+	for _, it := range groupItems {
 		if it.FulfillmentStep < preOrderStepShippingConfigured {
-			if err := s.store.UpdateItemStepByType(ctx, orderID, "pre_order", preOrderStepShippingConfigured); err != nil {
+			if err := s.store.UpdateOrderItemStep(ctx, it.ID, preOrderStepShippingConfigured); err != nil {
 				return nil, apierror.ErrInternal
 			}
-			break
 		}
 	}
 
-	updated, err := s.store.GetPreorderShipment(ctx, orderID)
+	updated, err := s.store.GetPreorderShipmentByBatch(ctx, orderID, batchID)
 	if err != nil {
 		return nil, apierror.ErrInternal
 	}
@@ -253,7 +308,63 @@ func (s *service) UpdatePreorderShipping(ctx context.Context, userID, orderID st
 	return &dto, nil
 }
 
-func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID string) error {
+func (s *service) allPreorderGroupsHaveFinalShipping(ctx context.Context, o *Order, shipments []PreorderShipment) (bool, error) {
+	// Build expected group keys from allocations.
+	preItems := s.getPreOrderItems(o)
+	if len(preItems) == 0 {
+		return true, nil
+	}
+	lineIDs := make([]string, 0, len(preItems))
+	for _, it := range preItems {
+		lineIDs = append(lineIDs, it.ID)
+	}
+
+	expected := make(map[string]bool) // batchID or ""
+	allocatedQty := make(map[string]int)
+	if s.batchService != nil {
+		allocs, err := s.batchService.GetCommittedAllocationsByOrderLineItemIDs(ctx, lineIDs)
+		if err != nil {
+			return false, err
+		}
+		for _, a := range allocs {
+			if a.OrderLineItemID == nil {
+				continue
+			}
+			expected[a.BatchID] = true
+			allocatedQty[*a.OrderLineItemID] += a.Quantity
+		}
+	}
+	for _, it := range preItems {
+		if it.Quantity-allocatedQty[it.ID] > 0 {
+			expected[""] = true
+		}
+	}
+	// Fallback: no allocations → single unbatched group
+	if len(expected) == 0 {
+		expected[""] = true
+	}
+
+	configured := make(map[string]bool)
+	for _, sh := range shipments {
+		if sh.FinalShippingPrice == nil {
+			continue
+		}
+		key := ""
+		if sh.BatchID != nil {
+			key = *sh.BatchID
+		}
+		configured[key] = true
+	}
+
+	for key := range expected {
+		if !configured[key] {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID string, req RequestSecondPaymentRequest) error {
 	o, err := s.store.GetOrder(ctx, orderID, userID)
 	if err != nil {
 		return apierror.ErrInternal
@@ -262,32 +373,87 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 		return apierror.ErrNotFound
 	}
 
-	preItems := s.getPreOrderItems(o)
-	if len(preItems) == 0 {
-		return apierror.New(http.StatusBadRequest, "invalid_request", "Order has no pre-order items")
+	batchID := normalizeBatchIDPtr(req.BatchID)
+	groupItems, err := s.resolveGroupSlices(ctx, o, batchID)
+	if err != nil {
+		return apierror.ErrInternal
+	}
+	if len(groupItems) == 0 {
+		return apierror.New(http.StatusBadRequest, "invalid_request", "No pre-order items for this fulfillment group")
 	}
 
-	for _, it := range preItems {
-		if it.FulfillmentStep != preOrderStepShippingConfigured {
-			return apierror.New(http.StatusConflict, "invalid_transition", "Shipping must be configured before requesting second payment")
-		}
-	}
-
-	shipment, err := s.store.GetPreorderShipment(ctx, orderID)
+	shipment, err := s.store.GetPreorderShipmentByBatch(ctx, orderID, batchID)
 	if err != nil {
 		return apierror.ErrInternal
 	}
 	if shipment == nil || shipment.FinalShippingPrice == nil {
-		return apierror.New(http.StatusBadRequest, "invalid_request", "Final shipping price must be set before requesting payment")
+		return apierror.New(http.StatusBadRequest, "invalid_request", "Final shipping price must be set for this group before requesting payment")
 	}
-
-	var lineItemIDs []string
-	for _, it := range preItems {
-		lineItemIDs = append(lineItemIDs, it.ID)
+	if shipment.InvoiceSentAt != nil {
+		return apierror.New(http.StatusConflict, "invalid_transition", "Second payment invoice already sent for this group")
 	}
 
 	if o.ShippingAddress == nil {
 		return apierror.New(http.StatusBadRequest, "invalid_request", "Order has no shipping address")
+	}
+
+	customerEmail := ""
+	customerName := "Customer"
+	if o.Customer != nil {
+		if o.Customer.Email != "" {
+			customerEmail = o.Customer.Email
+		}
+		if o.Customer.FirstName != nil && *o.Customer.FirstName != "" {
+			customerName = *o.Customer.FirstName
+		}
+	}
+
+	invoiceLines := make([]preorder.GroupInvoiceLine, 0, len(groupItems))
+	for _, it := range groupItems {
+		if it.BalanceDue == nil || *it.BalanceDue <= 0 || it.Quantity < 1 {
+			continue
+		}
+		fullQty := it.Quantity
+		// resolveGroupSlices overwrites Quantity with slice qty; recover full line qty from order.
+		fullLineQty := it.Quantity
+		for _, raw := range o.Items {
+			if raw.ID == it.ID {
+				fullLineQty = raw.Quantity
+				break
+			}
+		}
+		if fullLineQty < 1 {
+			fullLineQty = fullQty
+		}
+		prorated := *it.BalanceDue * float64(fullQty) / float64(fullLineQty)
+		prorated = math.Round(prorated*100) / 100
+
+		title := ""
+		if it.Title != nil {
+			title = *it.Title
+		}
+		invoiceLines = append(invoiceLines, preorder.GroupInvoiceLine{
+			Title:           title,
+			Amount:          prorated,
+			OrderLineItemID: it.ID,
+			Quantity:        fullQty,
+			ShipmentID:      shipment.ID,
+			OrderID:         orderID,
+		})
+
+		if customerEmail == "" {
+			st, serr := s.preorderStore.GetSettlementByOrderLineItemID(ctx, it.ID)
+			if serr == nil && st != nil {
+				customerEmail = st.CustomerEmail
+				if st.CustomerName != "" {
+					customerName = st.CustomerName
+				}
+			}
+		}
+	}
+
+	if len(invoiceLines) == 0 && *shipment.FinalShippingPrice <= 0 {
+		return apierror.New(http.StatusBadRequest, "invalid_request", "Nothing to invoice for this group")
 	}
 
 	shippingTitle := "UPS Ground"
@@ -296,32 +462,41 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 	}
 	notes := ""
 	if shipment.ShippingNotes != nil {
-		notes = *shipment.ShippingNotes
+		notes = strings.TrimSpace(*shipment.ShippingNotes)
 	}
 
-	opts := preorder.InvoiceOptions{
+	result, err := s.preorderService.CreateGroupSecondPaymentInvoice(ctx, preorder.GroupInvoiceOptions{
+		CustomerEmail:   customerEmail,
+		CustomerName:    customerName,
+		OrderID:         orderID,
+		ShipmentID:      shipment.ID,
+		Lines:           invoiceLines,
 		ShippingTitle:   shippingTitle,
 		ShippingPrice:   *shipment.FinalShippingPrice,
 		ShippingNotes:   notes,
 		ShippingAddress: orderShippingAddressToShopify(o.ShippingAddress),
-	}
-
-	if _, err := s.preorderService.InvoiceSettlementsWithShipping(ctx, lineItemIDs, opts); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
 	now := time.Now()
-	if err := s.store.MarkPreorderInvoiceSent(ctx, orderID, now); err != nil {
+	if err := s.store.MarkPreorderShipmentInvoiceSent(ctx, shipment.ID, result.DraftOrderID, result.InvoiceURL, now); err != nil {
 		return apierror.ErrInternal
 	}
+
 	if err := s.store.UpdateOrderStatus(ctx, orderID, "on_progress", o.FinancialStatus, "waiting"); err != nil {
 		return apierror.ErrInternal
 	}
-	if err := s.store.UpdateItemStatusByType(ctx, orderID, "pre_order", "waiting_payment"); err != nil {
-		return apierror.ErrInternal
-	}
-	if err := s.store.UpdateItemStepByType(ctx, orderID, "pre_order", preOrderStepSecondPayment); err != nil {
-		return apierror.ErrInternal
+	for _, it := range groupItems {
+		if err := s.store.UpdateItemStatusByID(ctx, it.ID, "waiting_payment"); err != nil {
+			return apierror.ErrInternal
+		}
+		if it.FulfillmentStep < preOrderStepSecondPayment {
+			if err := s.store.UpdateOrderItemStep(ctx, it.ID, preOrderStepSecondPayment); err != nil {
+				return apierror.ErrInternal
+			}
+		}
 	}
 
 	return nil
@@ -360,6 +535,8 @@ func (s *service) toPreorderShipmentDTO(shipment *PreorderShipment) PreorderShip
 		return PreorderShipmentDTO{}
 	}
 	dto := PreorderShipmentDTO{
+		ID:              shipment.ID,
+		BatchID:         shipment.BatchID,
 		TotalBoxes:      shipment.TotalBoxes,
 		WarehouseOrigin: shipment.WarehouseOrigin,
 	}
@@ -386,9 +563,20 @@ func (s *service) toPreorderShipmentDTO(shipment *PreorderShipment) PreorderShip
 		v := shipment.InvoiceSentAt.Format(time.RFC3339)
 		dto.InvoiceSentAt = &v
 	}
+	if shipment.InvoiceURL != nil {
+		dto.InvoiceURL = shipment.InvoiceURL
+	}
+	if shipment.InvoicePaidAt != nil {
+		v := shipment.InvoicePaidAt.Format(time.RFC3339)
+		dto.InvoicePaidAt = &v
+	}
+	if shipment.ShopifyDraftOrderID != nil {
+		dto.ShopifyDraftOrderID = shipment.ShopifyDraftOrderID
+	}
 	for _, p := range shipment.PackingItems {
 		dto.Packing = append(dto.Packing, PackingItemDTO{
 			LineItemID: p.OrderLineItemID,
+			Quantity:   p.Quantity,
 			BoxCount:   p.BoxCount,
 			IsNested:   p.IsNested,
 		})

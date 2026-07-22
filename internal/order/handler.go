@@ -365,7 +365,12 @@ func (h *Handler) UpdatePreorderShipping(c *fiber.Ctx) error {
 }
 
 func (h *Handler) RequestSecondPayment(c *fiber.Ctx) error {
-	if err := h.service.RequestSecondPayment(c.Context(), "", c.Params("id")); err != nil {
+	var req RequestSecondPaymentRequest
+	if err := c.BodyParser(&req); err != nil {
+		// Empty body is valid (unbatched group).
+		req = RequestSecondPaymentRequest{}
+	}
+	if err := h.service.RequestSecondPayment(c.Context(), "", c.Params("id"), req); err != nil {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Second payment invoice sent", nil)

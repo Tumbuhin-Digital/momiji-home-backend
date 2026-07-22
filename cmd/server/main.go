@@ -36,6 +36,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorderbatch"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preordercustomtext"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/settings"
@@ -85,6 +86,7 @@ func main() {
 	productStore := product.NewPostgresStore(db)
 	orderStore := order.NewPostgresStore(db)
 	preorderStore := preorder.NewPostgresPreorderStore(db)
+	preorderBatchStore := preorderbatch.NewPostgresStore(db)
 	customerStore := customer.NewPostgresStore(db)
 	stockLockStore := checkout.NewPostgresStockLockStore(db)
 	dashboardStore := dashboard.NewPostgresStore(db)
@@ -118,9 +120,23 @@ func main() {
 
 	preorderCustomTextStore := preordercustomtext.NewPostgresStore(db)
 	preorderCustomTextService := preordercustomtext.NewService(preorderCustomTextStore)
+	preorderBatchService := preorderbatch.NewService(preorderBatchStore, productStore, preorderCustomTextService)
+	batchLockService := preorderbatch.NewBatchLockService(preorderBatchStore, func(ctx context.Context, shopifyVariantID string) (string, error) {
+		variant, err := productStore.GetVariantByShopifyID(ctx, shopifyVariantID)
+		if err != nil {
+			return "", err
+		}
+		if variant == nil {
+			return "", nil
+		}
+		return variant.ID, nil
+	})
 
 	productService := product.NewProductService(productStore, shopifyClient, preorderCustomTextService)
 	cartService := cart.NewCartService(cartStore, productService)
+	if setter, ok := cartService.(interface{ SetBatchPreviewer(cart.BatchPreviewer) }); ok {
+		setter.SetBatchPreviewer(preorderBatchService)
+	}
 	preorderService := preorder.NewPreorderService(preorderStore, orderStore, notificationService, shopifyClient, cfg.App.FrontendURL)
 	warehouseService := warehouse.NewService(warehouseStore, cfg.ShipStation)
 	if err := warehouseService.EnsureFromEnv(context.Background(), cfg.ShipStation); err != nil {
@@ -128,9 +144,22 @@ func main() {
 	}
 
 	orderService := order.NewOrderService(orderStore, cartService, authStore, shopifyClient, preorderStore, preorderService, notificationService, shipstationClient, cfg.ShipStation, warehouseService)
+	if setter, ok := orderService.(interface {
+		SetBatchAllocationReleaser(order.BatchAllocationReleaser)
+	}); ok {
+		setter.SetBatchAllocationReleaser(preorderBatchService)
+	}
 	customerService := customer.NewCustomerService(customerStore)
 	stockLockService := checkout.NewStockLockService(stockLockStore, productService, shopifyClient)
 	webhookService := webhook.NewWebhookService(orderStore, authStore, productStore, shopifyClient, preorderStore, notificationService, stockLockService, customerStore, orderService)
+	if setter, ok := webhookService.(interface{ SetBatchAllocator(webhook.BatchAllocator) }); ok {
+		setter.SetBatchAllocator(preorderBatchService)
+	}
+	if setter, ok := webhookService.(interface {
+		SetBatchLockReleaser(webhook.BatchLockReleaser)
+	}); ok {
+		setter.SetBatchLockReleaser(batchLockService)
+	}
 	dashboardService := dashboard.NewDashboardService(dashboardStore)
 	settingsService := settings.NewSettingsService(settingsStore)
 
@@ -150,10 +179,19 @@ func main() {
 	cartHandler.SetupRoutes(api)
 
 	checkoutService := checkout.NewCheckoutService(cartService, productService, shopifyClient, stockLockService, stockLockStore, settingsStore, cfg.App.FrontendURL, shipstationClient, cfg.ShipStation, warehouseService)
-	checkoutHandler := checkout.NewCheckoutHandler(cartService, checkoutService, orderService, cfg.Auth.Secret)
+	if setter, ok := checkoutService.(interface{ SetBatchPreviewer(checkout.BatchPreviewer) }); ok {
+		setter.SetBatchPreviewer(preorderBatchService)
+	}
+	if setter, ok := checkoutService.(interface {
+		SetBatchLockService(preorderbatch.BatchLockService)
+	}); ok {
+		setter.SetBatchLockService(batchLockService)
+	}
+	checkoutHandler := checkout.NewCheckoutHandler(cartService, checkoutService, orderService, productService, cfg.Auth.Secret)
 	checkoutHandler.SetupRoutes(api)
 
 	productHandler := product.NewProductHandler(productService, cfg.Auth.Secret)
+	productHandler.SetBatchManager(preorderBatchService)
 	productHandler.SetupRoutes(api)
 
 	orderHandler := order.NewOrderHandler(orderService, cfg.Auth.Secret)
@@ -177,6 +215,9 @@ func main() {
 	preorderCustomTextHandler := preordercustomtext.NewHandler(preorderCustomTextService, cfg.Auth.Secret)
 	preorderCustomTextHandler.SetupRoutes(api)
 
+	preorderBatchHandler := preorderbatch.NewHandler(preorderBatchService, cfg.Auth.Secret)
+	preorderBatchHandler.SetupRoutes(api)
+
 	warehouseHandler := warehouse.NewHandler(warehouseService, cfg.Auth.Secret)
 	warehouseHandler.SetupRoutes(api)
 
@@ -192,6 +233,7 @@ func main() {
 	scheduler.StartIntervalJob(context.Background(), 5*time.Minute, func(ctx context.Context) {
 		log.Info("Cleaning expired stock locks")
 		_ = stockLockService.CleanExpiredLocks(ctx)
+		_ = batchLockService.CleanExpiredBatchLocks(ctx)
 	})
 
 	// Start server in a separate goroutinee

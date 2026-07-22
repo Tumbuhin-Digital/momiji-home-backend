@@ -93,14 +93,38 @@ func (s *fulfillmentTestStore) UpdateOrderItemReceived(context.Context, string, 
 func (s *fulfillmentTestStore) GetPreorderShipment(context.Context, string) (*order.PreorderShipment, error) {
 	return nil, nil
 }
+func (s *fulfillmentTestStore) GetPreorderShipments(context.Context, string) ([]order.PreorderShipment, error) {
+	return nil, nil
+}
+func (s *fulfillmentTestStore) GetPreorderShipmentByBatch(context.Context, string, *string) (*order.PreorderShipment, error) {
+	return nil, nil
+}
 func (s *fulfillmentTestStore) UpsertPreorderShipment(context.Context, *order.PreorderShipment, []order.PreorderPackingItem) error {
 	return nil
 }
 func (s *fulfillmentTestStore) UpdatePreorderShipping(context.Context, string, float64, string, float64) error {
 	return nil
 }
+func (s *fulfillmentTestStore) UpdatePreorderShippingByShipmentID(context.Context, string, float64, string, float64) error {
+	return nil
+}
 func (s *fulfillmentTestStore) MarkPreorderInvoiceSent(context.Context, string, time.Time) error {
 	return nil
+}
+func (s *fulfillmentTestStore) MarkPreorderShipmentInvoiceSent(context.Context, string, string, string, time.Time) error {
+	return nil
+}
+func (s *fulfillmentTestStore) MarkPreorderShipmentInvoicePaid(context.Context, string, time.Time) error {
+	return nil
+}
+func (s *fulfillmentTestStore) GetPreorderShipmentByDraftOrderID(context.Context, string) (*order.PreorderShipment, error) {
+	return nil, nil
+}
+func (s *fulfillmentTestStore) GetPreorderShipmentByID(context.Context, string) (*order.PreorderShipment, error) {
+	return nil, nil
+}
+func (s *fulfillmentTestStore) HasAnyShipmentInvoiceForOrder(context.Context, string) (bool, error) {
+	return false, nil
 }
 func (s *fulfillmentTestStore) GetVariantDimensions(context.Context, []string) (map[string]order.VariantDimensions, error) {
 	return nil, nil

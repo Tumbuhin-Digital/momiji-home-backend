@@ -16,6 +16,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/email"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorderbatch"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"golang.org/x/crypto/bcrypt"
@@ -44,6 +45,16 @@ type service struct {
 	stockLockService checkout.StockLockService
 	customerStore    customer.CustomerStore
 	fulfillmentSync  FulfillmentSyncer
+	batchService     BatchAllocator
+	batchLockService BatchLockReleaser
+}
+
+type BatchAllocator interface {
+	AllocateToBatch(ctx context.Context, shopifyVariantID string, qty int, ref preorderbatch.AllocationRef) (*preorderbatch.AllocateResult, error)
+}
+
+type BatchLockReleaser interface {
+	ReleaseBatchLocksByCheckoutReference(ctx context.Context, checkoutReference string) error
 }
 
 func NewWebhookService(
@@ -68,6 +79,14 @@ func NewWebhookService(
 		customerStore:    customerStore,
 		fulfillmentSync:  fulfillmentSync,
 	}
+}
+
+func (s *service) SetBatchAllocator(batchService BatchAllocator) {
+	s.batchService = batchService
+}
+
+func (s *service) SetBatchLockReleaser(batchLockService BatchLockReleaser) {
+	s.batchLockService = batchLockService
 }
 
 func (s *service) IsWebhookProcessed(ctx context.Context, webhookID string) (bool, error) {
@@ -97,21 +116,21 @@ func (s *service) getLocalVariant(ctx context.Context, item ShopifyOrderLineItem
 	// Webhooks usually send numeric IDs, but our DB stores GraphQL GIDs: gid://shopify/ProductVariant/12345
 	// We'll search by exact match or suffix match
 	suffix := fmt.Sprintf("/%d", item.VariantID)
-	
-	// Since we don't have a GetVariantBySuffix method in store, we might need to fetch all and filter or 
+
+	// Since we don't have a GetVariantBySuffix method in store, we might need to fetch all and filter or
 	// construct the GID if we assume the standard format.
 	gid := fmt.Sprintf("gid://shopify/ProductVariant/%d", item.VariantID)
 	v, err := s.productStore.GetVariantByShopifyID(ctx, gid)
 	if err == nil && v != nil {
 		return v, nil
 	}
-	
+
 	// If exact GID fails, fallback to simple numeric string (just in case)
 	v2, err := s.productStore.GetVariantByShopifyID(ctx, strconv.FormatInt(item.VariantID, 10))
 	if err == nil && v2 != nil {
 		return v2, nil
 	}
-	
+
 	// Fallback to fetch all logic if needed (can be slow, but this is a fallback)
 	// For now, assume GID format is consistent.
 	slog.WarnContext(ctx, "variant not found by GID or numeric", slog.String("suffix", suffix))
@@ -128,7 +147,17 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 
 	// 1. Idempotency Check: check if order with this Shopify ID already exists
 	shopifyOrderIDStr := strconv.FormatInt(payload.ID, 10)
-	
+	existingOrder, err := s.orderStore.GetOrderByShopifyID(ctx, shopifyOrderIDStr)
+	if err != nil {
+		return apierror.ErrInternal
+	}
+	if existingOrder != nil {
+		slog.InfoContext(ctx, "Skipping duplicate Shopify order webhook",
+			slog.String("shopify_order_id", shopifyOrderIDStr),
+			slog.String("order_id", existingOrder.ID))
+		return nil
+	}
+
 	// 2. Resolve User
 	var customerID string
 	if payload.Email != "" {
@@ -191,20 +220,38 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 	var totalBalanceDue float64
 	var totalChargedNow float64
 	var hasPreOrder bool
-	
+
 	var draftItems []shopify.DraftOrderLineItem
 	var settlementIDsPaid []string
 	var settlementOrderID string
 
 	for _, item := range payload.LineItems {
 		var settlementID string
+		var shipmentID string
 		for _, prop := range item.Properties {
 			if prop.Name == "settlement_id" {
 				if valStr, ok := prop.Value.(string); ok {
 					settlementID = valStr
-					break
 				}
 			}
+			if prop.Name == "shipment_id" {
+				if valStr, ok := prop.Value.(string); ok {
+					shipmentID = valStr
+				}
+			}
+		}
+
+		if shipmentID != "" {
+			slog.InfoContext(ctx, "Webhook: Received payment for group shipment invoice", slog.String("shipment_id", shipmentID))
+			now := time.Now()
+			_ = s.orderStore.MarkPreorderShipmentInvoicePaid(ctx, shipmentID, now)
+			if sh, err := s.orderStore.GetPreorderShipmentByID(ctx, shipmentID); err == nil && sh != nil {
+				if settlementOrderID == "" {
+					settlementOrderID = sh.OrderID
+				}
+			}
+			settlementIDsPaid = append(settlementIDsPaid, "shipment:"+shipmentID)
+			continue
 		}
 
 		if settlementID != "" {
@@ -232,10 +279,10 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 
 		unitPriceFromShopify, _ := strconv.ParseFloat(item.Price, 64)
 		lineTotalFromShopify := unitPriceFromShopify * float64(item.Quantity)
-		
+
 		totalDiscount, _ := strconv.ParseFloat(item.TotalDiscount, 64)
 		actualAmountCharged := lineTotalFromShopify - totalDiscount
-		
+
 		total += actualAmountCharged
 		totalChargedNow += actualAmountCharged
 
@@ -244,7 +291,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		if isPreorder {
 			hasPreOrder = true
 			totalDepositPaid += lineTotalFromShopify
-			
+
 			fullUnitPrice := unitPriceFromShopify * 2 // Default to 2x DP
 			for _, prop := range item.Properties {
 				if prop.Name == "full_price" {
@@ -260,13 +307,13 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 			totalBalanceDue += bal
 
 			title := item.Title
-			
+
 			unitPrice := fullUnitPrice
 			finalAmount := fullUnitPrice * float64(item.Quantity)
 			amountCharged := actualAmountCharged
 			dpAmount := actualAmountCharged
 			balanceDue := bal
-			
+
 			orderItems = append(orderItems, order.OrderItem{
 				ShopifyVariantID: variant.ShopifyVariantID,
 				Type:             "pre_order",
@@ -280,7 +327,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 				AmountCharged:    &amountCharged,
 				BalanceDue:       &balanceDue,
 			})
-			
+
 			draftItems = append(draftItems, shopify.DraftOrderLineItem{
 				VariantID: variant.ShopifyVariantID,
 				Quantity:  item.Quantity,
@@ -298,7 +345,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 
 			finalAmount := actualAmountCharged
 			amountCharged := actualAmountCharged
-			
+
 			orderItems = append(orderItems, order.OrderItem{
 				ShopifyVariantID: variant.ShopifyVariantID,
 				Type:             "ship_ready",
@@ -374,7 +421,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		Items:             orderItems,
 		ShopifyOrderID:    &shopifyOrderIDStr,
 	}
-	
+
 	if checkoutRef != "" {
 		newOrder.ShopifyDraftOrderID = &checkoutRef
 	}
@@ -386,8 +433,30 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		slog.ErrorContext(ctx, "Failed to save order from webhook", slog.Any("error", err), slog.String("checkout_reference", checkoutRef))
 		return fmt.Errorf("failed to save order from webhook: %w", err)
 	}
-	
+
 	slog.InfoContext(ctx, "Order successfully inserted into database", slog.String("order_id", newOrder.ID), slog.String("order_number", newOrder.OrderNumber), slog.String("shopify_order_id", shopifyOrderIDStr))
+
+	if checkoutRef != "" && s.batchLockService != nil {
+		_ = s.batchLockService.ReleaseBatchLocksByCheckoutReference(ctx, checkoutRef)
+	}
+
+	if s.batchService != nil {
+		for _, item := range newOrder.Items {
+			if item.Type != "pre_order" {
+				continue
+			}
+			if _, err := s.batchService.AllocateToBatch(ctx, item.ShopifyVariantID, item.Quantity, preorderbatch.AllocationRef{
+				OrderLineItemID: &item.ID,
+			}); err != nil {
+				slog.ErrorContext(ctx, "failed to allocate pre-order item to batch",
+					slog.String("order_id", newOrder.ID),
+					slog.String("order_line_item_id", item.ID),
+					slog.String("variant_id", item.ShopifyVariantID),
+					slog.Any("error", err))
+				return err
+			}
+		}
+	}
 
 	// Auto-create settlement for pre_order items
 	if hasPreOrder {
@@ -671,7 +740,7 @@ func (s *service) HandleInventoryUpdate(ctx context.Context, payload ShopifyInve
 
 	// Update inventory quantity
 	variant.InventoryQuantity = payload.Available
-	
+
 	if err := s.productStore.UpsertVariant(ctx, variant); err != nil {
 		return fmt.Errorf("failed to update variant inventory: %w", err)
 	}
@@ -706,6 +775,11 @@ func (s *service) HandleProductDelete(ctx context.Context, payload ShopifyProduc
 }
 
 func (s *service) handleSettlementOnlyPayment(ctx context.Context, orderID string) error {
+	// Group invoices: when every invoiced shipment for this order is paid, mark settlements paid.
+	if err := s.cascadeGroupShipmentPayments(ctx, orderID); err != nil {
+		return err
+	}
+
 	allPaid, err := s.preorderStore.AllSettlementsPaid(ctx, orderID)
 	if err != nil {
 		return err
@@ -760,5 +834,69 @@ func (s *service) handleSettlementOnlyPayment(ctx context.Context, orderID strin
 		})
 	}()
 
+	return nil
+}
+
+// cascadeGroupShipmentPayments marks settlements paid when paid group invoices
+// cover every pre-order line quantity (via packing slices).
+func (s *service) cascadeGroupShipmentPayments(ctx context.Context, orderID string) error {
+	o, err := s.orderStore.GetOrder(ctx, orderID, "")
+	if err != nil || o == nil {
+		return err
+	}
+
+	shipments, err := s.orderStore.GetPreorderShipments(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	if len(shipments) == 0 {
+		return nil
+	}
+
+	paidQtyByLine := make(map[string]int)
+	for _, sh := range shipments {
+		if sh.InvoiceSentAt != nil && sh.InvoicePaidAt == nil {
+			// An invoiced group is still unpaid — wait.
+			return nil
+		}
+		if sh.InvoicePaidAt == nil {
+			continue
+		}
+		for _, p := range sh.PackingItems {
+			qty := p.Quantity
+			if qty < 1 {
+				qty = 1
+			}
+			paidQtyByLine[p.OrderLineItemID] += qty
+		}
+	}
+
+	for _, it := range o.Items {
+		if it.Type != "pre_order" {
+			continue
+		}
+		if paidQtyByLine[it.ID] < it.Quantity {
+			return nil
+		}
+	}
+
+	now := time.Now()
+	for _, it := range o.Items {
+		if it.Type != "pre_order" {
+			continue
+		}
+		st, err := s.preorderStore.GetSettlementByOrderLineItemID(ctx, it.ID)
+		if err != nil || st == nil {
+			continue
+		}
+		if st.Status == "paid" {
+			continue
+		}
+		_ = s.preorderStore.UpdateSettlementStatus(ctx, st.ID, "paid", &now)
+		_ = s.orderStore.UpdateItemStatusByID(ctx, it.ID, "payment_received")
+		if it.FulfillmentStep < 4 {
+			_ = s.orderStore.UpdateOrderItemStep(ctx, it.ID, 4)
+		}
+	}
 	return nil
 }

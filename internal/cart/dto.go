@@ -1,5 +1,7 @@
 package cart
 
+import "github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorderbatch"
+
 type GuestSessionResponse struct {
 	SessionID string `json:"session_id"`
 	ExpiresAt string `json:"expires_at"`
@@ -13,22 +15,23 @@ type CartResponse struct {
 }
 
 type CartItem struct {
-	ID                string `json:"id"`
-	VariantID         string `json:"variant_id"`
-	Title             string `json:"title"`
-	ImageSrc          string `json:"image_src"`
-	Quantity          int    `json:"quantity"`
-	InventoryQuantity int    `json:"inventory_quantity"`
-	UnitPrice         string `json:"unit_price"`
-	RetailPrice       string `json:"retail_price,omitempty"`
-	DepositAmount     string `json:"deposit_amount,omitempty"`
-	BalanceDue        string `json:"balance_due,omitempty"`
+	ID                string  `json:"id"`
+	VariantID         string  `json:"variant_id"`
+	Title             string  `json:"title"`
+	ImageSrc          string  `json:"image_src"`
+	Quantity          int     `json:"quantity"`
+	InventoryQuantity int     `json:"inventory_quantity"`
+	UnitPrice         string  `json:"unit_price"`
+	RetailPrice       string  `json:"retail_price,omitempty"`
+	DepositAmount     string  `json:"deposit_amount,omitempty"`
+	BalanceDue        string  `json:"balance_due,omitempty"`
 	Subtotal          string  `json:"subtotal"`
 	Weight            float64 `json:"weight,omitempty"`
 	WeightUnit        string  `json:"weight_unit,omitempty"`
 	Length            float64 `json:"length,omitempty"`
 	Width             float64 `json:"width,omitempty"`
 	Height            float64 `json:"height,omitempty"`
+	IsLtl             bool    `json:"is_ltl"`
 }
 
 type CartSummaryDTO struct {
@@ -54,6 +57,12 @@ type MergeCartRequest struct {
 }
 
 type SetVariantQuantityRequest struct {
-	VariantID     string `json:"variant_id" validate:"required"`
-	TotalQuantity int    `json:"total_quantity" validate:"min=0"`
+	VariantID            string `json:"variant_id" validate:"required"`
+	TotalQuantity        int    `json:"total_quantity" validate:"min=0"`
+	AcceptBatchDepletion bool   `json:"accept_batch_depletion"`
+	ValidateBatch        bool   `json:"validate_batch"`
+}
+
+type SetVariantQuantityResponse struct {
+	BatchDepletion *preorderbatch.BatchDepletionEvent `json:"batch_depletion,omitempty"`
 }

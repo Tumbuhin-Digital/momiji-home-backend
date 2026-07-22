@@ -17,6 +17,7 @@ func BuildDefaultPackingDTO(items []OrderItem) []PackingItemDTO {
 	for _, it := range items {
 		packing = append(packing, PackingItemDTO{
 			LineItemID: it.ID,
+			Quantity:   it.Quantity,
 			BoxCount:   it.Quantity,
 			IsNested:   false,
 		})
@@ -31,13 +32,24 @@ func PackingToDBItems(packing []PackingItemDTO) []PreorderPackingItem {
 		if p.IsNested {
 			boxCount = 0
 		}
+		qty := p.Quantity
 		dbPacking = append(dbPacking, PreorderPackingItem{
 			OrderLineItemID: p.LineItemID,
+			Quantity:        qty,
 			BoxCount:        boxCount,
 			IsNested:        p.IsNested,
 		})
 	}
 	return dbPacking
+}
+
+// packingQty returns the slice quantity for packing validation/rate calc.
+// Prefer explicit PackingItemDTO.Quantity; otherwise fall back to the line item quantity.
+func packingQty(p PackingItemDTO, it OrderItem) int {
+	if p.Quantity > 0 {
+		return p.Quantity
+	}
+	return it.Quantity
 }
 
 func ValidatePacking(packing []PackingItemDTO, preItems []OrderItem) error {
@@ -46,8 +58,16 @@ func ValidatePacking(packing []PackingItemDTO, preItems []OrderItem) error {
 		itemMap[it.ID] = it
 	}
 	for _, p := range packing {
-		if _, ok := itemMap[p.LineItemID]; !ok {
+		it, ok := itemMap[p.LineItemID]
+		if !ok {
 			return apierror.New(http.StatusBadRequest, "invalid_request", fmt.Sprintf("Line item %s not found on order", p.LineItemID))
+		}
+		qty := packingQty(p, it)
+		if qty <= 0 {
+			return apierror.New(http.StatusBadRequest, "invalid_request", fmt.Sprintf("quantity must be positive for line item %s", p.LineItemID))
+		}
+		if qty > it.Quantity {
+			return apierror.New(http.StatusBadRequest, "invalid_request", fmt.Sprintf("packing quantity cannot exceed line quantity for line item %s", p.LineItemID))
 		}
 		if p.IsNested && p.BoxCount != 0 {
 			return apierror.New(http.StatusBadRequest, "invalid_request", "Nested items must have box_count 0")
@@ -56,11 +76,10 @@ func ValidatePacking(packing []PackingItemDTO, preItems []OrderItem) error {
 			return apierror.New(http.StatusBadRequest, "invalid_request", "box_count cannot be negative")
 		}
 		if !p.IsNested && p.BoxCount > 0 {
-			it := itemMap[p.LineItemID]
-			if p.BoxCount > it.Quantity {
+			if p.BoxCount > qty {
 				return apierror.New(http.StatusBadRequest, "invalid_request", fmt.Sprintf("box_count cannot exceed quantity for line item %s", p.LineItemID))
 			}
-			if it.Quantity%p.BoxCount != 0 {
+			if qty%p.BoxCount != 0 {
 				return apierror.New(http.StatusBadRequest, "invalid_request", fmt.Sprintf("box_count must evenly divide quantity for line item %s", p.LineItemID))
 			}
 		}
@@ -95,9 +114,10 @@ func BuildPackableUnits(orderID string, packing []PackingItemDTO, itemMap map[st
 	for _, p := range packing {
 		it := itemMap[p.LineItemID]
 		d := dims[it.ShopifyVariantID]
+		qty := packingQty(p, it)
 
 		if p.IsNested {
-			totalNestedKg += d.WeightKg * float64(it.Quantity)
+			totalNestedKg += d.WeightKg * float64(qty)
 			nestedLineIDs = append(nestedLineIDs, p.LineItemID)
 			continue
 		}
@@ -106,7 +126,7 @@ func BuildPackableUnits(orderID string, packing []PackingItemDTO, itemMap map[st
 			continue
 		}
 
-		perBox, err := unitsPerBox(it.Quantity, p.BoxCount)
+		perBox, err := unitsPerBox(qty, p.BoxCount)
 		if err != nil {
 			return nil, apierror.New(http.StatusBadRequest, "invalid_request", fmt.Sprintf("invalid packing for line item %s: %v", p.LineItemID, err))
 		}

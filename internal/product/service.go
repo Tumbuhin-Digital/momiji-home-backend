@@ -24,6 +24,7 @@ type ProductService interface {
 	UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) (*ProductDTO, error)
 	UpdateVariantBatchLabelByVariantID(ctx context.Context, variantID string, batchLabel string) (*VariantDTO, error)
 	UpdateVariantPrice(ctx context.Context, variantID string, wsPrice *float64) error
+	UpdateVariantLtl(ctx context.Context, variantID string, isLtl bool) (*VariantDTO, error)
 	GetAllVariants(ctx context.Context) ([]ProductVariant, error)
 	BulkUpdateDimensions(ctx context.Context, rows []DimensionUpdateInput) (BulkUpdateDimensionsResult, error)
 	ValidateVariantActive(ctx context.Context, variantID string) error
@@ -61,6 +62,11 @@ func (s *service) GetVariantByID(ctx context.Context, variantID string) (*Varian
 			dto.ImageSrc = p.Images[0].Src
 		}
 	}
+	if summaries, err := s.store.GetBatchSummariesByVariantIDs(ctx, []string{variant.ShopifyVariantID}); err == nil {
+		if summary, ok := summaries[variant.ShopifyVariantID]; ok {
+			dto.BatchSummary = mapVariantBatchSummaryDTO(&summary)
+		}
+	}
 
 	return dto, nil
 }
@@ -77,7 +83,22 @@ func (s *service) GetProducts(ctx context.Context, query ProductQuery) ([]Produc
 	}
 
 	dtos := make([]ProductDTO, len(products))
+	variantIDs := make([]string, 0)
+	for i := range products {
+		for _, variant := range products[i].Variants {
+			variantIDs = append(variantIDs, variant.ShopifyVariantID)
+		}
+	}
+	batchSummaries, err := s.store.GetBatchSummariesByVariantIDs(ctx, variantIDs)
+	if err != nil {
+		return nil, 0, apierror.ErrInternal
+	}
 	for i, p := range products {
+		for variantIdx := range p.Variants {
+			if summary, ok := batchSummaries[p.Variants[variantIdx].ShopifyVariantID]; ok {
+				p.Variants[variantIdx].BatchSummary = &summary
+			}
+		}
 		dtos[i] = mapProductToDTO(&p, variantFilter)
 	}
 
@@ -174,19 +195,39 @@ func mapVariantToDTO(variant *ProductVariant) *VariantDTO {
 	ft := string(variant.FulfillmentType)
 
 	return &VariantDTO{
-		ID:                variant.ShopifyVariantID,
-		Title:             variant.Title,
-		SKU:               sku,
-		ImageSrc:          variant.ImageSrc,
-		RetailPrice:       retailPrice,
-		WSPrice:           wsPrice,
-		FulfillmentType:   FulfillmentType(ft),
-		InventoryQuantity: variant.InventoryQuantity,
-		WeightKg:          variant.WeightKg,
-		LengthCm:          variant.DepthCm, // Mapping Depth to Length
-		WidthCm:           variant.WidthCm,
+		ID:                 variant.ShopifyVariantID,
+		Title:              variant.Title,
+		SKU:                sku,
+		ImageSrc:           variant.ImageSrc,
+		RetailPrice:        retailPrice,
+		WSPrice:            wsPrice,
+		FulfillmentType:    FulfillmentType(ft),
+		InventoryQuantity:  variant.InventoryQuantity,
+		WeightKg:           variant.WeightKg,
+		LengthCm:           variant.DepthCm, // Mapping Depth to Length
+		WidthCm:            variant.WidthCm,
 		HeightCm:           variant.HeightCm,
 		PreorderBatchLabel: variant.PreorderBatchLabel,
+		IsLtl:              variant.IsLtl,
+		BatchSummary:       mapVariantBatchSummaryDTO(variant.BatchSummary),
+	}
+}
+
+func mapVariantBatchSummaryDTO(summary *VariantBatchSummary) *VariantBatchSummaryDTO {
+	if summary == nil {
+		return nil
+	}
+	return &VariantBatchSummaryDTO{
+		TotalCount:           summary.TotalCount,
+		ActiveCount:          summary.ActiveCount,
+		QueuedCount:          summary.QueuedCount,
+		HasBatches:           summary.HasBatches,
+		ActiveBatchID:        summary.ActiveBatchID,
+		ActiveBatchName:      summary.ActiveBatchName,
+		ActiveBatchRemaining: summary.ActiveBatchRemaining,
+		NextBatchName:        summary.NextBatchName,
+		NextBatchRemaining:   summary.NextBatchRemaining,
+		MaxBatchOrderableQty: summary.MaxBatchOrderableQty,
 	}
 }
 
@@ -413,8 +454,19 @@ func (s *service) GetVariantsByProductID(ctx context.Context, productID string) 
 		return nil, apierror.ErrInternal
 	}
 	dtos := make([]VariantDTO, len(variants))
+	variantIDs := make([]string, 0, len(variants))
+	for _, v := range variants {
+		variantIDs = append(variantIDs, v.ShopifyVariantID)
+	}
+	summaries, err := s.store.GetBatchSummariesByVariantIDs(ctx, variantIDs)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
 	for i, v := range variants {
 		dtos[i] = *mapVariantToDTO(&v)
+		if summary, ok := summaries[v.ShopifyVariantID]; ok {
+			dtos[i].BatchSummary = mapVariantBatchSummaryDTO(&summary)
+		}
 	}
 	return dtos, nil
 }
@@ -495,6 +547,22 @@ func (s *service) UpdateVariantPrice(ctx context.Context, variantID string, wsPr
 		return apierror.ErrInternal
 	}
 	return nil
+}
+
+func (s *service) UpdateVariantLtl(ctx context.Context, variantID string, isLtl bool) (*VariantDTO, error) {
+	variant, err := s.store.GetVariantByShopifyID(ctx, variantID)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	if variant == nil {
+		return nil, apierror.ErrNotFound
+	}
+
+	if err := s.store.UpdateVariantLtl(ctx, variantID, isLtl); err != nil {
+		return nil, apierror.ErrInternal
+	}
+
+	return s.GetVariantByID(ctx, variantID)
 }
 
 func (s *service) GetAllVariants(ctx context.Context) ([]ProductVariant, error) {

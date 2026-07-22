@@ -24,7 +24,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	// endpoints that accept either Bearer or X-Session-ID
 	optAuth := group.Group("/")
 	optAuth.Use(middleware.OptionalAuth(h.jwtSecret))
-	
+
 	optAuth.Get("/", h.GetCart)
 	optAuth.Get("/summary", h.GetSummary)
 	optAuth.Post("/items", h.AddItem)
@@ -138,7 +138,7 @@ func (h *Handler) AddItem(c *fiber.Ctx) error {
 func (h *Handler) UpdateItem(c *fiber.Ctx) error {
 	uid, sid := h.extractAuth(c)
 	itemID := c.Params("id")
-	
+
 	var req UpdateCartItemRequest
 	if err := c.BodyParser(&req); err != nil {
 		return response.Error(c, err)
@@ -165,7 +165,7 @@ func (h *Handler) UpdateItem(c *fiber.Ctx) error {
 func (h *Handler) RemoveItem(c *fiber.Ctx) error {
 	uid, sid := h.extractAuth(c)
 	itemID := c.Params("id")
-	
+
 	if err := h.service.RemoveItem(c.Context(), uid, sid, itemID); err != nil {
 		return response.Error(c, err)
 	}
@@ -231,8 +231,9 @@ func (h *Handler) SetVariantQuantity(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
-	if err := h.service.SetVariantQuantity(c.Context(), uid, sid, req.VariantID, req.TotalQuantity); err != nil {
+	result, err := h.service.SetVariantQuantity(c.Context(), uid, sid, req.VariantID, req.TotalQuantity, req.AcceptBatchDepletion, req.ValidateBatch)
+	if err != nil {
 		return response.Error(c, err)
 	}
-	return response.Success(c, fiber.StatusOK, "Cart updated", nil)
+	return response.Success(c, fiber.StatusOK, "Cart updated", result)
 }

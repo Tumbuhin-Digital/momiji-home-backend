@@ -10,19 +10,34 @@ const (
 )
 
 type VariantDTO struct {
-	ID                string          `json:"id"`
-	Title             string          `json:"title"`
-	SKU               *string         `json:"sku"`
-	ImageSrc          string          `json:"image_src"`
-	RetailPrice       string          `json:"retail_price"`
-	WSPrice           string          `json:"ws_price"`
-	FulfillmentType   FulfillmentType `json:"fulfillment_type"`
-	InventoryQuantity int             `json:"inventory_quantity"`
-	WeightKg          float64         `json:"weight_kg"`
-	LengthCm          float64         `json:"length_cm"`
-	WidthCm            float64         `json:"width_cm"`
-	HeightCm           float64         `json:"height_cm"`
-	PreorderBatchLabel *string         `json:"preorder_batch_label"`
+	ID                 string                  `json:"id"`
+	Title              string                  `json:"title"`
+	SKU                *string                 `json:"sku"`
+	ImageSrc           string                  `json:"image_src"`
+	RetailPrice        string                  `json:"retail_price"`
+	WSPrice            string                  `json:"ws_price"`
+	FulfillmentType    FulfillmentType         `json:"fulfillment_type"`
+	InventoryQuantity  int                     `json:"inventory_quantity"`
+	WeightKg           float64                 `json:"weight_kg"`
+	LengthCm           float64                 `json:"length_cm"`
+	WidthCm            float64                 `json:"width_cm"`
+	HeightCm           float64                 `json:"height_cm"`
+	PreorderBatchLabel *string                 `json:"preorder_batch_label"`
+	IsLtl              bool                    `json:"is_ltl"`
+	BatchSummary       *VariantBatchSummaryDTO `json:"batch_summary,omitempty"`
+}
+
+type VariantBatchSummaryDTO struct {
+	TotalCount           int     `json:"total_count"`
+	ActiveCount          int     `json:"active_count"`
+	QueuedCount          int     `json:"queued_count"`
+	HasBatches           bool    `json:"has_batches"`
+	ActiveBatchID        *string `json:"active_batch_id,omitempty"`
+	ActiveBatchName      *string `json:"active_batch_name,omitempty"`
+	ActiveBatchRemaining *int    `json:"active_batch_remaining,omitempty"`
+	NextBatchName        *string `json:"next_batch_name,omitempty"`
+	NextBatchRemaining   *int    `json:"next_batch_remaining,omitempty"`
+	MaxBatchOrderableQty *int    `json:"max_batch_orderable_qty,omitempty"`
 }
 
 type ProductImageDTO struct {
@@ -50,17 +65,18 @@ type ProductDTO struct {
 }
 
 type ProductQuery struct {
-	Page                       int    `query:"page"`
-	Limit                      int    `query:"limit"`
-	Search                     string `query:"search"`
-	Sort                       string `query:"sort"`
-	FulfillmentType            string `query:"fulfillment_type"`
-	ExcludeInactive            bool   `query:"-"`
-	FilterVariantsInResponse   bool   `query:"-"`
+	Page                     int    `query:"page"`
+	Limit                    int    `query:"limit"`
+	Search                   string `query:"search"`
+	Sort                     string `query:"sort"`
+	FulfillmentType          string `query:"fulfillment_type"`
+	ExcludeInactive          bool   `query:"-"`
+	FilterVariantsInResponse bool   `query:"-"`
 }
 
 type UpdateProductStatusRequest struct {
-	FulfillmentType string `json:"fulfillment_type" validate:"required"`
+	FulfillmentType    string `json:"fulfillment_type" validate:"required"`
+	ConfirmBatchCancel bool   `json:"confirm_batch_cancel"`
 }
 
 type UpdateVariantBatchLabelRequest struct {
@@ -74,11 +90,17 @@ type UpdateProductBatchLabelRequest struct {
 }
 
 type UpdateVariantPriceRequest struct {
-	VariantID   string   `json:"variant_id" validate:"required"`
-	WSPrice     *float64 `json:"ws_price" validate:"omitempty,min=0"`
+	VariantID string   `json:"variant_id" validate:"required"`
+	WSPrice   *float64 `json:"ws_price" validate:"omitempty,min=0"`
 }
 
 type UpdateVariantStatusRequest struct {
-	VariantID       string `json:"variant_id" validate:"required"`
-	FulfillmentType string `json:"fulfillment_type" validate:"required"`
+	VariantID          string `json:"variant_id" validate:"required"`
+	FulfillmentType    string `json:"fulfillment_type" validate:"required"`
+	ConfirmBatchCancel bool   `json:"confirm_batch_cancel"`
+}
+
+type UpdateVariantLtlRequest struct {
+	VariantID string `json:"variant_id" validate:"required"`
+	IsLtl     bool   `json:"is_ltl"`
 }

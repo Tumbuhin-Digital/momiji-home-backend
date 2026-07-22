@@ -1,6 +1,9 @@
 package checkout
 
-import "github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
+import (
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorderbatch"
+)
 
 type CheckoutSummaryRequest struct {
 	ShippingMethod string `json:"shipping_method,omitempty"`
@@ -40,24 +43,26 @@ type CheckoutSummaryResponse struct {
 }
 
 type InitiateCheckoutRequest struct {
-	ShippingMethod string `json:"shipping_method,omitempty"`
-	AddressID      int    `json:"address_id,omitempty"`
-	Email          string `json:"email,omitempty"`
-	FirstName      string `json:"first_name,omitempty"`
-	LastName       string `json:"last_name,omitempty"`
-	Address1       string `json:"address1,omitempty"`
-	City           string `json:"city,omitempty"`
-	State          string `json:"state,omitempty"`
-	Zip            string `json:"zip,omitempty"`
-	Country        string `json:"country,omitempty"`
-	Phone          string `json:"phone,omitempty"`
-	Origin         string `json:"origin,omitempty"` // pre_order warehouse: east | west
+	ShippingMethod       string `json:"shipping_method,omitempty"`
+	AddressID            int    `json:"address_id,omitempty"`
+	Email                string `json:"email,omitempty"`
+	FirstName            string `json:"first_name,omitempty"`
+	LastName             string `json:"last_name,omitempty"`
+	Address1             string `json:"address1,omitempty"`
+	City                 string `json:"city,omitempty"`
+	State                string `json:"state,omitempty"`
+	Zip                  string `json:"zip,omitempty"`
+	Country              string `json:"country,omitempty"`
+	Phone                string `json:"phone,omitempty"`
+	Origin               string `json:"origin,omitempty"` // pre_order warehouse: east | west
+	AcceptBatchDepletion bool   `json:"accept_batch_depletion"`
 }
 
 type InitiateCheckoutResponse struct {
-	CheckoutUrl       string `json:"checkout_url"`
-	CheckoutReference string `json:"checkout_reference"`
-	ExpiresAt         string `json:"expires_at,omitempty"`
+	CheckoutUrl       string                             `json:"checkout_url"`
+	CheckoutReference string                             `json:"checkout_reference"`
+	ExpiresAt         string                             `json:"expires_at,omitempty"`
+	BatchDepletion    *preorderbatch.BatchDepletionEvent `json:"batch_depletion,omitempty"`
 }
 
 type ReleaseCheckoutRequest struct {

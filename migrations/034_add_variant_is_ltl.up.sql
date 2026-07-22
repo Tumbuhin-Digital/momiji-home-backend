@@ -1,0 +1,2 @@
+ALTER TABLE product_variants
+  ADD COLUMN IF NOT EXISTS is_ltl BOOLEAN NOT NULL DEFAULT false;

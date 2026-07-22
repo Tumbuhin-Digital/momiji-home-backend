@@ -33,27 +33,42 @@ type ProductImage struct {
 }
 
 type ProductVariant struct {
-	ID                 string `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
-	ProductID          string
-	Product            *Product `gorm:"foreignKey:ProductID"`
-	ShopifyVariantID   string   `gorm:"uniqueIndex" json:"shopify_variant_id"`
-	Title              string
-	SKU                string
-	Price              float64
-	ImageSrc           string
-	RetailPrice        *float64
-	WSPrice            *float64
-	WeightKg           float64
-	WidthCm            float64
-	HeightCm           float64
-	DepthCm            float64
-	FulfillmentType    string
+	ID                     string `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	ProductID              string
+	Product                *Product `gorm:"foreignKey:ProductID"`
+	ShopifyVariantID       string   `gorm:"uniqueIndex" json:"shopify_variant_id"`
+	Title                  string
+	SKU                    string
+	Price                  float64
+	ImageSrc               string
+	RetailPrice            *float64
+	WSPrice                *float64
+	WeightKg               float64
+	WidthCm                float64
+	HeightCm               float64
+	DepthCm                float64
+	FulfillmentType        string
 	PreorderBatchLabel     *string
 	ExpectedShipDate       *time.Time
 	InventoryQuantity      int
 	ShopifyInventoryItemID string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	IsLtl                  bool
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+	BatchSummary           *VariantBatchSummary `gorm:"-"`
+}
+
+type VariantBatchSummary struct {
+	TotalCount           int
+	ActiveCount          int
+	QueuedCount          int
+	HasBatches           bool
+	ActiveBatchID        *string
+	ActiveBatchName      *string
+	ActiveBatchRemaining *int
+	NextBatchName        *string
+	NextBatchRemaining   *int
+	MaxBatchOrderableQty *int
 }
 
 type Store interface {
@@ -66,10 +81,12 @@ type Store interface {
 	MarkProductDeletedByShopifyID(ctx context.Context, shopifyID string) error
 	UpsertVariant(ctx context.Context, variant *ProductVariant) error
 	UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64) error
+	UpdateVariantLtl(ctx context.Context, variantID string, isLtl bool) error
 	GetProductByID(ctx context.Context, productID string) (*Product, error)
 	IsVariantFromActiveProduct(ctx context.Context, shopifyVariantID string) (bool, error)
 	GetVariantsByProductID(ctx context.Context, productID string) ([]ProductVariant, error)
 	GetAllVariants(ctx context.Context) ([]ProductVariant, error)
+	GetBatchSummariesByVariantIDs(ctx context.Context, variantIDs []string) (map[string]VariantBatchSummary, error)
 	UpdateProductStatus(ctx context.Context, productID string, fulfillmentType string) error
 	UpdateVariantFulfillmentType(ctx context.Context, variantID string, fulfillmentType string) error
 	UpdateVariantBatchLabel(ctx context.Context, productID string, batchLabel string, expectedShipDate *string) error

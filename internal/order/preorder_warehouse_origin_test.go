@@ -66,6 +66,17 @@ func (s *updateShippingWarehouseStore) GetPreorderShipment(context.Context, stri
 	return s.shipment, nil
 }
 
+func (s *updateShippingWarehouseStore) GetPreorderShipments(context.Context, string) ([]PreorderShipment, error) {
+	if s.shipment == nil {
+		return nil, nil
+	}
+	return []PreorderShipment{*s.shipment}, nil
+}
+
+func (s *updateShippingWarehouseStore) GetPreorderShipmentByBatch(_ context.Context, _ string, _ *string) (*PreorderShipment, error) {
+	return s.shipment, nil
+}
+
 func (s *updateShippingWarehouseStore) GetVariantDimensions(context.Context, []string) (map[string]VariantDimensions, error) {
 	return map[string]VariantDimensions{
 		"var-1": {ShopifyVariantID: "var-1", WeightKg: 5, WidthCm: 40, HeightCm: 20, DepthCm: 30},
@@ -73,12 +84,25 @@ func (s *updateShippingWarehouseStore) GetVariantDimensions(context.Context, []s
 }
 
 func (s *updateShippingWarehouseStore) UpsertPreorderShipment(_ context.Context, shipment *PreorderShipment, _ []PreorderPackingItem) error {
+	if shipment.ID == "" {
+		shipment.ID = "ship-1"
+	}
 	s.upsertedShipment = shipment
 	s.shipment = shipment
 	return nil
 }
 
 func (s *updateShippingWarehouseStore) UpdatePreorderShipping(context.Context, string, float64, string, float64) error {
+	return nil
+}
+
+func (s *updateShippingWarehouseStore) UpdatePreorderShippingByShipmentID(_ context.Context, shipmentID string, finalPrice float64, notes string, creditAmount float64) error {
+	if s.shipment != nil {
+		s.shipment.ID = shipmentID
+		s.shipment.FinalShippingPrice = &finalPrice
+		s.shipment.ShippingNotes = &notes
+		s.shipment.CreditAmount = creditAmount
+	}
 	return nil
 }
 
@@ -116,6 +140,21 @@ func (s *updateShippingWarehouseStore) UpdateOrderItemReceived(context.Context, 
 }
 func (s *updateShippingWarehouseStore) MarkPreorderInvoiceSent(context.Context, string, time.Time) error {
 	return nil
+}
+func (s *updateShippingWarehouseStore) MarkPreorderShipmentInvoiceSent(context.Context, string, string, string, time.Time) error {
+	return nil
+}
+func (s *updateShippingWarehouseStore) MarkPreorderShipmentInvoicePaid(context.Context, string, time.Time) error {
+	return nil
+}
+func (s *updateShippingWarehouseStore) GetPreorderShipmentByDraftOrderID(context.Context, string) (*PreorderShipment, error) {
+	return nil, nil
+}
+func (s *updateShippingWarehouseStore) GetPreorderShipmentByID(context.Context, string) (*PreorderShipment, error) {
+	return nil, nil
+}
+func (s *updateShippingWarehouseStore) HasAnyShipmentInvoiceForOrder(context.Context, string) (bool, error) {
+	return false, nil
 }
 func (s *updateShippingWarehouseStore) GetUSZipStateAbbr(context.Context, string) (string, bool) {
 	return "", false
@@ -171,6 +210,7 @@ func TestUpdatePreorderShipping_PreservesWarehouseOriginOnPackingUpsert(t *testi
 			},
 		},
 		shipment: &PreorderShipment{
+			ID:                "ship-1",
 			OrderID:           "order-1",
 			EstimatedShipping: &estimate,
 			WarehouseOrigin:   "west",
