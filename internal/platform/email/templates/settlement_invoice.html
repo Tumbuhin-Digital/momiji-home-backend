@@ -96,12 +96,15 @@
         <div class="container">
             <div class="card">
                 <div class="header">
-                    <h2>Pre-order balance invoice</h2>
+                    <h2>
+                        {{if
+                        .InvoiceHeading}}{{.InvoiceHeading}}{{else}}Pre-order
+                        balance invoice{{end}}
+                    </h2>
                 </div>
                 <div class="content">
                     <p>
-                        Hi
-                        {{if .CustomerName}}{{if eq .CustomerName
+                        Hi {{if .CustomerName}}{{if eq .CustomerName
                         "Customer"}}there{{else}}{{.CustomerName}}{{end}}{{else}}there{{end}},
                     </p>
                     <p>
@@ -110,9 +113,7 @@
                         order.
                     </p>
                     {{if .DueDate}}
-                    <p>
-                        <strong>Due by:</strong> {{.DueDate}}
-                    </p>
+                    <p><strong>Due by:</strong> {{.DueDate}}</p>
                     {{end}}
 
                     <table class="summary-table" role="presentation">
@@ -128,8 +129,7 @@
                                 <td>{{.Title}}</td>
                                 <td>{{.Amount}}</td>
                             </tr>
-                            {{end}}
-                            {{if .ShippingAmount}}
+                            {{end}} {{if .ShippingAmount}}
                             <tr>
                                 <td>
                                     {{if
@@ -156,14 +156,18 @@
                     {{end}}
 
                     <p style="text-align: center; margin: 28px 0 8px">
-                        <a href="{{.PaymentLink}}" class="btn">Pay balance now</a>
+                        <a href="{{.PaymentLink}}" class="btn"
+                            >Pay balance now</a
+                        >
                     </p>
                     <p class="muted" style="text-align: center">
                         If the button does not work, open this link:<br />
                         <a href="{{.PaymentLink}}">{{.PaymentLink}}</a>
                     </p>
 
-                    <p>If you have any questions, simply reply to this email.</p>
+                    <p>
+                        If you have any questions, simply reply to this email.
+                    </p>
                 </div>
             </div>
             <div class="footer">

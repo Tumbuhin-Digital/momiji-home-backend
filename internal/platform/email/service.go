@@ -40,6 +40,7 @@ type SettlementItemData struct {
 type SettlementEmailData struct {
 	CustomerName   string
 	ItemTitle      string
+	InvoiceHeading string // email header title, e.g. batch label for second payment
 	Items          []SettlementItemData
 	BalanceAmount  string
 	ShippingTitle  string
@@ -96,7 +97,13 @@ func (s *service) SendInvoice(ctx context.Context, to string, data SettlementEma
 	if err != nil {
 		return err
 	}
-	return s.client.Send(ctx, []string{to}, "Pre-order Balance Invoice - " + data.ItemTitle, html)
+	subject := "Pre-order Balance Invoice"
+	if data.InvoiceHeading != "" {
+		subject = data.InvoiceHeading
+	} else if data.ItemTitle != "" {
+		subject = "Pre-order Balance Invoice - " + data.ItemTitle
+	}
+	return s.client.Send(ctx, []string{to}, subject, html)
 }
 
 func (s *service) SendSettlementPaid(ctx context.Context, to string, data SettlementEmailData) error {

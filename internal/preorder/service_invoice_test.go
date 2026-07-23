@@ -175,10 +175,11 @@ func (noopEmailService) SendShipmentDispatched(context.Context, string, email.Sh
 
 type trackingEmailService struct {
 	noopEmailService
-	mu            sync.Mutex
-	invoiceSent   bool
-	invoiceLink   string
-	reminderLinks []string
+	mu              sync.Mutex
+	invoiceSent     bool
+	invoiceLink     string
+	invoiceHeading  string
+	reminderLinks   []string
 }
 
 func (s *trackingEmailService) SendInvoice(_ context.Context, _ string, data email.SettlementEmailData) error {
@@ -186,6 +187,7 @@ func (s *trackingEmailService) SendInvoice(_ context.Context, _ string, data ema
 	defer s.mu.Unlock()
 	s.invoiceSent = true
 	s.invoiceLink = data.PaymentLink
+	s.invoiceHeading = data.InvoiceHeading
 	return nil
 }
 
@@ -411,5 +413,96 @@ func TestProcessReminders_SkipsWhenInvoiceURLMissing(t *testing.T) {
 	defer emailSvc.mu.Unlock()
 	if len(emailSvc.reminderLinks) != 0 {
 		t.Fatalf("expected no reminder emails, got %d", len(emailSvc.reminderLinks))
+	}
+}
+
+func TestGroupInvoiceHeading(t *testing.T) {
+	tests := []struct {
+		name      string
+		batchName string
+		itemCount int
+		want      string
+	}{
+		{
+			name:      "batch with items",
+			batchName: "Batch - September 2026",
+			itemCount: 4,
+			want:      "Pre-Order Batch - September 2026 (4 items)",
+		},
+		{
+			name:      "batch without item count",
+			batchName: "Batch - September 2026",
+			itemCount: 0,
+			want:      "Pre-Order Batch - September 2026",
+		},
+		{
+			name:      "unbatched with items",
+			batchName: "",
+			itemCount: 2,
+			want:      "Pre-Order (2 items)",
+		},
+		{
+			name:      "fallback",
+			batchName: "",
+			itemCount: 0,
+			want:      "Pre-order balance invoice",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := groupInvoiceHeading(tt.batchName, tt.itemCount)
+			if got != tt.want {
+				t.Fatalf("groupInvoiceHeading(%q, %d) = %q, want %q", tt.batchName, tt.itemCount, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreateGroupSecondPaymentInvoice_IncludesBatchHeadingInEmail(t *testing.T) {
+	shop := &recordingShopClient{}
+	emailSvc := &trackingEmailService{}
+	svc := &service{
+		shopClient:   shop,
+		emailService: emailSvc,
+	}
+
+	_, err := svc.CreateGroupSecondPaymentInvoice(context.Background(), GroupInvoiceOptions{
+		CustomerEmail: "buyer@example.com",
+		CustomerName:  "Gilang",
+		OrderID:       "order-1",
+		ShipmentID:    "ship-1",
+		BatchName:     "Batch - September 2026",
+		ItemCount:     4,
+		Lines: []GroupInvoiceLine{{
+			Title:           "3-in-1 Grocery Store",
+			Amount:          300,
+			OrderLineItemID: "line-1",
+			Quantity:        2,
+		}},
+		ShippingTitle: "UPS Ground",
+		ShippingPrice: 50,
+	})
+	if err != nil {
+		t.Fatalf("CreateGroupSecondPaymentInvoice returned error: %v", err)
+	}
+
+	// Email is sent in a goroutine.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		emailSvc.mu.Lock()
+		sent := emailSvc.invoiceSent
+		heading := emailSvc.invoiceHeading
+		emailSvc.mu.Unlock()
+		if sent {
+			want := "Pre-Order Batch - September 2026 (4 items)"
+			if heading != want {
+				t.Fatalf("invoice heading = %q, want %q", heading, want)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for invoice email")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

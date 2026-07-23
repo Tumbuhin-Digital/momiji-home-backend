@@ -48,6 +48,8 @@ type GroupInvoiceOptions struct {
 	CustomerName    string
 	OrderID         string
 	ShipmentID      string
+	BatchName       string // pre-order batch display name for the invoice email header
+	ItemCount       int    // total units in this fulfillment group
 	Lines           []GroupInvoiceLine
 	ShippingTitle   string
 	ShippingPrice   float64
@@ -426,12 +428,14 @@ func (s *service) CreateGroupSecondPaymentInvoice(ctx context.Context, opts Grou
 		customerName = "Customer"
 	}
 	combinedTitle := strings.Join(emailTitles, ", ")
+	invoiceHeading := groupInvoiceHeading(opts.BatchName, opts.ItemCount)
 
 	go func() {
 		bgCtx := context.Background()
 		emailData := email.SettlementEmailData{
 			CustomerName:   customerName,
 			ItemTitle:      combinedTitle,
+			InvoiceHeading: invoiceHeading,
 			Items:          emailItems,
 			BalanceAmount:  fmt.Sprintf("$%.2f", totalBalance),
 			ShippingAmount: "",
@@ -764,4 +768,20 @@ func cleanPreorderDisplayTitle(title string) string {
 		}
 	}
 	return title
+}
+
+// groupInvoiceHeading builds the second-payment email header, e.g.
+// "Pre-Order Batch - September 2026 (4 items)".
+func groupInvoiceHeading(batchName string, itemCount int) string {
+	batchName = strings.TrimSpace(batchName)
+	if batchName == "" {
+		if itemCount > 0 {
+			return fmt.Sprintf("Pre-Order (%d items)", itemCount)
+		}
+		return "Pre-order balance invoice"
+	}
+	if itemCount > 0 {
+		return fmt.Sprintf("Pre-Order %s (%d items)", batchName, itemCount)
+	}
+	return fmt.Sprintf("Pre-Order %s", batchName)
 }

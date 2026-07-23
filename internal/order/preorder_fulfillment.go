@@ -487,11 +487,32 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 		notes = strings.TrimSpace(*shipment.ShippingNotes)
 	}
 
+	batchName := ""
+	itemCount := 0
+	for _, it := range groupItems {
+		if it.Quantity > 0 {
+			itemCount += it.Quantity
+		}
+	}
+	if batchID != nil && *batchID != "" && s.batchService != nil {
+		batches, berr := s.batchService.GetBatchesByIDs(ctx, []string{*batchID})
+		if berr == nil {
+			for _, b := range batches {
+				if b.ID == *batchID {
+					batchName = strings.TrimSpace(b.Name)
+					break
+				}
+			}
+		}
+	}
+
 	result, err := s.preorderService.CreateGroupSecondPaymentInvoice(ctx, preorder.GroupInvoiceOptions{
 		CustomerEmail:   customerEmail,
 		CustomerName:    customerName,
 		OrderID:         orderID,
 		ShipmentID:      shipment.ID,
+		BatchName:       batchName,
+		ItemCount:       itemCount,
 		Lines:           invoiceLines,
 		ShippingTitle:   shippingMethod,
 		ShippingPrice:   *shipment.FinalShippingPrice,
