@@ -323,7 +323,7 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 			Quantity:          it.Quantity,
 			ItemStatus:        it.ItemStatus,
 			FulfillmentStep:   it.FulfillmentStep,
-			ItemsReceived:     it.ItemsReceived,
+			ItemsReceived:     effectiveItemsReceived(it),
 			Title:             itemTitle,
 			UnitPrice:         unitPrice,
 			AmountCharged:     amountCharged,
@@ -466,7 +466,7 @@ func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery
 				Quantity:          it.Quantity,
 				ItemStatus:        it.ItemStatus,
 				FulfillmentStep:   it.FulfillmentStep,
-				ItemsReceived:     it.ItemsReceived,
+				ItemsReceived:     effectiveItemsReceived(it),
 				Title:             itemTitle,
 				UnitPrice:         unitPrice,
 				AmountCharged:     amountCharged,
@@ -613,7 +613,7 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 			Quantity:          it.Quantity,
 			ItemStatus:        it.ItemStatus,
 			FulfillmentStep:   it.FulfillmentStep,
-			ItemsReceived:     it.ItemsReceived,
+			ItemsReceived:     effectiveItemsReceived(it),
 			Title:             itemTitle,
 			UnitPrice:         unitPrice,
 			AmountCharged:     amountCharged,
@@ -798,7 +798,7 @@ func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string
 			Quantity:          it.Quantity,
 			ItemStatus:        it.ItemStatus,
 			FulfillmentStep:   it.FulfillmentStep,
-			ItemsReceived:     it.ItemsReceived,
+			ItemsReceived:     effectiveItemsReceived(it),
 			Title:             itemTitle,
 			UnitPrice:         unitPrice,
 			AmountCharged:     amountCharged,
@@ -1234,4 +1234,27 @@ func (s *service) GetOrderTracking(ctx context.Context, userID, orderID string) 
 	}
 
 	return results, nil
+}
+
+// effectiveItemsReceived returns items_received for API responses. Delivered items
+// that predate the items_received write path still show as fully received.
+func effectiveItemsReceived(it OrderItem) int {
+	if it.ItemsReceived > 0 {
+		if it.Quantity > 0 && it.ItemsReceived > it.Quantity {
+			return it.Quantity
+		}
+		return it.ItemsReceived
+	}
+	delivered := it.ItemStatus == "delivered"
+	if !delivered {
+		if it.Type == "pre_order" {
+			delivered = it.FulfillmentStep >= preOrderStepDelivered
+		} else {
+			delivered = it.FulfillmentStep >= 4
+		}
+	}
+	if delivered && it.Quantity > 0 {
+		return it.Quantity
+	}
+	return 0
 }

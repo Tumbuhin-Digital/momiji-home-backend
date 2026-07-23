@@ -390,16 +390,49 @@ func (s *service) MarkFulfillmentDelivered(ctx context.Context, userID, orderID,
 
 	for _, fli := range f.LineItems {
 		_ = s.store.UpdateOrderItemTracking(ctx, fli.OrderLineItemID, derefStr(f.TrackingNumber), derefStr(f.TrackingURL), derefStr(f.TrackingCompany), "Delivered", "delivered", preOrderStepDelivered, &now)
+
+		var item OrderItem
+		for _, it := range o.Items {
+			if it.ID == fli.OrderLineItemID {
+				item = it
+				break
+			}
+		}
+		received := item.ItemsReceived + fli.Quantity
+		if item.Quantity > 0 && received > item.Quantity {
+			received = item.Quantity
+		}
+		if received < fli.Quantity {
+			received = fli.Quantity
+		}
+		if err := s.store.UpdateOrderItemReceived(ctx, fli.OrderLineItemID, received, preOrderStepDelivered); err != nil {
+			slog.WarnContext(ctx, "failed to update items_received on deliver",
+				slog.String("item_id", fli.OrderLineItemID),
+				slog.Any("error", err),
+			)
+		}
+		for i := range o.Items {
+			if o.Items[i].ID == fli.OrderLineItemID {
+				o.Items[i].ItemStatus = "delivered"
+				o.Items[i].ItemsReceived = received
+				o.Items[i].FulfillmentStep = preOrderStepDelivered
+				break
+			}
+		}
 	}
 
 	allDelivered := true
 	for _, it := range o.Items {
-		if it.Type == "pre_order" && it.ItemStatus != "delivered" {
-			remaining := s.computeRemainingQuantity(ctx, orderID, it)
-			if remaining > 0 {
-				allDelivered = false
-				break
-			}
+		if it.Type != "pre_order" {
+			continue
+		}
+		if it.ItemStatus == "delivered" && it.ItemsReceived >= it.Quantity {
+			continue
+		}
+		remaining := s.computeRemainingQuantity(ctx, orderID, it)
+		if remaining > 0 || it.ItemsReceived < it.Quantity {
+			allDelivered = false
+			break
 		}
 	}
 	if allDelivered {

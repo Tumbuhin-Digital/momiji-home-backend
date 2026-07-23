@@ -650,10 +650,27 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 			continue
 		}
 
+		if itemStatus == "delivered" {
+			received := dbItem.ItemsReceived + qty
+			if dbItem.Quantity > 0 && received > dbItem.Quantity {
+				received = dbItem.Quantity
+			}
+			if received < qty {
+				received = qty
+			}
+			if err := s.orderStore.UpdateOrderItemReceived(ctx, itemID, received, step); err != nil {
+				slog.WarnContext(ctx, "Failed to update items_received from fulfillment webhook", slog.String("item_id", itemID), slog.Any("error", err))
+			}
+			dbItem.ItemsReceived = received
+		}
+
 		for i, it := range o.Items {
 			if it.ID == itemID {
 				o.Items[i].ItemStatus = itemStatus
 				o.Items[i].FulfillmentStep = step
+				if itemStatus == "delivered" {
+					o.Items[i].ItemsReceived = dbItem.ItemsReceived
+				}
 				break
 			}
 		}
