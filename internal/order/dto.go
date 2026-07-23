@@ -99,6 +99,7 @@ type PreorderShipmentDTO struct {
 	CreditAmount        *string          `json:"credit_amount,omitempty"`
 	TotalBoxes          int              `json:"total_boxes"`
 	TotalWeightLb       *string          `json:"total_weight_lb,omitempty"`
+	RateCalculatedAt    *string          `json:"rate_calculated_at,omitempty"`
 	InvoiceSentAt       *string          `json:"invoice_sent_at,omitempty"`
 	InvoiceURL          *string          `json:"invoice_url,omitempty"`
 	InvoicePaidAt       *string          `json:"invoice_paid_at,omitempty"`
@@ -129,6 +130,7 @@ type CalculatePreorderShippingResponse struct {
 	ServiceCode       string           `json:"service_code"`
 	Currency          string           `json:"currency"`
 	BatchID           *string          `json:"batch_id,omitempty"`
+	RateCalculatedAt  string           `json:"rate_calculated_at"`
 }
 
 type UpdatePreorderShippingRequest struct {
@@ -242,6 +244,7 @@ type CreateFulfillmentItemRequest struct {
 
 type CreateFulfillmentRequest struct {
 	Items           []CreateFulfillmentItemRequest `json:"items" validate:"required,min=1,dive"`
+	BatchID         *string                        `json:"batch_id"`
 	TrackingNumber  string                         `json:"tracking_number" validate:"required"`
 	TrackingCompany string                         `json:"tracking_company" validate:"required"`
 	TrackingURL     string                         `json:"tracking_url,omitempty"`
@@ -260,6 +263,7 @@ type FulfillmentDTO struct {
 	ID              string                   `json:"id"`
 	DisplayID       string                   `json:"display_id"`
 	SequenceNumber  int                      `json:"sequence_number"`
+	BatchID         *string                  `json:"batch_id,omitempty"`
 	TrackingNumber  string                   `json:"tracking_number,omitempty"`
 	TrackingURL     string                   `json:"tracking_url,omitempty"`
 	TrackingCompany string                   `json:"tracking_company,omitempty"`

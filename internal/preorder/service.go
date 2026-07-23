@@ -12,6 +12,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/email"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -240,10 +241,7 @@ func (s *service) InvoiceSettlementsWithShipping(ctx context.Context, ids []stri
 	}
 
 	if opts.ShippingPrice > 0 {
-		shippingTitle := opts.ShippingTitle
-		if shippingTitle == "" {
-			shippingTitle = "Pre-Order Shipping"
-		}
+		shippingTitle := shipping.CustomerShippingLineTitle(opts.ShippingTitle)
 		lineItems = append(lineItems, shopify.DraftOrderLineItem{
 			Title:             shippingTitle,
 			OriginalUnitPrice: fmt.Sprintf("%.2f", opts.ShippingPrice),
@@ -317,10 +315,7 @@ func (s *service) InvoiceSettlementsWithShipping(ctx context.Context, ids []stri
 		}
 		if opts.ShippingPrice > 0 {
 			emailData.ShippingAmount = fmt.Sprintf("$%.2f", opts.ShippingPrice)
-			emailData.ShippingTitle = opts.ShippingTitle
-			if emailData.ShippingTitle == "" {
-				emailData.ShippingTitle = "Shipping"
-			}
+			emailData.ShippingTitle = shipping.CustomerShippingLineTitle(opts.ShippingTitle)
 		}
 
 		if err := s.emailService.SendInvoice(bgCtx, customerEmail, emailData); err != nil {
@@ -354,11 +349,12 @@ func (s *service) CreateGroupSecondPaymentInvoice(ctx context.Context, opts Grou
 			continue
 		}
 		totalBalance += line.Amount
-		title := line.Title
+		displayTitle := cleanPreorderDisplayTitle(line.Title)
+		title := displayTitle
 		if line.Quantity > 0 {
-			title = fmt.Sprintf("Remaining Balance: %s (%d pcs)", line.Title, line.Quantity)
+			title = fmt.Sprintf("Remaining balance — %s (%d pcs)", displayTitle, line.Quantity)
 		} else {
-			title = fmt.Sprintf("Remaining Balance: %s", line.Title)
+			title = fmt.Sprintf("Remaining balance — %s", displayTitle)
 		}
 		emailTitles = append(emailTitles, title)
 		emailItems = append(emailItems, email.SettlementItemData{
@@ -395,10 +391,7 @@ func (s *service) CreateGroupSecondPaymentInvoice(ctx context.Context, opts Grou
 	}
 
 	if opts.ShippingPrice > 0 {
-		shippingTitle := opts.ShippingTitle
-		if shippingTitle == "" {
-			shippingTitle = "Pre-Order Shipping"
-		}
+		shippingTitle := shipping.CustomerShippingLineTitle(opts.ShippingTitle)
 		lineItems = append(lineItems, shopify.DraftOrderLineItem{
 			Title:             shippingTitle,
 			OriginalUnitPrice: fmt.Sprintf("%.2f", opts.ShippingPrice),
@@ -448,10 +441,7 @@ func (s *service) CreateGroupSecondPaymentInvoice(ctx context.Context, opts Grou
 		}
 		if opts.ShippingPrice > 0 {
 			emailData.ShippingAmount = fmt.Sprintf("$%.2f", opts.ShippingPrice)
-			emailData.ShippingTitle = opts.ShippingTitle
-			if emailData.ShippingTitle == "" {
-				emailData.ShippingTitle = "Shipping"
-			}
+			emailData.ShippingTitle = shipping.CustomerShippingLineTitle(opts.ShippingTitle)
 		}
 		if err := s.emailService.SendInvoice(bgCtx, opts.CustomerEmail, emailData); err != nil {
 			slog.Error("failed to send group settlement email", "error", err, "email", opts.CustomerEmail)
@@ -763,4 +753,15 @@ func (s *service) ExportPreordersToExcel(ctx context.Context, filter SettlementF
 		return nil, fmt.Errorf("failed to write excel file: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+func cleanPreorderDisplayTitle(title string) string {
+	title = strings.TrimSpace(title)
+	for _, prefix := range []string{"[PREORDER] ", "[PREORDER]", "[Preorder] ", "[preorder] "} {
+		if strings.HasPrefix(title, prefix) {
+			title = strings.TrimSpace(strings.TrimPrefix(title, prefix))
+			break
+		}
+	}
+	return title
 }

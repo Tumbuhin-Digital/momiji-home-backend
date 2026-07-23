@@ -113,6 +113,9 @@ func (s *PostgresStore) UpsertFulfillmentByShopifyID(ctx context.Context, f *Ful
 					"status":           f.Status,
 					"updated_at":       time.Now(),
 				}
+				if f.BatchID != nil {
+					updates["batch_id"] = f.BatchID
+				}
 				if f.FulfilledAt != nil {
 					updates["fulfilled_at"] = f.FulfilledAt
 				}

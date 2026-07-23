@@ -93,6 +93,38 @@ func (s *service) SyncFulfillmentOrdersFromShopify(ctx context.Context, orderID,
 	return nil
 }
 
+// paidShipmentQtyByLine returns how many units of each line item are covered by
+// paid pre-order group invoices. Multi-batch orders may have some groups paid
+// while others are still awaiting shipping calculation or second payment.
+func (s *service) paidShipmentQtyByLine(ctx context.Context, orderID string) (map[string]int, error) {
+	shipments, err := s.store.GetPreorderShipments(ctx, orderID)
+	if err != nil {
+		return nil, err
+	}
+	return paidQtyByLineFromShipments(shipments), nil
+}
+
+func paidQtyByLineFromShipments(shipments []PreorderShipment) map[string]int {
+	paidQtyByLine := make(map[string]int)
+	for _, sh := range shipments {
+		if sh.InvoicePaidAt == nil {
+			continue
+		}
+		for _, p := range sh.PackingItems {
+			qty := p.Quantity
+			if qty < 1 {
+				qty = 1
+			}
+			paidQtyByLine[p.OrderLineItemID] += qty
+		}
+	}
+	return paidQtyByLine
+}
+
+func isPreorderLineReadyForFulfillment(step, paidQty, requestQty int) bool {
+	return step >= preOrderStepShipped || paidQty >= requestQty
+}
+
 func (s *service) CreatePreorderFulfillment(ctx context.Context, userID, orderID string, req CreateFulfillmentRequest) (*FulfillmentDTO, error) {
 	o, err := s.store.GetOrder(ctx, orderID, userID)
 	if err != nil {
@@ -108,9 +140,6 @@ func (s *service) CreatePreorderFulfillment(ctx context.Context, userID, orderID
 	itemMap := make(map[string]OrderItem)
 	for _, it := range o.Items {
 		if it.Type == "pre_order" {
-			if it.FulfillmentStep < preOrderStepShipped {
-				return nil, apierror.New(http.StatusBadRequest, "invalid_transition", "Pre-order items must reach step 4 before fulfillment")
-			}
 			itemMap[it.ID] = it
 		}
 	}
@@ -118,10 +147,21 @@ func (s *service) CreatePreorderFulfillment(ctx context.Context, userID, orderID
 		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Order has no pre-order items")
 	}
 
+	paidQtyByLine, err := s.paidShipmentQtyByLine(ctx, orderID)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+
 	lineItemIDs := make([]string, 0, len(req.Items))
 	for _, ri := range req.Items {
-		if _, ok := itemMap[ri.LineItemID]; !ok {
+		it, ok := itemMap[ri.LineItemID]
+		if !ok {
 			return nil, apierror.New(http.StatusBadRequest, "invalid_request", fmt.Sprintf("Invalid line item: %s", ri.LineItemID))
+		}
+		// Only the items being fulfilled must be ready — other batches in the
+		// same order may still be on calculate-shipping / second-payment.
+		if !isPreorderLineReadyForFulfillment(it.FulfillmentStep, paidQtyByLine[ri.LineItemID], ri.Quantity) {
+			return nil, apierror.New(http.StatusBadRequest, "invalid_transition", "Pre-order items must reach step 4 before fulfillment")
 		}
 		lineItemIDs = append(lineItemIDs, ri.LineItemID)
 	}
@@ -134,10 +174,7 @@ func (s *service) CreatePreorderFulfillment(ctx context.Context, userID, orderID
 	if err != nil {
 		return nil, apierror.ErrInternal
 	}
-	foliByLineItem := make(map[string]FulfillmentOrderLineItem)
-	for _, foli := range folis {
-		foliByLineItem[foli.OrderLineItemID] = foli
-	}
+	foliByLineItem := pickBestFOLIByLineItem(folis)
 
 	trackingURL := req.TrackingURL
 	if trackingURL == "" {
@@ -145,9 +182,7 @@ func (s *service) CreatePreorderFulfillment(ctx context.Context, userID, orderID
 	}
 	carrier := shipping.NormalizeCarrier(req.TrackingCompany)
 
-	type foKey struct {
-		foID string
-	}
+	localOnly := false
 	foGroups := make(map[string][]struct {
 		foliID string
 		qty    int
@@ -156,51 +191,81 @@ func (s *service) CreatePreorderFulfillment(ctx context.Context, userID, orderID
 	for _, ri := range req.Items {
 		foli, ok := foliByLineItem[ri.LineItemID]
 		if !ok {
-			return nil, apierror.New(http.StatusBadRequest, "invalid_request", fmt.Sprintf("No fulfillment order line item for %s — sync may be pending", ri.LineItemID))
+			// No Shopify FO line after sync — still allow admin to record tracking locally.
+			slog.WarnContext(ctx, "no FOLI for pre-order item; using local fulfillment",
+				slog.String("order_id", orderID),
+				slog.String("line_item_id", ri.LineItemID),
+			)
+			localOnly = true
+			continue
 		}
-		if ri.Quantity > foli.RemainingQuantity {
+		if ri.Quantity <= foli.RemainingQuantity {
+			foGroups[foli.FulfillmentOrderID] = append(foGroups[foli.FulfillmentOrderID], struct {
+				foliID string
+				qty    int
+			}{foliID: foli.ShopifyFulfillmentOrderLineItemID, qty: ri.Quantity})
+			continue
+		}
+		if foli.RemainingQuantity > 0 {
 			return nil, apierror.New(http.StatusBadRequest, "invalid_request", fmt.Sprintf("Quantity %d exceeds remaining %d for item %s", ri.Quantity, foli.RemainingQuantity, ri.LineItemID))
 		}
-		foGroups[foli.FulfillmentOrderID] = append(foGroups[foli.FulfillmentOrderID], struct {
-			foliID string
-			qty    int
-		}{foliID: foli.ShopifyFulfillmentOrderLineItemID, qty: ri.Quantity})
-	}
 
-	fos, err := s.store.GetFulfillmentOrdersByOrderID(ctx, orderID)
-	if err != nil {
-		return nil, apierror.ErrInternal
-	}
-	foShopifyID := make(map[string]string)
-	for _, fo := range fos {
-		foShopifyID[fo.ID] = fo.ShopifyFulfillmentOrderID
-	}
-
-	var shopifyInput shopify.CreateFulfillmentV2Input
-	shopifyInput.NotifyCustomer = req.NotifyCustomer
-	shopifyInput.TrackingNumber = req.TrackingNumber
-	shopifyInput.TrackingCompany = carrier
-	shopifyInput.TrackingURL = trackingURL
-
-	for foLocalID, items := range foGroups {
-		shopifyFOID, ok := foShopifyID[foLocalID]
-		if !ok {
-			return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Fulfillment order not found")
+		// Remaining is 0 on Shopify (FO closed/already fulfilled there) but admin still
+		// needs to record tracking when we have no local fulfillment for this qty.
+		localFulfilled := s.localFulfilledQuantity(ctx, orderID, ri.LineItemID)
+		it := itemMap[ri.LineItemID]
+		if localFulfilled >= it.Quantity {
+			return nil, apierror.New(http.StatusBadRequest, "invalid_request", fmt.Sprintf("Item %s is already fully fulfilled", ri.LineItemID))
 		}
-		var foliInput shopify.FulfillmentV2LineItemInput
-		foliInput.FulfillmentOrderID = shopifyFOID
-		for _, it := range items {
-			foliInput.FulfillmentOrderLineItems = append(foliInput.FulfillmentOrderLineItems, struct {
-				ID       string
-				Quantity int
-			}{ID: it.foliID, Quantity: it.qty})
+		if localFulfilled+ri.Quantity > it.Quantity {
+			return nil, apierror.New(http.StatusBadRequest, "invalid_request", fmt.Sprintf("Quantity %d exceeds unfulfilled %d for item %s", ri.Quantity, it.Quantity-localFulfilled, ri.LineItemID))
 		}
-		shopifyInput.LineItemsByFulfillmentOrder = append(shopifyInput.LineItemsByFulfillmentOrder, foliInput)
+		slog.WarnContext(ctx, "Shopify FOLI remaining is 0; recording pre-order fulfillment locally",
+			slog.String("order_id", orderID),
+			slog.String("line_item_id", ri.LineItemID),
+			slog.Int("requested_qty", ri.Quantity),
+		)
+		localOnly = true
 	}
 
-	result, err := s.shopClient.CreateFulfillmentV2(ctx, shopifyInput)
-	if err != nil {
-		return nil, apierror.New(http.StatusBadGateway, "shopify_error", err.Error())
+	var shopifyFID *string
+	if !localOnly {
+		fos, err := s.store.GetFulfillmentOrdersByOrderID(ctx, orderID)
+		if err != nil {
+			return nil, apierror.ErrInternal
+		}
+		foShopifyID := make(map[string]string)
+		for _, fo := range fos {
+			foShopifyID[fo.ID] = fo.ShopifyFulfillmentOrderID
+		}
+
+		var shopifyInput shopify.CreateFulfillmentV2Input
+		shopifyInput.NotifyCustomer = req.NotifyCustomer
+		shopifyInput.TrackingNumber = req.TrackingNumber
+		shopifyInput.TrackingCompany = carrier
+		shopifyInput.TrackingURL = trackingURL
+
+		for foLocalID, items := range foGroups {
+			shopifyFOID, ok := foShopifyID[foLocalID]
+			if !ok {
+				return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Fulfillment order not found")
+			}
+			var foliInput shopify.FulfillmentV2LineItemInput
+			foliInput.FulfillmentOrderID = shopifyFOID
+			for _, it := range items {
+				foliInput.FulfillmentOrderLineItems = append(foliInput.FulfillmentOrderLineItems, struct {
+					ID       string
+					Quantity int
+				}{ID: it.foliID, Quantity: it.qty})
+			}
+			shopifyInput.LineItemsByFulfillmentOrder = append(shopifyInput.LineItemsByFulfillmentOrder, foliInput)
+		}
+
+		result, err := s.shopClient.CreateFulfillmentV2(ctx, shopifyInput)
+		if err != nil {
+			return nil, apierror.New(http.StatusBadGateway, "shopify_error", err.Error())
+		}
+		shopifyFID = &result.FulfillmentID
 	}
 
 	seq, err := s.store.GetNextFulfillmentSequence(ctx, orderID)
@@ -209,14 +274,14 @@ func (s *service) CreatePreorderFulfillment(ctx context.Context, userID, orderID
 	}
 
 	now := time.Now()
-	shopifyFID := result.FulfillmentID
 	trackingNum := req.TrackingNumber
 	trackingURLPtr := trackingURL
 	carrierPtr := carrier
 	status := "fulfilled"
 	f := &Fulfillment{
 		OrderID:              orderID,
-		ShopifyFulfillmentID: &shopifyFID,
+		BatchID:              normalizeBatchIDPtr(req.BatchID),
+		ShopifyFulfillmentID: shopifyFID,
 		SequenceNumber:       seq,
 		TrackingNumber:       &trackingNum,
 		TrackingURL:          &trackingURLPtr,
@@ -239,8 +304,10 @@ func (s *service) CreatePreorderFulfillment(ctx context.Context, userID, orderID
 	}
 
 	for _, ri := range req.Items {
-		if foli, ok := foliByLineItem[ri.LineItemID]; ok {
-			_ = s.store.DecrementFOLIRemaining(ctx, foli.ID, ri.Quantity)
+		if !localOnly {
+			if foli, ok := foliByLineItem[ri.LineItemID]; ok {
+				_ = s.store.DecrementFOLIRemaining(ctx, foli.ID, ri.Quantity)
+			}
 		}
 		fulfillmentStep := preOrderStepShipped
 		_ = s.store.UpdateOrderItemTracking(ctx, ri.LineItemID, trackingNum, trackingURLPtr, carrierPtr, "Package shipped", "shipped", fulfillmentStep, &now)
@@ -263,6 +330,34 @@ func (s *service) CreatePreorderFulfillment(ctx context.Context, userID, orderID
 	}
 
 	return s.fulfillmentToDTO(ctx, o, f, flis, itemMap)
+}
+
+// pickBestFOLIByLineItem keeps the FOLI with the highest remaining quantity per line.
+func pickBestFOLIByLineItem(folis []FulfillmentOrderLineItem) map[string]FulfillmentOrderLineItem {
+	out := make(map[string]FulfillmentOrderLineItem, len(folis))
+	for _, foli := range folis {
+		existing, ok := out[foli.OrderLineItemID]
+		if !ok || foli.RemainingQuantity > existing.RemainingQuantity {
+			out[foli.OrderLineItemID] = foli
+		}
+	}
+	return out
+}
+
+func (s *service) localFulfilledQuantity(ctx context.Context, orderID, lineItemID string) int {
+	fulfillments, err := s.store.GetFulfillmentsByOrderID(ctx, orderID)
+	if err != nil {
+		return 0
+	}
+	fulfilled := 0
+	for _, f := range fulfillments {
+		for _, fli := range f.LineItems {
+			if fli.OrderLineItemID == lineItemID {
+				fulfilled += fli.Quantity
+			}
+		}
+	}
+	return fulfilled
 }
 
 func (s *service) MarkFulfillmentDelivered(ctx context.Context, userID, orderID, fulfillmentID string) error {
@@ -315,37 +410,31 @@ func (s *service) MarkFulfillmentDelivered(ctx context.Context, userID, orderID,
 }
 
 func (s *service) computeRemainingQuantity(ctx context.Context, orderID string, item OrderItem) int {
+	localFulfilled := s.localFulfilledQuantity(ctx, orderID, item.ID)
+	localLeft := item.Quantity - localFulfilled
+	if localLeft < 0 {
+		localLeft = 0
+	}
+
 	folis, err := s.store.GetFOLIByOrderLineItemIDs(ctx, orderID, []string{item.ID})
 	if err == nil && len(folis) > 0 {
-		return folis[0].RemainingQuantity
-	}
-	fulfillments, err := s.store.GetFulfillmentsByOrderID(ctx, orderID)
-	if err != nil {
-		return item.Quantity
-	}
-	fulfilled := 0
-	for _, f := range fulfillments {
-		for _, fli := range f.LineItems {
-			if fli.OrderLineItemID == item.ID {
-				fulfilled += fli.Quantity
-			}
+		best := pickBestFOLIByLineItem(folis)[item.ID]
+		// Shopify FO may already be closed (remaining 0) while we still need to
+		// record tracking locally — don't hide fulfillable qty from admin UI.
+		if best.RemainingQuantity <= 0 && localFulfilled == 0 {
+			return localLeft
 		}
+		if best.RemainingQuantity < localLeft {
+			return best.RemainingQuantity
+		}
+		return localLeft
 	}
-	remaining := item.Quantity - fulfilled
-	if remaining < 0 {
-		return 0
-	}
-	return remaining
+	return localLeft
 }
 
 func (s *service) enrichRemainingQuantities(ctx context.Context, orderID string, items []OrderItemDetail) {
 	for i := range items {
 		if items[i].Type != "pre_order" {
-			continue
-		}
-		folis, err := s.store.GetFOLIByOrderLineItemIDs(ctx, orderID, []string{items[i].ID})
-		if err == nil && len(folis) > 0 {
-			items[i].RemainingQuantity = folis[0].RemainingQuantity
 			continue
 		}
 		oItem := OrderItem{ID: items[i].ID, Quantity: items[i].Quantity}
@@ -379,6 +468,7 @@ func (s *service) fulfillmentToDTO(ctx context.Context, o *Order, f *Fulfillment
 		ID:             f.ID,
 		DisplayID:      fmt.Sprintf("#%s-F%d", o.OrderNumber, f.SequenceNumber),
 		SequenceNumber: f.SequenceNumber,
+		BatchID:        f.BatchID,
 		Status:         f.Status,
 	}
 	if f.TrackingNumber != nil {

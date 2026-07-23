@@ -35,6 +35,7 @@ func (FulfillmentOrderLineItem) TableName() string { return "fulfillment_order_l
 type Fulfillment struct {
 	ID                   string `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
 	OrderID              string
+	BatchID              *string `gorm:"type:uuid;index"` // nil = unbatched / legacy
 	ShopifyFulfillmentID *string `gorm:"uniqueIndex"`
 	SequenceNumber       int
 	TrackingNumber       *string

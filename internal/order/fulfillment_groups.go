@@ -118,6 +118,8 @@ func (s *service) buildFulfillmentGroups(
 		return ni < nj
 	})
 
+	preorderStart := len(groups)
+
 	for _, batchID := range batchKeys {
 		slices := batchSlices[batchID]
 		name := batchNames[batchID]
@@ -137,18 +139,16 @@ func (s *service) buildFulfillmentGroups(
 			dto := s.toPreorderShipmentDTO(sh)
 			group.Shipment = &dto
 		}
-		group.Fulfillments = filterFulfillmentsForSlices(allFulfillments, slices)
 		enrichGroupSecondPayment(&group, o)
 		groups = append(groups, group)
 	}
 
 	if len(unbatchedSlices) > 0 {
 		group := FulfillmentGroupDTO{
-			Key:          "preorder_unbatched",
-			Kind:         FulfillmentGroupPreorderUnbatched,
-			Title:        "Pre-Order",
-			LineSlices:   unbatchedSlices,
-			Fulfillments: filterFulfillmentsForSlices(allFulfillments, unbatchedSlices),
+			Key:        "preorder_unbatched",
+			Kind:       FulfillmentGroupPreorderUnbatched,
+			Title:      "Pre-Order",
+			LineSlices: unbatchedSlices,
 		}
 		if sh := shipmentByBatch[""]; sh != nil {
 			dto := s.toPreorderShipmentDTO(sh)
@@ -156,6 +156,11 @@ func (s *service) buildFulfillmentGroups(
 		}
 		enrichGroupSecondPayment(&group, o)
 		groups = append(groups, group)
+	}
+
+	assignFulfillmentsToPreorderGroups(groups[preorderStart:], allFulfillments)
+	for i := preorderStart; i < len(groups); i++ {
+		scrubGroupSliceFulfillmentState(&groups[i])
 	}
 
 	second := s.buildSecondPaymentSummary(o, groups)
@@ -264,6 +269,189 @@ func filterFulfillmentsForSlices(all []FulfillmentDTO, slices []OrderLineSliceDT
 		}
 	}
 	return out
+}
+
+// assignFulfillmentsToPreorderGroups attributes each fulfillment to at most the
+// batch/unbatched groups whose slice quantities can absorb the fulfilled units.
+// Shared line items across batches must not show the same tracking card twice.
+func assignFulfillmentsToPreorderGroups(groups []FulfillmentGroupDTO, all []FulfillmentDTO) {
+	if len(groups) == 0 || len(all) == 0 {
+		return
+	}
+
+	caps := make([]map[string]int, len(groups))
+	for i, g := range groups {
+		caps[i] = make(map[string]int)
+		for _, sl := range g.LineSlices {
+			caps[i][sl.LineItemID] += sl.Quantity
+		}
+		groups[i].Fulfillments = nil
+	}
+
+	sorted := append([]FulfillmentDTO(nil), all...)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].SequenceNumber < sorted[j].SequenceNumber
+	})
+
+	for _, f := range sorted {
+		if f.BatchID != nil && *f.BatchID != "" {
+			matched := false
+			for gi := range groups {
+				if groups[gi].BatchID != nil && *groups[gi].BatchID == *f.BatchID {
+					if consumeCapacityForFulfillment(caps[gi], f) {
+						groups[gi].Fulfillments = append(groups[gi].Fulfillments, f)
+					}
+					matched = true
+					break
+				}
+			}
+			if matched {
+				continue
+			}
+		}
+
+		assigned := make(map[int]struct{})
+		for _, li := range f.LineItems {
+			need := li.Quantity
+			if need <= 0 {
+				continue
+			}
+
+			exact := -1
+			for gi := range groups {
+				if caps[gi][li.LineItemID] == need {
+					exact = gi
+					break
+				}
+			}
+			if exact >= 0 {
+				caps[exact][li.LineItemID] -= need
+				assigned[exact] = struct{}{}
+				continue
+			}
+
+			absorb := -1
+			for gi := range groups {
+				if caps[gi][li.LineItemID] >= need {
+					absorb = gi
+					break
+				}
+			}
+			if absorb >= 0 {
+				caps[absorb][li.LineItemID] -= need
+				assigned[absorb] = struct{}{}
+				continue
+			}
+
+			for gi := range groups {
+				if need <= 0 {
+					break
+				}
+				avail := caps[gi][li.LineItemID]
+				if avail <= 0 {
+					continue
+				}
+				take := avail
+				if take > need {
+					take = need
+				}
+				caps[gi][li.LineItemID] -= take
+				need -= take
+				assigned[gi] = struct{}{}
+			}
+		}
+
+		for gi := range assigned {
+			groups[gi].Fulfillments = append(groups[gi].Fulfillments, f)
+		}
+	}
+}
+
+func consumeCapacityForFulfillment(cap map[string]int, f FulfillmentDTO) bool {
+	used := false
+	for _, li := range f.LineItems {
+		need := li.Quantity
+		if need <= 0 {
+			continue
+		}
+		avail := cap[li.LineItemID]
+		if avail <= 0 {
+			continue
+		}
+		take := avail
+		if take > need {
+			take = need
+		}
+		cap[li.LineItemID] -= take
+		used = true
+	}
+	return used
+}
+
+// scrubGroupSliceFulfillmentState keeps tracking / remaining qty / payment badges
+// scoped to this group's assigned fulfillments and second-payment state so sibling
+// batches sharing a line item do not inherit each other's UI status.
+func scrubGroupSliceFulfillmentState(group *FulfillmentGroupDTO) {
+	if group == nil {
+		return
+	}
+	fulfilledQty := make(map[string]int)
+	deliveredQty := make(map[string]int)
+	for _, f := range group.Fulfillments {
+		for _, li := range f.LineItems {
+			fulfilledQty[li.LineItemID] += li.Quantity
+			if f.Status == "delivered" || f.DeliveredAt != "" {
+				deliveredQty[li.LineItemID] += li.Quantity
+			}
+		}
+	}
+	for i := range group.LineSlices {
+		sl := &group.LineSlices[i]
+		taken := fulfilledQty[sl.LineItemID]
+		if taken > sl.Quantity {
+			taken = sl.Quantity
+		}
+		remaining := sl.Quantity - taken
+		if remaining < 0 {
+			remaining = 0
+		}
+		sl.RemainingQuantity = remaining
+
+		if taken > 0 {
+			if deliveredQty[sl.LineItemID] > 0 {
+				sl.ItemStatus = "delivered"
+				sl.FulfillmentStep = preOrderStepDelivered
+			} else {
+				sl.ItemStatus = "shipped"
+				sl.FulfillmentStep = preOrderStepShipped
+			}
+			continue
+		}
+
+		sl.TrackingNumber = nil
+		sl.TrackingURL = nil
+		sl.TrackingCompany = nil
+		sl.TrackingLastEvent = nil
+
+		switch group.SecondPaymentStatus {
+		case "paid":
+			sl.ItemStatus = "payment_received"
+			sl.FulfillmentStep = preOrderStepSecondPayment
+		case "invoiced":
+			sl.ItemStatus = "waiting_payment"
+			sl.FulfillmentStep = preOrderStepSecondPayment
+		case "ready":
+			sl.ItemStatus = "paid"
+			sl.FulfillmentStep = preOrderStepShippingConfigured
+		default:
+			sl.ItemStatus = "paid"
+			if group.Shipment != nil && group.Shipment.FinalShippingPrice != nil {
+				sl.FulfillmentStep = preOrderStepShippingConfigured
+			} else {
+				sl.FulfillmentStep = preOrderStepPlaced
+			}
+		}
+	}
 }
 
 func (s *service) buildSecondPaymentSummary(o *Order, groups []FulfillmentGroupDTO) *SecondPaymentDTO {

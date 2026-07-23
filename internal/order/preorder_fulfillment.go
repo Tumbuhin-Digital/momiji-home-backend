@@ -175,13 +175,15 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 	totalBoxes, totalWeight := PackingTotals(units)
 	baseCost, bufferAmount, liveEstimate := shipping.ApplyShippingBuffer(amount)
 	dbPacking := PackingToDBItems(packing)
+	now := time.Now().UTC()
 
 	shipment := &PreorderShipment{
-		OrderID:         orderID,
-		BatchID:         batchID,
-		TotalBoxes:      totalBoxes,
-		TotalWeightLb:   &totalWeight,
-		WarehouseOrigin: originCode,
+		OrderID:          orderID,
+		BatchID:          batchID,
+		TotalBoxes:       totalBoxes,
+		TotalWeightLb:    &totalWeight,
+		WarehouseOrigin:  originCode,
+		RateCalculatedAt: &now,
 	}
 	if existingShipment != nil {
 		if existingShipment.EstimatedShipping != nil {
@@ -215,6 +217,7 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 		ServiceCode:       groundCode,
 		Currency:          currency,
 		BatchID:           batchID,
+		RateCalculatedAt:  now.Format(time.RFC3339),
 	}, nil
 }
 
@@ -285,7 +288,7 @@ func (s *service) UpdatePreorderShipping(ctx context.Context, userID, orderID st
 		shipment.ID = packingShipment.ID
 	}
 
-	credit := math.Max(0, *shipment.EstimatedShipping-req.FinalShippingPrice)
+	credit := 0.0
 	if err := s.store.UpdatePreorderShippingByShipmentID(ctx, shipment.ID, req.FinalShippingPrice, req.ShippingNotes, credit); err != nil {
 		return nil, apierror.ErrInternal
 	}
@@ -456,9 +459,9 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 		return apierror.New(http.StatusBadRequest, "invalid_request", "Nothing to invoice for this group")
 	}
 
-	shippingTitle := "UPS Ground"
-	if o.ShippingMethod != nil && *o.ShippingMethod != "" {
-		shippingTitle = *o.ShippingMethod
+	shippingMethod := ""
+	if o.ShippingMethod != nil {
+		shippingMethod = *o.ShippingMethod
 	}
 	notes := ""
 	if shipment.ShippingNotes != nil {
@@ -471,7 +474,7 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 		OrderID:         orderID,
 		ShipmentID:      shipment.ID,
 		Lines:           invoiceLines,
-		ShippingTitle:   shippingTitle,
+		ShippingTitle:   shippingMethod,
 		ShippingPrice:   *shipment.FinalShippingPrice,
 		ShippingNotes:   notes,
 		ShippingAddress: orderShippingAddressToShopify(o.ShippingAddress),
@@ -558,6 +561,10 @@ func (s *service) toPreorderShipmentDTO(shipment *PreorderShipment) PreorderShip
 	if shipment.TotalWeightLb != nil {
 		v := fmt.Sprintf("%.2f", *shipment.TotalWeightLb)
 		dto.TotalWeightLb = &v
+	}
+	if shipment.RateCalculatedAt != nil {
+		v := shipment.RateCalculatedAt.UTC().Format(time.RFC3339)
+		dto.RateCalculatedAt = &v
 	}
 	if shipment.InvoiceSentAt != nil {
 		v := shipment.InvoiceSentAt.Format(time.RFC3339)

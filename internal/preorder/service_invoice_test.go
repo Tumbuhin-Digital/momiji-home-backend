@@ -253,7 +253,7 @@ func TestInvoiceSettlementsWithShippingAddsShippingLineItem(t *testing.T) {
 	}
 
 	shippingItem := shop.lastDraftInput.LineItems[1]
-	if shippingItem.Title != "UPS Ground" {
+	if shippingItem.Title != "Shipping & delivery (UPS Ground)" {
 		t.Fatalf("unexpected shipping title: %s", shippingItem.Title)
 	}
 	if shippingItem.OriginalUnitPrice != "17.50" {

@@ -160,6 +160,9 @@ func buildPreorderShipmentUpsertUpdates(shipment *PreorderShipment) map[string]i
 	if shipment.EstimatedShipping != nil {
 		updates["estimated_shipping"] = shipment.EstimatedShipping
 	}
+	if shipment.RateCalculatedAt != nil {
+		updates["rate_calculated_at"] = shipment.RateCalculatedAt
+	}
 	return updates
 }
 

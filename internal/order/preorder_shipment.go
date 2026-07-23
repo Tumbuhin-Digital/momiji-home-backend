@@ -15,6 +15,7 @@ type PreorderShipment struct {
 	TotalBoxes         int        `gorm:"not null;default:0"`
 	TotalWeightLb      *float64
 	WarehouseOrigin      string     `gorm:"not null;default:east"`
+	RateCalculatedAt     *time.Time `gorm:"column:rate_calculated_at"`
 	InvoiceSentAt        *time.Time
 	ShopifyDraftOrderID  *string    `gorm:"column:shopify_draft_order_id"`
 	InvoiceURL           *string    `gorm:"column:invoice_url"`

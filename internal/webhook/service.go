@@ -837,8 +837,9 @@ func (s *service) handleSettlementOnlyPayment(ctx context.Context, orderID strin
 	return nil
 }
 
-// cascadeGroupShipmentPayments marks settlements paid when paid group invoices
-// cover every pre-order line quantity (via packing slices).
+// cascadeGroupShipmentPayments advances each pre-order line whose quantity is
+// fully covered by paid group invoices. Other batches in the same order may
+// still be unpaid — they must not block a paid batch from reaching step 4.
 func (s *service) cascadeGroupShipmentPayments(ctx context.Context, orderID string) error {
 	o, err := s.orderStore.GetOrder(ctx, orderID, "")
 	if err != nil || o == nil {
@@ -855,10 +856,6 @@ func (s *service) cascadeGroupShipmentPayments(ctx context.Context, orderID stri
 
 	paidQtyByLine := make(map[string]int)
 	for _, sh := range shipments {
-		if sh.InvoiceSentAt != nil && sh.InvoicePaidAt == nil {
-			// An invoiced group is still unpaid — wait.
-			return nil
-		}
 		if sh.InvoicePaidAt == nil {
 			continue
 		}
@@ -871,28 +868,19 @@ func (s *service) cascadeGroupShipmentPayments(ctx context.Context, orderID stri
 		}
 	}
 
-	for _, it := range o.Items {
-		if it.Type != "pre_order" {
-			continue
-		}
-		if paidQtyByLine[it.ID] < it.Quantity {
-			return nil
-		}
-	}
-
 	now := time.Now()
 	for _, it := range o.Items {
 		if it.Type != "pre_order" {
 			continue
 		}
+		if paidQtyByLine[it.ID] < it.Quantity {
+			continue
+		}
+
 		st, err := s.preorderStore.GetSettlementByOrderLineItemID(ctx, it.ID)
-		if err != nil || st == nil {
-			continue
+		if err == nil && st != nil && st.Status != "paid" {
+			_ = s.preorderStore.UpdateSettlementStatus(ctx, st.ID, "paid", &now)
 		}
-		if st.Status == "paid" {
-			continue
-		}
-		_ = s.preorderStore.UpdateSettlementStatus(ctx, st.ID, "paid", &now)
 		_ = s.orderStore.UpdateItemStatusByID(ctx, it.ID, "payment_received")
 		if it.FulfillmentStep < 4 {
 			_ = s.orderStore.UpdateOrderItemStep(ctx, it.ID, 4)
