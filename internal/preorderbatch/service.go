@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -273,7 +274,21 @@ func (s *service) GetBatchesByIDs(ctx context.Context, batchIDs []string) ([]Pre
 	return s.store.GetBatchesByIDs(ctx, batchIDs)
 }
 
+// normalizeShopifyVariantID accepts full GraphQL GIDs or bare numeric IDs.
+// Numeric IDs are preferred in URL paths because proxies like Vercel reject %2F.
+func normalizeShopifyVariantID(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" || strings.Contains(id, "://") {
+		return id
+	}
+	if _, err := strconv.ParseUint(id, 10, 64); err == nil {
+		return "gid://shopify/ProductVariant/" + id
+	}
+	return id
+}
+
 func (s *service) requirePreorderVariant(ctx context.Context, shopifyVariantID string) (*product.ProductVariant, error) {
+	shopifyVariantID = normalizeShopifyVariantID(shopifyVariantID)
 	variant, err := s.productStore.GetVariantByShopifyID(ctx, shopifyVariantID)
 	if err != nil {
 		return nil, apierror.ErrInternal
