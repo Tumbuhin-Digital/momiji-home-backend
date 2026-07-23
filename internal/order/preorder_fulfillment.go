@@ -243,8 +243,12 @@ func (s *service) UpdatePreorderShipping(ctx context.Context, userID, orderID st
 	if err != nil {
 		return nil, apierror.ErrInternal
 	}
-	if shipment == nil || shipment.EstimatedShipping == nil {
-		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Shipping estimate required before setting final price")
+
+	// Final price can be set without a carrier/checkout estimate (LTL freight,
+	// or when ShipStation cannot rate the shipment). Packing is required when
+	// creating the shipment row for the first time.
+	if shipment == nil && len(req.Packing) == 0 {
+		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Packing plan is required before setting final shipping price")
 	}
 
 	if len(req.Packing) > 0 {
@@ -274,18 +278,33 @@ func (s *service) UpdatePreorderShipping(ctx context.Context, userID, orderID st
 		}
 
 		totalBoxes, totalWeight := PackingTotals(units)
+		originCode := resolveWarehouseOrigin(shipment)
+		if shipment == nil {
+			if legacy, lerr := s.store.GetPreorderShipment(ctx, orderID); lerr == nil && legacy != nil && legacy.WarehouseOrigin != "" {
+				originCode = warehouse.NormalizeCode(legacy.WarehouseOrigin)
+			}
+		}
 		packingShipment := &PreorderShipment{
-			OrderID:           orderID,
-			BatchID:           batchID,
-			EstimatedShipping: shipment.EstimatedShipping,
-			TotalBoxes:        totalBoxes,
-			TotalWeightLb:     &totalWeight,
-			WarehouseOrigin:   shipment.WarehouseOrigin,
+			OrderID:         orderID,
+			BatchID:         batchID,
+			TotalBoxes:      totalBoxes,
+			TotalWeightLb:   &totalWeight,
+			WarehouseOrigin: originCode,
+		}
+		if shipment != nil {
+			packingShipment.EstimatedShipping = shipment.EstimatedShipping
+			if shipment.WarehouseOrigin != "" {
+				packingShipment.WarehouseOrigin = shipment.WarehouseOrigin
+			}
 		}
 		if err := s.store.UpsertPreorderShipment(ctx, packingShipment, PackingToDBItems(packing)); err != nil {
 			return nil, apierror.ErrInternal
 		}
-		shipment.ID = packingShipment.ID
+		if shipment == nil {
+			shipment = packingShipment
+		} else {
+			shipment.ID = packingShipment.ID
+		}
 	}
 
 	credit := 0.0

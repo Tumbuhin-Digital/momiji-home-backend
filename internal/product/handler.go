@@ -2,10 +2,7 @@ package product
 
 import (
 	"context"
-	"encoding/csv"
-	"fmt"
 	"log/slog"
-	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -456,9 +453,9 @@ func (h *Handler) cancelOpenVariantBatchesIfNeeded(ctx context.Context, variantI
 }
 
 // DownloadDimensionTemplate godoc
-// @Summary Download variant packaging CSV template (weight + dimensions)
+// @Summary Download variant packaging Excel template (weight + dimensions)
 // @Tags Admin/Product
-// @Produce text/csv
+// @Produce application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
 // @Security BearerAuth
 // @Router /products/variants/dimensions/template [get]
 func (h *Handler) DownloadDimensionTemplate(c *fiber.Ctx) error {
@@ -489,42 +486,23 @@ func (h *Handler) DownloadDimensionTemplate(c *fiber.Ctx) error {
 		return variants[i].ShopifyVariantID < variants[j].ShopifyVariantID
 	})
 
-	c.Set("Content-Type", "text/csv")
-	c.Set("Content-Disposition", `attachment; filename="variant-packaging-template.csv"`)
-
-	writer := csv.NewWriter(c.Response().BodyWriter())
-	header := []string{"variant_id", "product_title", "variant_title", "sku", "weight_lb", "length_in", "width_in", "height_in"}
-	_ = writer.Write(header)
-
-	for _, v := range variants {
-		productTitle := ""
-		if v.Product != nil {
-			productTitle = v.Product.Title
-		}
-		weightLb := math.Round(units.KgToLb(v.WeightKg)*100) / 100
-		row := []string{
-			v.ShopifyVariantID,
-			productTitle,
-			v.Title,
-			v.SKU,
-			fmt.Sprintf("%.2f", weightLb),
-			fmt.Sprintf("%.2f", units.CmToIn(v.DepthCm)),
-			fmt.Sprintf("%.2f", units.CmToIn(v.WidthCm)),
-			fmt.Sprintf("%.2f", units.CmToIn(v.HeightCm)),
-		}
-		_ = writer.Write(row)
+	excelBytes, err := buildPackagingTemplateExcel(variants)
+	if err != nil {
+		return response.Error(c, apierror.New(500, "internal_error", "Failed to build packaging template"))
 	}
-	writer.Flush()
-	return nil
+
+	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Set("Content-Disposition", `attachment; filename="variant-packaging-template.xlsx"`)
+	return c.Send(excelBytes)
 }
 
 // ImportDimensions godoc
-// @Summary Import variant packaging (weight lb + dimensions) via CSV
+// @Summary Import variant packaging (weight lb + dimensions) via Excel or CSV
 // @Tags Admin/Product
 // @Accept mpfd
 // @Produce json
 // @Security BearerAuth
-// @Param file formData file true "CSV File"
+// @Param file formData file true "Excel (.xlsx) or CSV File"
 // @Success 200 {object} response.Envelope
 // @Router /products/variants/dimensions/import [post]
 func (h *Handler) ImportDimensions(c *fiber.Ctx) error {
@@ -539,14 +517,13 @@ func (h *Handler) ImportDimensions(c *fiber.Ctx) error {
 	}
 	defer file.Close()
 
-	reader := csv.NewReader(file)
-	records, err := reader.ReadAll()
+	records, err := readPackagingImportRecords(fileHeader.Filename, file)
 	if err != nil {
-		return response.Error(c, apierror.New(400, "bad_request", "Invalid CSV format"))
+		return response.Error(c, apierror.New(400, "bad_request", err.Error()))
 	}
 
 	if len(records) < 2 {
-		return response.Error(c, apierror.New(400, "bad_request", "CSV is empty"))
+		return response.Error(c, apierror.New(400, "bad_request", "File is empty"))
 	}
 
 	headers := records[0]

@@ -129,7 +129,13 @@ func (s *updateShippingWarehouseStore) UpdateItemStatusByType(context.Context, s
 func (s *updateShippingWarehouseStore) UpdateItemStatusByID(context.Context, string, string) error {
 	return nil
 }
-func (s *updateShippingWarehouseStore) UpdateOrderItemStep(context.Context, string, int) error {
+func (s *updateShippingWarehouseStore) UpdateOrderItemStep(_ context.Context, itemID string, step int) error {
+	for i := range s.order.Items {
+		if s.order.Items[i].ID == itemID {
+			s.order.Items[i].FulfillmentStep = step
+			break
+		}
+	}
 	return nil
 }
 func (s *updateShippingWarehouseStore) UpdateOrderItemTracking(context.Context, string, string, string, string, string, string, int, *time.Time) error {
@@ -198,6 +204,43 @@ func (s *updateShippingWarehouseStore) SaveWebhookEvent(context.Context, string,
 }
 
 var _ Store = (*updateShippingWarehouseStore)(nil)
+
+func TestUpdatePreorderShipping_AllowsManualPriceWithoutEstimate(t *testing.T) {
+	lineID := "line-1"
+	store := &updateShippingWarehouseStore{
+		order: &Order{
+			ID: "order-1",
+			Items: []OrderItem{
+				{ID: lineID, Type: "pre_order", ShopifyVariantID: "var-1", Quantity: 2, FulfillmentStep: 1},
+			},
+		},
+		shipment: nil,
+	}
+
+	svc := &service{store: store}
+	dto, err := svc.UpdatePreorderShipping(context.Background(), "", "order-1", UpdatePreorderShippingRequest{
+		FinalShippingPrice: 450,
+		ShippingNotes:      "LTL quote",
+		Packing: []PackingItemDTO{
+			{LineItemID: lineID, BoxCount: 2, IsNested: false},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if store.upsertedShipment == nil {
+		t.Fatal("expected shipment upsert for LTL manual price")
+	}
+	if store.upsertedShipment.EstimatedShipping != nil {
+		t.Fatalf("expected nil estimate for LTL, got %v", *store.upsertedShipment.EstimatedShipping)
+	}
+	if dto == nil || dto.FinalShippingPrice == nil || *dto.FinalShippingPrice != "450.00" {
+		t.Fatalf("expected final shipping 450.00, got %+v", dto)
+	}
+	if store.order.Items[0].FulfillmentStep != preOrderStepShippingConfigured {
+		t.Fatalf("expected step %d, got %d", preOrderStepShippingConfigured, store.order.Items[0].FulfillmentStep)
+	}
+}
 
 func TestUpdatePreorderShipping_PreservesWarehouseOriginOnPackingUpsert(t *testing.T) {
 	estimate := 69.75

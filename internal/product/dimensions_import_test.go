@@ -18,6 +18,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preordercustomtext"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/units"
+	"github.com/xuri/excelize/v2"
 )
 
 const existingWeightKg = 6.35 // ~14 lb
@@ -264,7 +265,7 @@ func TestDownloadPackagingTemplateZeroWeightFirstAndRoundedLb(t *testing.T) {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 	cd := resp.Header.Get("Content-Disposition")
-	if !strings.Contains(cd, "variant-packaging-template.csv") {
+	if !strings.Contains(cd, "variant-packaging-template.xlsx") {
 		t.Fatalf("expected packaging template filename, got %q", cd)
 	}
 
@@ -272,23 +273,43 @@ func TestDownloadPackagingTemplateZeroWeightFirstAndRoundedLb(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
-	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
-	if len(lines) < 3 {
-		t.Fatalf("expected header + 2 rows, got %d lines", len(lines))
+	f, err := excelize.OpenReader(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
 	}
-	if !strings.HasPrefix(lines[0], "variant_id,product_title,variant_title,sku,weight_lb,") {
-		t.Fatalf("unexpected header: %s", lines[0])
+	defer func() { _ = f.Close() }()
+
+	sheets := f.GetSheetList()
+	if len(sheets) == 0 {
+		t.Fatal("expected at least one sheet")
 	}
-	if !strings.Contains(lines[1], "gid://shopify/ProductVariant/zero") {
-		t.Fatalf("expected zero-weight row first, got %s", lines[1])
+	rows, err := f.GetRows(sheets[0])
+	if err != nil {
+		t.Fatalf("get rows: %v", err)
 	}
-	if !strings.Contains(lines[2], "gid://shopify/ProductVariant/heavy") {
-		t.Fatalf("expected heavy row second, got %s", lines[2])
+	if len(rows) < 3 {
+		t.Fatalf("expected header + 2 rows, got %d", len(rows))
+	}
+	if len(rows[0]) < 5 || rows[0][0] != "variant_id" || rows[0][4] != "weight_lb" {
+		t.Fatalf("unexpected header: %v", rows[0])
+	}
+	if rows[1][0] != "gid://shopify/ProductVariant/zero" {
+		t.Fatalf("expected zero-weight row first, got %v", rows[1])
+	}
+	if rows[2][0] != "gid://shopify/ProductVariant/heavy" {
+		t.Fatalf("expected heavy row second, got %v", rows[2])
 	}
 	weightLb := math.Round(units.KgToLb(existingWeightKg)*100) / 100
 	expected := fmt.Sprintf("%.2f", weightLb)
-	if !strings.Contains(lines[2], ","+expected+",") {
-		t.Fatalf("expected weight_lb %s in heavy row, got %s", expected, lines[2])
+	if rows[2][4] != expected {
+		t.Fatalf("expected weight_lb %s in heavy row, got %s", expected, rows[2][4])
+	}
+	width, err := f.GetColWidth(sheets[0], "A")
+	if err != nil {
+		t.Fatalf("get col width: %v", err)
+	}
+	if width < 20 {
+		t.Fatalf("expected column A to be widened for variant_id, got %.1f", width)
 	}
 }
 
