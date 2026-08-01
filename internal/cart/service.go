@@ -3,6 +3,7 @@ package cart
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -132,6 +133,9 @@ func (s *service) GetCartResponse(ctx context.Context, userID, sessionID *string
 			Width:             variant.WidthCm,
 			Height:            variant.HeightCm,
 			IsLtl:             variant.IsLtl,
+		}
+		if variant.PreorderBatchLabel != nil {
+			cItem.PreorderBatchLabel = strings.TrimSpace(*variant.PreorderBatchLabel)
 		}
 
 		if item.FulfillmentType == string(product.FulfillmentTypePreOrder) {

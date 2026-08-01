@@ -25,6 +25,7 @@ func (s *service) GetCheckoutNotes(ctx context.Context) (*CheckoutNotesResponse,
 	values, err := s.store.GetMany(ctx, []string{
 		KeyCheckoutDueNowNote,
 		KeyCheckoutDueLaterNote,
+		KeyCheckoutPreorderShippingNote,
 		KeyStoreClosed,
 		KeyStoreClosedMessage,
 	})
@@ -38,23 +39,25 @@ func (s *service) GetCheckoutNotes(ctx context.Context) (*CheckoutNotesResponse,
 	}
 
 	return &CheckoutNotesResponse{
-		DueNowNote:         values[KeyCheckoutDueNowNote],
-		DueLaterNote:       values[KeyCheckoutDueLaterNote],
-		StoreClosed:        storeClosed,
-		StoreClosedMessage: values[KeyStoreClosedMessage],
+		DueNowNote:           values[KeyCheckoutDueNowNote],
+		DueLaterNote:         values[KeyCheckoutDueLaterNote],
+		PreorderShippingNote: values[KeyCheckoutPreorderShippingNote],
+		StoreClosed:          storeClosed,
+		StoreClosedMessage:   values[KeyStoreClosedMessage],
 	}, nil
 }
 
 func (s *service) UpdateCheckoutNotes(ctx context.Context, req UpdateSettingsRequest) (*CheckoutNotesResponse, error) {
 	dueNowNote := strings.TrimSpace(req.DueNowNote)
 	dueLaterNote := strings.TrimSpace(req.DueLaterNote)
+	preorderShippingNote := strings.TrimSpace(req.PreorderShippingNote)
 	storeClosedMessage := strings.TrimSpace(req.StoreClosedMessage)
 
-	if dueNowNote == "" || dueLaterNote == "" {
+	if dueNowNote == "" || dueLaterNote == "" || preorderShippingNote == "" {
 		return nil, apierror.NewWithDetails(
 			apierror.ErrBadRequest.Status,
 			apierror.ErrBadRequest.Code,
-			"Both checkout notes are required",
+			"All checkout notes are required",
 			nil,
 		)
 	}
@@ -74,6 +77,9 @@ func (s *service) UpdateCheckoutNotes(ctx context.Context, req UpdateSettingsReq
 	if err := s.store.Upsert(ctx, KeyCheckoutDueLaterNote, dueLaterNote); err != nil {
 		return nil, apierror.ErrInternal
 	}
+	if err := s.store.Upsert(ctx, KeyCheckoutPreorderShippingNote, preorderShippingNote); err != nil {
+		return nil, apierror.ErrInternal
+	}
 	if err := s.store.Upsert(ctx, KeyStoreClosed, strconv.FormatBool(req.StoreClosed)); err != nil {
 		return nil, apierror.ErrInternal
 	}
@@ -82,9 +88,10 @@ func (s *service) UpdateCheckoutNotes(ctx context.Context, req UpdateSettingsReq
 	}
 
 	return &CheckoutNotesResponse{
-		DueNowNote:         dueNowNote,
-		DueLaterNote:       dueLaterNote,
-		StoreClosed:        req.StoreClosed,
-		StoreClosedMessage: storeClosedMessage,
+		DueNowNote:           dueNowNote,
+		DueLaterNote:         dueLaterNote,
+		PreorderShippingNote: preorderShippingNote,
+		StoreClosed:          req.StoreClosed,
+		StoreClosedMessage:   storeClosedMessage,
 	}, nil
 }

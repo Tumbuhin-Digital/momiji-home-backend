@@ -30,8 +30,9 @@ type CartItem struct {
 	WeightUnit        string  `json:"weight_unit,omitempty"`
 	Length            float64 `json:"length,omitempty"`
 	Width             float64 `json:"width,omitempty"`
-	Height            float64 `json:"height,omitempty"`
-	IsLtl             bool    `json:"is_ltl"`
+	Height             float64 `json:"height,omitempty"`
+	IsLtl              bool    `json:"is_ltl"`
+	PreorderBatchLabel string  `json:"preorder_batch_label,omitempty"`
 }
 
 type CartSummaryDTO struct {
