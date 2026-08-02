@@ -153,6 +153,13 @@ func (s *service) CancelBatch(ctx context.Context, batchID string) (*BatchDTO, e
 	if err != nil {
 		return nil, mapStoreErr(err)
 	}
+	batches, err := s.store.ListByVariantID(ctx, batch.VariantID)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	if err := s.syncLabelForBatches(ctx, batches); err != nil {
+		return nil, err
+	}
 	dto := mapBatchDTO(*batch)
 	return &dto, nil
 }
