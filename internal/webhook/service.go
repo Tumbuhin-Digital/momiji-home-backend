@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type WebhookService interface {
@@ -137,6 +139,162 @@ func (s *service) getLocalVariant(ctx context.Context, item ShopifyOrderLineItem
 	return nil, apierror.ErrNotFound
 }
 
+type paidCheckoutMeta struct {
+	CheckoutRef               string
+	ShippingMethod            string
+	PreorderShippingEstimate  string
+	PreorderWarehouseOrigin   string
+}
+
+func parsePaidCheckoutMeta(payload ShopifyOrderWebhook) paidCheckoutMeta {
+	var meta paidCheckoutMeta
+	for _, note := range payload.NoteAttributes {
+		val, ok := note.Value.(string)
+		if !ok {
+			continue
+		}
+		switch note.Name {
+		case "checkout_reference":
+			meta.CheckoutRef = val
+		case "preorder_shipping_method":
+			meta.ShippingMethod = val
+		case "preorder_shipping_estimate":
+			meta.PreorderShippingEstimate = val
+		case "preorder_warehouse_origin":
+			meta.PreorderWarehouseOrigin = val
+		}
+	}
+	return meta
+}
+
+// finalizePaidCheckoutOrder completes post-create side effects for a paid checkout order.
+// Safe to call on Shopify webhook retries: allocate/settlement/shipment steps are idempotent.
+func (s *service) finalizePaidCheckoutOrder(ctx context.Context, o *order.Order, meta paidCheckoutMeta) error {
+	if o == nil {
+		return nil
+	}
+
+	if meta.CheckoutRef != "" && s.batchLockService != nil {
+		_ = s.batchLockService.ReleaseBatchLocksByCheckoutReference(ctx, meta.CheckoutRef)
+	}
+
+	if s.batchService != nil {
+		for _, item := range o.Items {
+			if item.Type != "pre_order" {
+				continue
+			}
+			if _, err := s.batchService.AllocateToBatch(ctx, item.ShopifyVariantID, item.Quantity, preorderbatch.AllocationRef{
+				OrderLineItemID: &item.ID,
+			}); err != nil {
+				slog.ErrorContext(ctx, "failed to allocate pre-order item to batch",
+					slog.String("order_id", o.ID),
+					slog.String("order_line_item_id", item.ID),
+					slog.String("variant_id", item.ShopifyVariantID),
+					slog.Any("error", err))
+				return err
+			}
+		}
+	}
+
+	var preItems []order.OrderItem
+	var variantIDs []string
+	for _, item := range o.Items {
+		if item.Type != "pre_order" {
+			continue
+		}
+		preItems = append(preItems, item)
+		variantIDs = append(variantIDs, item.ShopifyVariantID)
+
+		if item.BalanceDue == nil {
+			continue
+		}
+		existing, err := s.preorderStore.GetSettlementByOrderLineItemID(ctx, item.ID)
+		if existing != nil {
+			continue
+		}
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			slog.ErrorContext(ctx, "failed to lookup settlement for pre-order item",
+				slog.String("order_id", o.ID),
+				slog.String("order_line_item_id", item.ID),
+				slog.Any("error", err))
+			return fmt.Errorf("failed to lookup settlement for order line item %s: %w", item.ID, err)
+		}
+		settlement := &preorder.Settlement{
+			OrderLineItemID: item.ID,
+			BalanceAmount:   *item.BalanceDue,
+			Status:          "pending",
+		}
+		if err := s.preorderStore.CreateSettlement(ctx, settlement); err != nil {
+			slog.ErrorContext(ctx, "failed to create settlement for pre-order item",
+				slog.String("order_id", o.ID),
+				slog.String("order_line_item_id", item.ID),
+				slog.Any("error", err))
+			return fmt.Errorf("failed to create settlement for order line item %s: %w", item.ID, err)
+		}
+	}
+
+	if len(preItems) > 0 {
+		existingShipment, shipErr := s.orderStore.GetPreorderShipment(ctx, o.ID)
+		if shipErr != nil {
+			slog.ErrorContext(ctx, "failed to lookup pre-order shipment",
+				slog.String("order_id", o.ID),
+				slog.Any("error", shipErr))
+			return fmt.Errorf("failed to lookup pre-order shipment: %w", shipErr)
+		}
+		if existingShipment == nil {
+			var estimate *float64
+			if meta.PreorderShippingEstimate != "" {
+				if v, err := strconv.ParseFloat(meta.PreorderShippingEstimate, 64); err == nil {
+					estimate = &v
+				} else {
+					slog.WarnContext(ctx, "invalid pre-order shipping estimate from checkout",
+						slog.String("order_id", o.ID),
+						slog.String("value", meta.PreorderShippingEstimate))
+				}
+			} else {
+				slog.WarnContext(ctx, "pre-order checkout shipping estimate missing",
+					slog.String("order_id", o.ID))
+			}
+
+			dims, dimErr := s.orderStore.GetVariantDimensions(ctx, variantIDs)
+			if dimErr != nil {
+				slog.ErrorContext(ctx, "failed to load variant dimensions for pre-order shipment",
+					slog.String("order_id", o.ID),
+					slog.Any("error", dimErr))
+			} else {
+				shipment, packing, buildErr := order.BuildCheckoutPreorderShipment(o.ID, preItems, dims, estimate, meta.PreorderWarehouseOrigin)
+				if buildErr != nil {
+					slog.ErrorContext(ctx, "failed to build pre-order shipment from checkout packing",
+						slog.String("order_id", o.ID),
+						slog.Any("error", buildErr))
+				} else if err := s.orderStore.UpsertPreorderShipment(ctx, shipment, packing); err != nil {
+					slog.ErrorContext(ctx, "failed to create pre-order shipment from checkout",
+						slog.String("order_id", o.ID),
+						slog.Any("error", err))
+					return fmt.Errorf("failed to create pre-order shipment: %w", err)
+				}
+			}
+		}
+	}
+
+	// Shopify automatically sends order confirmations, so we skip sending our own here.
+
+	if s.stockLockService != nil {
+		if meta.CheckoutRef != "" {
+			_ = s.stockLockService.ReleaseLocksByCheckoutReference(ctx, meta.CheckoutRef)
+		} else if o.CustomerID != "" {
+			customerID := o.CustomerID
+			_ = s.stockLockService.ReleaseLocks(ctx, &customerID, nil)
+		}
+	}
+
+	if s.fulfillmentSync != nil && o.ShopifyOrderID != nil {
+		_ = s.fulfillmentSync.SyncFulfillmentOrdersFromShopify(ctx, o.ID, *o.ShopifyOrderID)
+	}
+
+	return nil
+}
+
 func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebhook) error {
 	if !isWholesaleMomijiOrder(payload) {
 		slog.InfoContext(ctx, "Skipping non-wholesale Shopify order",
@@ -145,17 +303,17 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		return nil
 	}
 
-	// 1. Idempotency Check: check if order with this Shopify ID already exists
+	// 1. Idempotency: if order exists, reconcile unfinished side effects instead of skipping.
 	shopifyOrderIDStr := strconv.FormatInt(payload.ID, 10)
 	existingOrder, err := s.orderStore.GetOrderByShopifyID(ctx, shopifyOrderIDStr)
 	if err != nil {
 		return apierror.ErrInternal
 	}
 	if existingOrder != nil {
-		slog.InfoContext(ctx, "Skipping duplicate Shopify order webhook",
+		slog.InfoContext(ctx, "Reconciling existing Shopify order webhook",
 			slog.String("shopify_order_id", shopifyOrderIDStr),
 			slog.String("order_id", existingOrder.ID))
-		return nil
+		return s.finalizePaidCheckoutOrder(ctx, existingOrder, parsePaidCheckoutMeta(payload))
 	}
 
 	// 2. Resolve User
@@ -219,7 +377,6 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 	var totalDepositPaid float64
 	var totalBalanceDue float64
 	var totalChargedNow float64
-	var hasPreOrder bool
 
 	var draftItems []shopify.DraftOrderLineItem
 	var settlementIDsPaid []string
@@ -289,7 +446,6 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		isPreorder := isPreorderShopifyLineItem(item)
 
 		if isPreorder {
-			hasPreOrder = true
 			totalDepositPaid += lineTotalFromShopify
 
 			fullUnitPrice := unitPriceFromShopify * 2 // Default to 2x DP
@@ -376,29 +532,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		}
 	}
 
-	var checkoutRef string
-	var shippingMethod string
-	var preorderShippingEstimate string
-	var preorderWarehouseOrigin string
-	for _, note := range payload.NoteAttributes {
-		if note.Name == "checkout_reference" {
-			if val, ok := note.Value.(string); ok {
-				checkoutRef = val
-			}
-		} else if note.Name == "preorder_shipping_method" {
-			if val, ok := note.Value.(string); ok {
-				shippingMethod = val
-			}
-		} else if note.Name == "preorder_shipping_estimate" {
-			if val, ok := note.Value.(string); ok {
-				preorderShippingEstimate = val
-			}
-		} else if note.Name == "preorder_warehouse_origin" {
-			if val, ok := note.Value.(string); ok {
-				preorderWarehouseOrigin = val
-			}
-		}
-	}
+	meta := parsePaidCheckoutMeta(payload)
 
 	orderNumber := fmt.Sprintf("ORD-%d", payload.OrderNumber)
 	if payload.OrderNumber == 0 {
@@ -422,112 +556,21 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		ShopifyOrderID:    &shopifyOrderIDStr,
 	}
 
-	if checkoutRef != "" {
-		newOrder.ShopifyDraftOrderID = &checkoutRef
+	if meta.CheckoutRef != "" {
+		newOrder.ShopifyDraftOrderID = &meta.CheckoutRef
 	}
-	if shippingMethod != "" {
-		newOrder.ShippingMethod = &shippingMethod
+	if meta.ShippingMethod != "" {
+		newOrder.ShippingMethod = &meta.ShippingMethod
 	}
 
 	if err := s.orderStore.CreateOrder(ctx, newOrder); err != nil {
-		slog.ErrorContext(ctx, "Failed to save order from webhook", slog.Any("error", err), slog.String("checkout_reference", checkoutRef))
+		slog.ErrorContext(ctx, "Failed to save order from webhook", slog.Any("error", err), slog.String("checkout_reference", meta.CheckoutRef))
 		return fmt.Errorf("failed to save order from webhook: %w", err)
 	}
 
 	slog.InfoContext(ctx, "Order successfully inserted into database", slog.String("order_id", newOrder.ID), slog.String("order_number", newOrder.OrderNumber), slog.String("shopify_order_id", shopifyOrderIDStr))
 
-	if checkoutRef != "" && s.batchLockService != nil {
-		_ = s.batchLockService.ReleaseBatchLocksByCheckoutReference(ctx, checkoutRef)
-	}
-
-	if s.batchService != nil {
-		for _, item := range newOrder.Items {
-			if item.Type != "pre_order" {
-				continue
-			}
-			if _, err := s.batchService.AllocateToBatch(ctx, item.ShopifyVariantID, item.Quantity, preorderbatch.AllocationRef{
-				OrderLineItemID: &item.ID,
-			}); err != nil {
-				slog.ErrorContext(ctx, "failed to allocate pre-order item to batch",
-					slog.String("order_id", newOrder.ID),
-					slog.String("order_line_item_id", item.ID),
-					slog.String("variant_id", item.ShopifyVariantID),
-					slog.Any("error", err))
-				return err
-			}
-		}
-	}
-
-	// Auto-create settlement for pre_order items
-	if hasPreOrder {
-		for _, item := range newOrder.Items {
-			if item.Type == "pre_order" && item.BalanceDue != nil {
-				settlement := &preorder.Settlement{
-					OrderLineItemID: item.ID,
-					BalanceAmount:   *item.BalanceDue,
-					Status:          "pending",
-				}
-				_ = s.preorderStore.CreateSettlement(ctx, settlement)
-			}
-		}
-
-		var preItems []order.OrderItem
-		var variantIDs []string
-		for _, item := range newOrder.Items {
-			if item.Type == "pre_order" {
-				preItems = append(preItems, item)
-				variantIDs = append(variantIDs, item.ShopifyVariantID)
-			}
-		}
-		if len(preItems) > 0 {
-			var estimate *float64
-			if preorderShippingEstimate != "" {
-				if v, err := strconv.ParseFloat(preorderShippingEstimate, 64); err == nil {
-					estimate = &v
-				} else {
-					slog.WarnContext(ctx, "invalid pre-order shipping estimate from checkout",
-						slog.String("order_id", newOrder.ID),
-						slog.String("value", preorderShippingEstimate))
-				}
-			} else {
-				slog.WarnContext(ctx, "pre-order checkout shipping estimate missing",
-					slog.String("order_id", newOrder.ID))
-			}
-
-			dims, dimErr := s.orderStore.GetVariantDimensions(ctx, variantIDs)
-			if dimErr != nil {
-				slog.ErrorContext(ctx, "failed to load variant dimensions for pre-order shipment",
-					slog.String("order_id", newOrder.ID),
-					slog.Any("error", dimErr))
-			} else {
-				shipment, packing, buildErr := order.BuildCheckoutPreorderShipment(newOrder.ID, preItems, dims, estimate, preorderWarehouseOrigin)
-				if buildErr != nil {
-					slog.ErrorContext(ctx, "failed to build pre-order shipment from checkout packing",
-						slog.String("order_id", newOrder.ID),
-						slog.Any("error", buildErr))
-				} else if err := s.orderStore.UpsertPreorderShipment(ctx, shipment, packing); err != nil {
-					slog.ErrorContext(ctx, "failed to create pre-order shipment from checkout",
-						slog.String("order_id", newOrder.ID),
-						slog.Any("error", err))
-				}
-			}
-		}
-	}
-
-	// Shopify automatically sends order confirmations, so we skip sending our own here.
-
-	// Release stock locks associated with this checkout attempt
-	if checkoutRef != "" {
-		_ = s.stockLockService.ReleaseLocksByCheckoutReference(ctx, checkoutRef)
-	} else {
-		_ = s.stockLockService.ReleaseLocks(ctx, &customerID, nil)
-	}
-
-	if s.fulfillmentSync != nil && newOrder.ShopifyOrderID != nil {
-		_ = s.fulfillmentSync.SyncFulfillmentOrdersFromShopify(ctx, newOrder.ID, *newOrder.ShopifyOrderID)
-	}
-
-	return nil
+	return s.finalizePaidCheckoutOrder(ctx, newOrder, meta)
 }
 
 func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillmentWebhook) error {
