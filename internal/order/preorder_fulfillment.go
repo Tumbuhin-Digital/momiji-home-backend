@@ -517,7 +517,8 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 		ShippingTitle:   shippingMethod,
 		ShippingPrice:   *shipment.FinalShippingPrice,
 		ShippingNotes:   notes,
-		ShippingAddress: orderShippingAddressToShopify(o.ShippingAddress),
+		ShippingAddress: orderAddressToShopify(o.ShippingAddress),
+		BillingAddress:  orderAddressToShopify(billingAddressOrShipping(o)),
 	})
 	if err != nil {
 		return err
@@ -545,7 +546,17 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 	return nil
 }
 
-func orderShippingAddressToShopify(addr *customer.Address) *shopify.AddressInput {
+func billingAddressOrShipping(o *Order) *customer.Address {
+	if o == nil {
+		return nil
+	}
+	if o.BillingAddress != nil && strings.TrimSpace(o.BillingAddress.Address1) != "" {
+		return o.BillingAddress
+	}
+	return o.ShippingAddress
+}
+
+func orderAddressToShopify(addr *customer.Address) *shopify.AddressInput {
 	if addr == nil {
 		return nil
 	}

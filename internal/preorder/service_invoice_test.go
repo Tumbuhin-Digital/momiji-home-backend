@@ -249,6 +249,9 @@ func TestInvoiceSettlementsWithShippingAddsShippingLineItem(t *testing.T) {
 	if shop.lastDraftInput.BillingAddress == nil || shop.lastDraftInput.ShippingAddress == nil {
 		t.Fatal("expected shipping and billing addresses on draft order")
 	}
+	if shop.lastDraftInput.BillingAddress.Address1 != shop.lastDraftInput.ShippingAddress.Address1 {
+		t.Fatal("expected billing to fall back to shipping when billing not provided")
+	}
 
 	if len(shop.lastDraftInput.LineItems) != 2 {
 		t.Fatalf("expected 2 line items (balance + shipping), got %d", len(shop.lastDraftInput.LineItems))
@@ -506,3 +509,66 @@ func TestCreateGroupSecondPaymentInvoice_IncludesBatchHeadingInEmail(t *testing.
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+func TestCreateGroupSecondPaymentInvoice_UsesDistinctBillingAddress(t *testing.T) {
+	shop := &recordingShopClient{}
+	svc := &service{
+		shopClient:   shop,
+		emailService: noopEmailService{},
+	}
+
+	shipping := &shopify.AddressInput{
+		FirstName: "Ship",
+		LastName:  "To",
+		Company:   "Ship Co",
+		Address1:  "1 Ship St",
+		City:      "Denver",
+		Province:  "CO",
+		Zip:       "80202",
+		Country:   "United States",
+		Phone:     "+13035550111",
+	}
+	billing := &shopify.AddressInput{
+		FirstName: "Bill",
+		LastName:  "Pay",
+		Company:   "Bill Co",
+		Address1:  "9 Bill Ave",
+		City:      "Austin",
+		Province:  "TX",
+		Zip:       "78701",
+		Country:   "United States",
+		Phone:     "+15125550123",
+	}
+
+	_, err := svc.CreateGroupSecondPaymentInvoice(context.Background(), GroupInvoiceOptions{
+		CustomerEmail: "buyer@example.com",
+		CustomerName:  "Buyer",
+		OrderID:       "order-1",
+		ShipmentID:    "ship-1",
+		Lines: []GroupInvoiceLine{{
+			Title:           "Item",
+			Amount:          100,
+			OrderLineItemID: "line-1",
+			Quantity:        1,
+		}},
+		ShippingAddress: shipping,
+		BillingAddress:  billing,
+	})
+	if err != nil {
+		t.Fatalf("CreateGroupSecondPaymentInvoice returned error: %v", err)
+	}
+
+	if shop.lastDraftInput.ShippingAddress == nil || shop.lastDraftInput.BillingAddress == nil {
+		t.Fatal("expected shipping and billing addresses on draft order")
+	}
+	if shop.lastDraftInput.ShippingAddress.Address1 != "1 Ship St" {
+		t.Fatalf("unexpected shipping address: %+v", shop.lastDraftInput.ShippingAddress)
+	}
+	if shop.lastDraftInput.BillingAddress.Address1 != "9 Bill Ave" {
+		t.Fatalf("unexpected billing address: %+v", shop.lastDraftInput.BillingAddress)
+	}
+	if shop.lastDraftInput.BillingAddress.Company != "Bill Co" {
+		t.Fatalf("unexpected billing company: %s", shop.lastDraftInput.BillingAddress.Company)
+	}
+}
+

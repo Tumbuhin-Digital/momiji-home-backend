@@ -29,6 +29,7 @@ type InvoiceOptions struct {
 	ShippingPrice   float64
 	ShippingNotes   string
 	ShippingAddress *shopify.AddressInput
+	BillingAddress  *shopify.AddressInput
 }
 
 // GroupInvoiceLine is a prorated remaining-balance line for one order line slice.
@@ -55,6 +56,7 @@ type GroupInvoiceOptions struct {
 	ShippingPrice   float64
 	ShippingNotes   string
 	ShippingAddress *shopify.AddressInput
+	BillingAddress  *shopify.AddressInput
 }
 
 // GroupInvoiceResult is the draft order created for a group second payment.
@@ -239,7 +241,11 @@ func (s *service) InvoiceSettlementsWithShipping(ctx context.Context, ids []stri
 
 	if opts.ShippingAddress != nil {
 		draftInput.ShippingAddress = opts.ShippingAddress
-		draftInput.BillingAddress = opts.ShippingAddress
+		if opts.BillingAddress != nil {
+			draftInput.BillingAddress = opts.BillingAddress
+		} else {
+			draftInput.BillingAddress = opts.ShippingAddress
+		}
 	}
 
 	if opts.ShippingPrice > 0 {
@@ -389,7 +395,11 @@ func (s *service) CreateGroupSecondPaymentInvoice(ctx context.Context, opts Grou
 
 	if opts.ShippingAddress != nil {
 		draftInput.ShippingAddress = opts.ShippingAddress
-		draftInput.BillingAddress = opts.ShippingAddress
+		if opts.BillingAddress != nil {
+			draftInput.BillingAddress = opts.BillingAddress
+		} else {
+			draftInput.BillingAddress = opts.ShippingAddress
+		}
 	}
 
 	if opts.ShippingPrice > 0 {
