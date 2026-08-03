@@ -45,6 +45,7 @@ type service struct {
 	preorderStore    preorder.PreorderStore
 	emailService     email.NotificationService
 	stockLockService checkout.StockLockService
+	stockLockStore   checkout.StockLockStore
 	customerStore    customer.CustomerStore
 	fulfillmentSync  FulfillmentSyncer
 	batchService     BatchAllocator
@@ -89,6 +90,10 @@ func (s *service) SetBatchAllocator(batchService BatchAllocator) {
 
 func (s *service) SetBatchLockReleaser(batchLockService BatchLockReleaser) {
 	s.batchLockService = batchLockService
+}
+
+func (s *service) SetStockLockStore(store checkout.StockLockStore) {
+	s.stockLockStore = store
 }
 
 func (s *service) IsWebhookProcessed(ctx context.Context, webhookID string) (bool, error) {
@@ -288,11 +293,44 @@ func (s *service) finalizePaidCheckoutOrder(ctx context.Context, o *order.Order,
 		}
 	}
 
+	if meta.CheckoutRef != "" && s.stockLockStore != nil {
+		// Draft already converted to order — only clear the session mapping.
+		if err := s.stockLockStore.DeleteCheckoutSession(ctx, meta.CheckoutRef); err != nil {
+			slog.WarnContext(ctx, "Failed to delete checkout session after paid webhook",
+				slog.String("checkout_reference", meta.CheckoutRef),
+				slog.Any("error", err))
+		}
+	}
+
 	if s.fulfillmentSync != nil && o.ShopifyOrderID != nil {
 		_ = s.fulfillmentSync.SyncFulfillmentOrdersFromShopify(ctx, o.ID, *o.ShopifyOrderID)
 	}
 
 	return nil
+}
+
+func (s *service) warnIfCheckoutSessionStale(ctx context.Context, checkoutRef string) {
+	if checkoutRef == "" || s.stockLockStore == nil {
+		return
+	}
+	session, err := s.stockLockStore.GetCheckoutSession(ctx, checkoutRef)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to lookup checkout session for paid webhook",
+			slog.String("checkout_reference", checkoutRef),
+			slog.Any("error", err))
+		return
+	}
+	if session == nil {
+		slog.WarnContext(ctx, "Paid webhook for checkout with missing session (lock/draft may already be released)",
+			slog.String("checkout_reference", checkoutRef))
+		return
+	}
+	if !session.ExpiresAt.After(time.Now()) {
+		slog.WarnContext(ctx, "Paid webhook for checkout after session expiry (possible race: payment completed after release)",
+			slog.String("checkout_reference", checkoutRef),
+			slog.Time("expires_at", session.ExpiresAt),
+			slog.String("shopify_draft_order_id", session.ShopifyDraftOrderID))
+	}
 }
 
 func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebhook) error {
@@ -302,6 +340,9 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 			slog.Int("order_number", payload.OrderNumber))
 		return nil
 	}
+
+	meta := parsePaidCheckoutMeta(payload)
+	s.warnIfCheckoutSessionStale(ctx, meta.CheckoutRef)
 
 	// 1. Idempotency: if order exists, reconcile unfinished side effects instead of skipping.
 	shopifyOrderIDStr := strconv.FormatInt(payload.ID, 10)
@@ -313,7 +354,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		slog.InfoContext(ctx, "Reconciling existing Shopify order webhook",
 			slog.String("shopify_order_id", shopifyOrderIDStr),
 			slog.String("order_id", existingOrder.ID))
-		return s.finalizePaidCheckoutOrder(ctx, existingOrder, parsePaidCheckoutMeta(payload))
+		return s.finalizePaidCheckoutOrder(ctx, existingOrder, meta)
 	}
 
 	// 2. Resolve User
@@ -547,8 +588,6 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 			totalChargedNow += shipPrice
 		}
 	}
-
-	meta := parsePaidCheckoutMeta(payload)
 
 	orderNumber := fmt.Sprintf("ORD-%d", payload.OrderNumber)
 	if payload.OrderNumber == 0 {

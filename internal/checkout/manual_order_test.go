@@ -45,6 +45,9 @@ func (s *stubProductService) UpdateVariantBatchLabelByVariantID(context.Context,
 	return nil, nil
 }
 func (s *stubProductService) UpdateVariantPrice(context.Context, string, *float64) error { return nil }
+func (s *stubProductService) UpdateVariantLtl(context.Context, string, bool) (*product.VariantDTO, error) {
+	return nil, nil
+}
 func (s *stubProductService) GetAllVariants(context.Context) ([]product.ProductVariant, error) {
 	return nil, nil
 }
@@ -106,6 +109,9 @@ func (c *recordingManualShopClient) CreateDraftOrder(_ context.Context, input sh
 		ID:         "gid://shopify/DraftOrder/99",
 		InvoiceUrl: "https://example.com/invoice/99",
 	}, nil
+}
+func (c *recordingManualShopClient) DeleteDraftOrder(context.Context, string) error {
+	return nil
 }
 func (c *recordingManualShopClient) SendDraftOrderInvoice(_ context.Context, draftOrderID string, email *shopify.DraftOrderInvoiceEmailInput) error {
 	c.sentInvoiceID = draftOrderID

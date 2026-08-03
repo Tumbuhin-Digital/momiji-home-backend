@@ -160,6 +160,11 @@ func main() {
 	}); ok {
 		setter.SetBatchLockReleaser(batchLockService)
 	}
+	if setter, ok := webhookService.(interface {
+		SetStockLockStore(checkout.StockLockStore)
+	}); ok {
+		setter.SetStockLockStore(stockLockStore)
+	}
 	dashboardService := dashboard.NewDashboardService(dashboardStore)
 	settingsService := settings.NewSettingsService(settingsStore)
 

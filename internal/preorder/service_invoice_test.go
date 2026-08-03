@@ -27,6 +27,10 @@ func (c *recordingShopClient) CreateDraftOrder(_ context.Context, input shopify.
 	}, nil
 }
 
+func (c *recordingShopClient) DeleteDraftOrder(context.Context, string) error {
+	return nil
+}
+
 func (c *recordingShopClient) SendDraftOrderInvoice(context.Context, string, *shopify.DraftOrderInvoiceEmailInput) error {
 	return nil
 }
@@ -39,6 +43,10 @@ func (c *failingShopClient) QueryAdminGraphQL(context.Context, string, map[strin
 
 func (c *failingShopClient) CreateDraftOrder(context.Context, shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error) {
 	return nil, errors.New("shopify unavailable")
+}
+
+func (c *failingShopClient) DeleteDraftOrder(context.Context, string) error {
+	return nil
 }
 
 func (c *failingShopClient) SendDraftOrderInvoice(context.Context, string, *shopify.DraftOrderInvoiceEmailInput) error {

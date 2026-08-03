@@ -3,6 +3,7 @@ package checkout
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
@@ -116,5 +117,27 @@ func (s *stockLockService) ReleaseLocksForIdentity(
 }
 
 func (s *stockLockService) CleanExpiredLocks(ctx context.Context) error {
+	now := time.Now()
+
+	// Cancel Shopify drafts before releasing locks so invoices cannot be paid after TTL.
+	sessions, err := s.store.ListExpiredCheckoutSessions(ctx, now)
+	if err != nil {
+		return err
+	}
+	for _, session := range sessions {
+		if session.ShopifyDraftOrderID == "" {
+			continue
+		}
+		if err := s.shopifyCli.DeleteDraftOrder(ctx, session.ShopifyDraftOrderID); err != nil {
+			slog.WarnContext(ctx, "Failed to delete expired checkout draft order",
+				slog.String("checkout_reference", session.CheckoutReference),
+				slog.String("shopify_draft_order_id", session.ShopifyDraftOrderID),
+				slog.Any("error", err))
+		}
+	}
+
+	if err := s.store.DeleteExpiredCheckoutSessions(ctx, now); err != nil {
+		return err
+	}
 	return s.store.DeleteExpiredLocks(ctx)
 }

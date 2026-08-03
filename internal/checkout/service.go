@@ -336,6 +336,26 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		return nil, fmt.Errorf("failed to create shopify draft order: %w", err)
 	}
 
+	sessionExpiresAt := lockExpiresAt
+	if sessionExpiresAt.IsZero() {
+		sessionExpiresAt = time.Now().Add(stockLockTTL)
+	}
+	if err := s.store.UpsertCheckoutSession(ctx, &CheckoutSession{
+		CheckoutReference:   checkoutRef,
+		ShopifyDraftOrderID: res.ID,
+		ExpiresAt:           sessionExpiresAt,
+		UserID:              userID,
+		SessionID:           sessionID,
+	}); err != nil {
+		_ = s.shopifyCli.DeleteDraftOrder(ctx, res.ID)
+		_ = s.stockLockService.ReleaseLocksByCheckoutReference(ctx, checkoutRef)
+		if s.batchLockService != nil {
+			_ = s.batchLockService.ReleaseBatchLocksByCheckoutReference(ctx, checkoutRef)
+		}
+		slog.ErrorContext(ctx, "Failed to persist checkout session", slog.Any("error", err), slog.String("checkout_reference", checkoutRef))
+		return nil, fmt.Errorf("failed to persist checkout session: %w", err)
+	}
+
 	slog.InfoContext(ctx, "Shopify draft order created", slog.String("checkout_reference", checkoutRef), slog.String("invoice_url", res.InvoiceUrl))
 
 	checkoutUrl := res.InvoiceUrl
@@ -355,13 +375,42 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 }
 
 func (s *service) ReleaseCheckout(ctx context.Context, userID, sessionID *string, checkoutReference *string) error {
+	if checkoutReference != nil && *checkoutReference != "" {
+		if err := s.cancelCheckoutDraft(ctx, *checkoutReference); err != nil {
+			slog.WarnContext(ctx, "Failed to delete Shopify draft on checkout release",
+				slog.String("checkout_reference", *checkoutReference),
+				slog.Any("error", err))
+		}
+	}
+
 	if err := s.stockLockService.ReleaseLocksForIdentity(ctx, userID, sessionID, checkoutReference); err != nil {
 		return err
 	}
 	if s.batchLockService != nil {
-		return s.batchLockService.ReleaseBatchLocksForIdentity(ctx, userID, sessionID, checkoutReference)
+		if err := s.batchLockService.ReleaseBatchLocksForIdentity(ctx, userID, sessionID, checkoutReference); err != nil {
+			return err
+		}
+	}
+
+	if checkoutReference != nil && *checkoutReference != "" {
+		if err := s.store.DeleteCheckoutSession(ctx, *checkoutReference); err != nil {
+			slog.WarnContext(ctx, "Failed to delete checkout session after release",
+				slog.String("checkout_reference", *checkoutReference),
+				slog.Any("error", err))
+		}
 	}
 	return nil
+}
+
+func (s *service) cancelCheckoutDraft(ctx context.Context, checkoutReference string) error {
+	session, err := s.store.GetCheckoutSession(ctx, checkoutReference)
+	if err != nil {
+		return err
+	}
+	if session == nil || session.ShopifyDraftOrderID == "" {
+		return nil
+	}
+	return s.shopifyCli.DeleteDraftOrder(ctx, session.ShopifyDraftOrderID)
 }
 
 func (s *service) ValidateAddress(ctx context.Context, req ValidateAddressRequest) map[string]string {

@@ -332,6 +332,10 @@ func (m *MockShopifyClient) CreateDraftOrder(ctx context.Context, input shopify.
 	return m.DraftOrderResponse, m.DraftOrderErr
 }
 
+func (m *MockShopifyClient) DeleteDraftOrder(ctx context.Context, draftOrderID string) error {
+	return nil
+}
+
 func (m *MockShopifyClient) SendDraftOrderInvoice(ctx context.Context, draftOrderID string, email *shopify.DraftOrderInvoiceEmailInput) error {
 	return nil
 }
@@ -378,6 +382,10 @@ func (m *MockShopifyClientFunc) QueryAdminGraphQL(ctx context.Context, query str
 
 func (m *MockShopifyClientFunc) CreateDraftOrder(ctx context.Context, input shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error) {
 	return m.CreateDraftOrderFn(ctx, input)
+}
+
+func (m *MockShopifyClientFunc) DeleteDraftOrder(ctx context.Context, draftOrderID string) error {
+	return nil
 }
 
 func (m *MockShopifyClientFunc) SendDraftOrderInvoice(ctx context.Context, draftOrderID string, email *shopify.DraftOrderInvoiceEmailInput) error {

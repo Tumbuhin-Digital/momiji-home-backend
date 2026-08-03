@@ -11,8 +11,9 @@ import (
 )
 
 type memoryStockLockStore struct {
-	mu    sync.Mutex
-	locks []StockLock
+	mu       sync.Mutex
+	locks    []StockLock
+	sessions map[string]CheckoutSession
 }
 
 func (m *memoryStockLockStore) GetActiveLocksForVariant(_ context.Context, shopifyVariantID string) (int, error) {
@@ -94,6 +95,56 @@ func (m *memoryStockLockStore) GetUSZipCodeDetails(context.Context, string) (*Us
 	return nil, nil
 }
 
+func (m *memoryStockLockStore) UpsertCheckoutSession(_ context.Context, session *CheckoutSession) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.sessions == nil {
+		m.sessions = map[string]CheckoutSession{}
+	}
+	m.sessions[session.CheckoutReference] = *session
+	return nil
+}
+
+func (m *memoryStockLockStore) GetCheckoutSession(_ context.Context, checkoutReference string) (*CheckoutSession, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if session, ok := m.sessions[checkoutReference]; ok {
+		copy := session
+		return &copy, nil
+	}
+	return nil, nil
+}
+
+func (m *memoryStockLockStore) DeleteCheckoutSession(_ context.Context, checkoutReference string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.sessions, checkoutReference)
+	return nil
+}
+
+func (m *memoryStockLockStore) ListExpiredCheckoutSessions(_ context.Context, asOf time.Time) ([]CheckoutSession, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []CheckoutSession
+	for _, session := range m.sessions {
+		if !session.ExpiresAt.After(asOf) {
+			out = append(out, session)
+		}
+	}
+	return out, nil
+}
+
+func (m *memoryStockLockStore) DeleteExpiredCheckoutSessions(_ context.Context, asOf time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for ref, session := range m.sessions {
+		if !session.ExpiresAt.After(asOf) {
+			delete(m.sessions, ref)
+		}
+	}
+	return nil
+}
+
 func (m *memoryStockLockStore) countLocks() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -125,6 +176,10 @@ func (m *mockShopifyInventoryClient) QueryAdminGraphQL(context.Context, string, 
 
 func (m *mockShopifyInventoryClient) CreateDraftOrder(context.Context, shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error) {
 	return nil, nil
+}
+
+func (m *mockShopifyInventoryClient) DeleteDraftOrder(context.Context, string) error {
+	return nil
 }
 
 func (m *mockShopifyInventoryClient) SendDraftOrderInvoice(context.Context, string, *shopify.DraftOrderInvoiceEmailInput) error {

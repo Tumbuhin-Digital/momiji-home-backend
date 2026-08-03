@@ -14,6 +14,7 @@ import (
 type Client interface {
 	QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error)
 	CreateDraftOrder(ctx context.Context, input DraftOrderInput) (*DraftOrderResponse, error)
+	DeleteDraftOrder(ctx context.Context, draftOrderID string) error
 	SendDraftOrderInvoice(ctx context.Context, draftOrderID string, email *DraftOrderInvoiceEmailInput) error
 	CreateStorefrontCart(ctx context.Context, input CartCreateInput) (*CartCreateResponse, error)
 	CreateRefund(ctx context.Context, shopifyOrderID string, amount float64, currency string, reason string) error
@@ -186,6 +187,70 @@ func (c *clientImpl) CreateDraftOrder(ctx context.Context, input DraftOrderInput
 	}
 
 	return res.Data.DraftOrderCreate.DraftOrder, nil
+}
+
+func (c *clientImpl) DeleteDraftOrder(ctx context.Context, draftOrderID string) error {
+	if strings.TrimSpace(draftOrderID) == "" {
+		return nil
+	}
+
+	query := `
+		mutation draftOrderDelete($input: DraftOrderDeleteInput!) {
+		  draftOrderDelete(input: $input) {
+			deletedId
+			userErrors {
+			  field
+			  message
+			}
+		  }
+		}
+	`
+	vars := map[string]interface{}{
+		"input": map[string]interface{}{
+			"id": draftOrderID,
+		},
+	}
+
+	resBytes, err := c.QueryAdminGraphQL(ctx, query, vars)
+	if err != nil {
+		return err
+	}
+
+	var res struct {
+		Data struct {
+			DraftOrderDelete struct {
+				DeletedID  *string `json:"deletedId"`
+				UserErrors []struct {
+					Message string `json:"message"`
+				} `json:"userErrors"`
+			} `json:"draftOrderDelete"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(resBytes, &res); err != nil {
+		return fmt.Errorf("failed to unmarshal shopify draftOrderDelete response (body: %s): %w", string(resBytes), err)
+	}
+
+	// Treat missing / already-deleted drafts as success so release stays best-effort.
+	for _, e := range res.Errors {
+		msg := strings.ToLower(e.Message)
+		if strings.Contains(msg, "not found") || strings.Contains(msg, "does not exist") {
+			return nil
+		}
+		return fmt.Errorf("shopify draftOrderDelete error: %s", e.Message)
+	}
+	for _, e := range res.Data.DraftOrderDelete.UserErrors {
+		msg := strings.ToLower(e.Message)
+		if strings.Contains(msg, "not found") || strings.Contains(msg, "does not exist") {
+			return nil
+		}
+		return fmt.Errorf("shopify draftOrderDelete user error: %s", e.Message)
+	}
+
+	return nil
 }
 
 func (c *clientImpl) SendDraftOrderInvoice(ctx context.Context, draftOrderID string, email *DraftOrderInvoiceEmailInput) error {

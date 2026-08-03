@@ -3,6 +3,7 @@ package checkout
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/uszip"
 )
@@ -24,6 +25,20 @@ func (s *zipLookupStore) DeleteLocksByCheckoutReference(context.Context, string,
 }
 
 func (s *zipLookupStore) DeleteExpiredLocks(context.Context) error { return nil }
+
+func (s *zipLookupStore) UpsertCheckoutSession(context.Context, *CheckoutSession) error { return nil }
+
+func (s *zipLookupStore) GetCheckoutSession(context.Context, string) (*CheckoutSession, error) {
+	return nil, nil
+}
+
+func (s *zipLookupStore) DeleteCheckoutSession(context.Context, string) error { return nil }
+
+func (s *zipLookupStore) ListExpiredCheckoutSessions(context.Context, time.Time) ([]CheckoutSession, error) {
+	return nil, nil
+}
+
+func (s *zipLookupStore) DeleteExpiredCheckoutSessions(context.Context, time.Time) error { return nil }
 
 func (s *zipLookupStore) GetUSZipCodeDetails(_ context.Context, zip string) (*UsZipCode, error) {
 	normalized, ok := uszip.NormalizeUSZip(zip)

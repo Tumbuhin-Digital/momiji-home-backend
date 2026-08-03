@@ -98,3 +98,47 @@ func (s *PostgresStockLockStore) GetUSZipCodeDetails(ctx context.Context, zip st
 	}
 	return &zipCode, nil
 }
+
+func (s *PostgresStockLockStore) UpsertCheckoutSession(ctx context.Context, session *CheckoutSession) error {
+	if session == nil || session.CheckoutReference == "" {
+		return nil
+	}
+	now := time.Now()
+	session.UpdatedAt = now
+	if session.CreatedAt.IsZero() {
+		session.CreatedAt = now
+	}
+	return s.db.WithContext(ctx).Save(session).Error
+}
+
+func (s *PostgresStockLockStore) GetCheckoutSession(ctx context.Context, checkoutReference string) (*CheckoutSession, error) {
+	if checkoutReference == "" {
+		return nil, nil
+	}
+	var session CheckoutSession
+	err := s.db.WithContext(ctx).Where("checkout_reference = ?", checkoutReference).First(&session).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &session, nil
+}
+
+func (s *PostgresStockLockStore) DeleteCheckoutSession(ctx context.Context, checkoutReference string) error {
+	if checkoutReference == "" {
+		return nil
+	}
+	return s.db.WithContext(ctx).Where("checkout_reference = ?", checkoutReference).Delete(&CheckoutSession{}).Error
+}
+
+func (s *PostgresStockLockStore) ListExpiredCheckoutSessions(ctx context.Context, asOf time.Time) ([]CheckoutSession, error) {
+	var sessions []CheckoutSession
+	err := s.db.WithContext(ctx).Where("expires_at <= ?", asOf).Find(&sessions).Error
+	return sessions, err
+}
+
+func (s *PostgresStockLockStore) DeleteExpiredCheckoutSessions(ctx context.Context, asOf time.Time) error {
+	return s.db.WithContext(ctx).Where("expires_at <= ?", asOf).Delete(&CheckoutSession{}).Error
+}
