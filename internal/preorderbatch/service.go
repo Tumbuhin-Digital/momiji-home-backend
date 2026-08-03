@@ -198,9 +198,14 @@ func (s *service) runAllocation(ctx context.Context, shopifyVariantID string, qt
 	if qty < 1 {
 		return nil, apierror.New(http.StatusBadRequest, "validation_error", "qty must be at least 1")
 	}
-	variant, err := s.requirePreorderVariant(ctx, shopifyVariantID)
+	// Allocation is used for forced pre_order variants AND ship_ready overflow
+	// (qty above inventory). Only forced pre_order variants are batch-managed.
+	variant, err := s.loadVariant(ctx, shopifyVariantID)
 	if err != nil {
 		return nil, err
+	}
+	if variant.FulfillmentType != string(product.FulfillmentTypePreOrder) {
+		return &AllocateResult{UnlimitedQty: qty}, nil
 	}
 
 	batches, err := s.store.ListByVariantID(ctx, variant.ID)
@@ -294,7 +299,7 @@ func normalizeShopifyVariantID(id string) string {
 	return id
 }
 
-func (s *service) requirePreorderVariant(ctx context.Context, shopifyVariantID string) (*product.ProductVariant, error) {
+func (s *service) loadVariant(ctx context.Context, shopifyVariantID string) (*product.ProductVariant, error) {
 	shopifyVariantID = normalizeShopifyVariantID(shopifyVariantID)
 	variant, err := s.productStore.GetVariantByShopifyID(ctx, shopifyVariantID)
 	if err != nil {
@@ -311,6 +316,14 @@ func (s *service) requirePreorderVariant(ctx context.Context, shopifyVariantID s
 		if prod != nil {
 			variant.Product = prod
 		}
+	}
+	return variant, nil
+}
+
+func (s *service) requirePreorderVariant(ctx context.Context, shopifyVariantID string) (*product.ProductVariant, error) {
+	variant, err := s.loadVariant(ctx, shopifyVariantID)
+	if err != nil {
+		return nil, err
 	}
 	if variant.FulfillmentType != string(product.FulfillmentTypePreOrder) {
 		return nil, apierror.New(http.StatusBadRequest, "invalid_variant_status", "variant must be pre_order")
