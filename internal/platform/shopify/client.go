@@ -323,6 +323,7 @@ type CartDeliveryAddressInput struct {
 type AddressInput struct {
 	FirstName string `json:"firstName,omitempty"`
 	LastName  string `json:"lastName,omitempty"`
+	Company   string `json:"company,omitempty"`
 	Address1  string `json:"address1,omitempty"`
 	City      string `json:"city,omitempty"`
 	Province  string `json:"province,omitempty"`

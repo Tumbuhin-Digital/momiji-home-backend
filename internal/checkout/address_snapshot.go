@@ -3,6 +3,8 @@ package checkout
 import (
 	"encoding/json"
 	"strings"
+
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 )
 
 const ShippingAddressNoteAttribute = "checkout_shipping_address"
@@ -12,6 +14,7 @@ const ShippingAddressNoteAttribute = "checkout_shipping_address"
 type ShippingAddressSnapshot struct {
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
+	Company   string `json:"company,omitempty"`
 	Address1  string `json:"address1"`
 	Address2  string `json:"address2,omitempty"`
 	City      string `json:"city"`
@@ -37,6 +40,7 @@ func ShippingAddressSnapshotFromRequest(req InitiateCheckoutRequest) *ShippingAd
 	snap := &ShippingAddressSnapshot{
 		FirstName: strings.TrimSpace(req.FirstName),
 		LastName:  strings.TrimSpace(req.LastName),
+		Company:   strings.TrimSpace(req.Company),
 		Address1:  address1,
 		City:      city,
 		Province:  strings.TrimSpace(req.State),
@@ -84,5 +88,34 @@ func (s *ShippingAddressSnapshot) Normalize() {
 	}
 	if strings.TrimSpace(s.Province) == "" {
 		s.Province = "N/A"
+	}
+}
+
+func resolveBillingAddress(req InitiateCheckoutRequest, shipping *shopify.AddressInput) *shopify.AddressInput {
+	if shipping == nil {
+		return nil
+	}
+	billingEmpty := strings.TrimSpace(req.BillingAddress1) == "" &&
+		strings.TrimSpace(req.BillingCity) == ""
+	if req.SameAsShipping || billingEmpty {
+		copied := *shipping
+		return &copied
+	}
+
+	country := strings.TrimSpace(req.BillingCountry)
+	if country == "" {
+		country = shipping.Country
+	}
+
+	return &shopify.AddressInput{
+		FirstName: req.BillingFirstName,
+		LastName:  req.BillingLastName,
+		Company:   req.BillingCompany,
+		Address1:  req.BillingAddress1,
+		City:      req.BillingCity,
+		Province:  req.BillingState,
+		Zip:       req.BillingZip,
+		Country:   country,
+		Phone:     req.BillingPhone,
 	}
 }

@@ -51,6 +51,7 @@ func snapshotToShopifyAddress(snap *checkout.ShippingAddressSnapshot) *ShopifyAd
 	return &ShopifyAddress{
 		FirstName: snap.FirstName,
 		LastName:  snap.LastName,
+		Company:   snap.Company,
 		Address1:  snap.Address1,
 		Address2:  snap.Address2,
 		City:      snap.City,
@@ -61,11 +62,13 @@ func snapshotToShopifyAddress(snap *checkout.ShippingAddressSnapshot) *ShopifyAd
 	}
 }
 
-func createCustomerShippingAddress(
+func createCustomerAddress(
 	ctx context.Context,
 	customerStore customer.CustomerStore,
 	customerID string,
 	src *ShopifyAddress,
+	isDefault bool,
+	label string,
 ) *string {
 	if src == nil || strings.TrimSpace(src.Address1) == "" ||
 		strings.TrimSpace(src.City) == "" || strings.TrimSpace(src.Zip) == "" {
@@ -90,7 +93,7 @@ func createCustomerShippingAddress(
 		Province:   province,
 		Country:    country,
 		Zip:        strings.TrimSpace(src.Zip),
-		IsDefault:  true,
+		IsDefault:  isDefault,
 	}
 	if src.FirstName != "" {
 		firstName := src.FirstName
@@ -99,6 +102,10 @@ func createCustomerShippingAddress(
 	if src.LastName != "" {
 		lastName := src.LastName
 		addr.LastName = &lastName
+	}
+	if strings.TrimSpace(src.Company) != "" {
+		company := strings.TrimSpace(src.Company)
+		addr.Company = &company
 	}
 	if src.Address2 != "" {
 		address2 := src.Address2
@@ -110,9 +117,41 @@ func createCustomerShippingAddress(
 	}
 
 	if err := customerStore.CreateAddress(ctx, addr); err != nil {
-		slog.WarnContext(ctx, "Failed to create shipping address", slog.Any("error", err))
+		slog.WarnContext(ctx, "Failed to create "+label+" address", slog.Any("error", err))
 		return nil
 	}
 
 	return &addrID
+}
+
+func createCustomerShippingAddress(
+	ctx context.Context,
+	customerStore customer.CustomerStore,
+	customerID string,
+	src *ShopifyAddress,
+) *string {
+	return createCustomerAddress(ctx, customerStore, customerID, src, true, "shipping")
+}
+
+func createCustomerBillingAddress(
+	ctx context.Context,
+	customerStore customer.CustomerStore,
+	customerID string,
+	src *ShopifyAddress,
+) *string {
+	return createCustomerAddress(ctx, customerStore, customerID, src, false, "billing")
+}
+
+func addressesEqual(a, b *ShopifyAddress) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(a.Address1), strings.TrimSpace(b.Address1)) &&
+		strings.EqualFold(strings.TrimSpace(a.City), strings.TrimSpace(b.City)) &&
+		strings.EqualFold(strings.TrimSpace(a.Zip), strings.TrimSpace(b.Zip)) &&
+		strings.EqualFold(strings.TrimSpace(a.Province), strings.TrimSpace(b.Province)) &&
+		strings.EqualFold(strings.TrimSpace(a.Country), strings.TrimSpace(b.Country)) &&
+		strings.EqualFold(strings.TrimSpace(a.Company), strings.TrimSpace(b.Company)) &&
+		strings.EqualFold(strings.TrimSpace(a.FirstName), strings.TrimSpace(b.FirstName)) &&
+		strings.EqualFold(strings.TrimSpace(a.LastName), strings.TrimSpace(b.LastName))
 }

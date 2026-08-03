@@ -18,6 +18,7 @@ type Order struct {
 	FinancialStatus     string
 	FulfillmentStatus   string
 	ShippingAddressID   *string
+	BillingAddressID    *string
 	ShippingMethod      *string
 	ShippingCost        float64
 	TotalShipReady      float64
@@ -29,9 +30,10 @@ type Order struct {
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 
-	Items           []OrderItem       `gorm:"foreignKey:OrderID"`
+	Items           []OrderItem        `gorm:"foreignKey:OrderID"`
 	Customer        *customer.Customer `gorm:"foreignKey:CustomerID"`
 	ShippingAddress *customer.Address  `gorm:"foreignKey:ShippingAddressID"`
+	BillingAddress  *customer.Address  `gorm:"foreignKey:BillingAddressID"`
 }
 
 type OrderItem struct {

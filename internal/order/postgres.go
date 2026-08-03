@@ -48,7 +48,7 @@ func (s *PostgresStore) fillItemImages(ctx context.Context, items []*OrderItem) 
 
 func (s *PostgresStore) GetOrder(ctx context.Context, orderID, customerID string) (*Order, error) {
 	var order Order
-	query := s.db.WithContext(ctx).Preload("Items").Preload("Customer").Preload("ShippingAddress").Where("id = ?", orderID)
+	query := s.db.WithContext(ctx).Preload("Items").Preload("Customer").Preload("ShippingAddress").Preload("BillingAddress").Where("id = ?", orderID)
 	if customerID != "" {
 		query = query.Where("customer_id = ?", customerID)
 	}
@@ -75,6 +75,7 @@ func (s *PostgresStore) GetOrderByShopifyID(ctx context.Context, shopifyOrderID 
 		Preload("Items").
 		Preload("Customer").
 		Preload("ShippingAddress").
+		Preload("BillingAddress").
 		Where("shopify_order_id = ? OR shopify_draft_order_id = ?", shopifyOrderID, shopifyOrderID).
 		First(&order).Error
 	if err != nil {
@@ -124,7 +125,7 @@ func (s *PostgresStore) GetOrdersByCustomer(ctx context.Context, customerID stri
 	if limit < 1 { limit = 20 }
 	offset := (page - 1) * limit
 
-	err := query.Preload("Items").Preload("Customer").Preload("ShippingAddress").Order("created_at DESC").Offset(offset).Limit(limit).Find(&orders).Error
+	err := query.Preload("Items").Preload("Customer").Preload("ShippingAddress").Preload("BillingAddress").Order("created_at DESC").Offset(offset).Limit(limit).Find(&orders).Error
 	if err != nil {
 		return nil, 0, err
 	}
@@ -154,7 +155,7 @@ func (s *PostgresStore) GetAllOrdersForExport(ctx context.Context, q OrderQuery)
 			Where("orders.order_number ILIKE ? OR users.email ILIKE ?", searchPattern, searchPattern)
 	}
 
-	err := query.Preload("Items").Preload("Customer").Preload("ShippingAddress").Order("created_at DESC").Find(&orders).Error
+	err := query.Preload("Items").Preload("Customer").Preload("ShippingAddress").Preload("BillingAddress").Order("created_at DESC").Find(&orders).Error
 	if err != nil {
 		return nil, err
 	}

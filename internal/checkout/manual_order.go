@@ -82,9 +82,10 @@ func (s *service) CreateManualOrder(ctx context.Context, req ManualOrderRequest)
 		country = "US"
 	}
 
-	draftInput.ShippingAddress = &shopify.AddressInput{
+	shippingAddr := &shopify.AddressInput{
 		FirstName: req.FirstName,
 		LastName:  req.LastName,
+		Company:   req.Company,
 		Address1:  req.Address1,
 		City:      req.City,
 		Province:  req.State,
@@ -92,18 +93,32 @@ func (s *service) CreateManualOrder(ctx context.Context, req ManualOrderRequest)
 		Country:   country,
 		Phone:     req.Phone,
 	}
+	draftInput.ShippingAddress = shippingAddr
 
 	initReq := InitiateCheckoutRequest{
-		FirstName: req.FirstName,
-		LastName:  req.LastName,
-		Address1:  req.Address1,
-		City:      req.City,
-		State:     req.State,
-		Zip:       req.Zip,
-		Country:   country,
-		Phone:     req.Phone,
-		Email:     req.Email,
+		FirstName:        req.FirstName,
+		LastName:         req.LastName,
+		Company:          req.Company,
+		Address1:         req.Address1,
+		City:             req.City,
+		State:            req.State,
+		Zip:              req.Zip,
+		Country:          country,
+		Phone:            req.Phone,
+		Email:            req.Email,
+		SameAsShipping:   req.SameAsShipping,
+		BillingFirstName: req.BillingFirstName,
+		BillingLastName:  req.BillingLastName,
+		BillingCompany:   req.BillingCompany,
+		BillingAddress1:  req.BillingAddress1,
+		BillingCity:      req.BillingCity,
+		BillingState:     req.BillingState,
+		BillingZip:       req.BillingZip,
+		BillingCountry:   req.BillingCountry,
+		BillingPhone:     req.BillingPhone,
 	}
+	draftInput.BillingAddress = resolveBillingAddress(initReq, shippingAddr)
+
 	if snap := ShippingAddressSnapshotFromRequest(initReq); snap != nil {
 		if jsonVal, err := snap.JSON(); err != nil {
 			slog.WarnContext(ctx, "failed to marshal manual order shipping address snapshot",

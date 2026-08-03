@@ -24,6 +24,7 @@ type Address struct {
 	CustomerID string
 	FirstName  *string
 	LastName   *string
+	Company    *string
 	Address1   string
 	Address2   *string
 	City       string

@@ -8,12 +8,13 @@ import (
 	"strconv"
 	"time"
 
+	"strings"
+
 	"github.com/google/uuid"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/auth"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/config"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/email"
-	"strings"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
@@ -397,36 +398,8 @@ func (s *service) CreateOrder(ctx context.Context, userID, sessionID *string, re
 		}
 	}
 
-	if order.ShippingAddress != nil {
-		firstName := ""
-		lastName := ""
-		if order.ShippingAddress.FirstName != nil {
-			firstName = *order.ShippingAddress.FirstName
-		}
-		if order.ShippingAddress.LastName != nil {
-			lastName = *order.ShippingAddress.LastName
-		}
-		address2 := ""
-		if order.ShippingAddress.Address2 != nil {
-			address2 = *order.ShippingAddress.Address2
-		}
-		phone := ""
-		if order.ShippingAddress.Phone != nil {
-			phone = *order.ShippingAddress.Phone
-		}
-
-		response.ShippingAddress = &AddressDTO{
-			FirstName: firstName,
-			LastName:  lastName,
-			Address1:  order.ShippingAddress.Address1,
-			Address2:  address2,
-			City:      order.ShippingAddress.City,
-			Province:  order.ShippingAddress.Province,
-			Country:   order.ShippingAddress.Country,
-			Zip:       order.ShippingAddress.Zip,
-			Phone:     phone,
-		}
-	}
+	response.ShippingAddress = addressToDTO(order.ShippingAddress)
+	response.BillingAddress = addressToDTO(order.BillingAddress)
 
 	// Shopify automatically sends order confirmations, so we skip sending our own here.
 
@@ -538,36 +511,8 @@ func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery
 			}
 		}
 
-		if o.ShippingAddress != nil {
-			firstName := ""
-			lastName := ""
-			if o.ShippingAddress.FirstName != nil {
-				firstName = *o.ShippingAddress.FirstName
-			}
-			if o.ShippingAddress.LastName != nil {
-				lastName = *o.ShippingAddress.LastName
-			}
-			address2 := ""
-			if o.ShippingAddress.Address2 != nil {
-				address2 = *o.ShippingAddress.Address2
-			}
-			phone := ""
-			if o.ShippingAddress.Phone != nil {
-				phone = *o.ShippingAddress.Phone
-			}
-
-			dto.ShippingAddress = &AddressDTO{
-				FirstName: firstName,
-				LastName:  lastName,
-				Address1:  o.ShippingAddress.Address1,
-				Address2:  address2,
-				City:      o.ShippingAddress.City,
-				Province:  o.ShippingAddress.Province,
-				Country:   o.ShippingAddress.Country,
-				Zip:       o.ShippingAddress.Zip,
-				Phone:     phone,
-			}
-		}
+		dto.ShippingAddress = addressToDTO(o.ShippingAddress)
+		dto.BillingAddress = addressToDTO(o.BillingAddress)
 
 		res = append(res, dto)
 	}
@@ -727,36 +672,8 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 		}
 	}
 
-	if o.ShippingAddress != nil {
-		firstName := ""
-		lastName := ""
-		if o.ShippingAddress.FirstName != nil {
-			firstName = *o.ShippingAddress.FirstName
-		}
-		if o.ShippingAddress.LastName != nil {
-			lastName = *o.ShippingAddress.LastName
-		}
-		address2 := ""
-		if o.ShippingAddress.Address2 != nil {
-			address2 = *o.ShippingAddress.Address2
-		}
-		phone := ""
-		if o.ShippingAddress.Phone != nil {
-			phone = *o.ShippingAddress.Phone
-		}
-
-		dto.ShippingAddress = &AddressDTO{
-			FirstName: firstName,
-			LastName:  lastName,
-			Address1:  o.ShippingAddress.Address1,
-			Address2:  address2,
-			City:      o.ShippingAddress.City,
-			Province:  o.ShippingAddress.Province,
-			Country:   o.ShippingAddress.Country,
-			Zip:       o.ShippingAddress.Zip,
-			Phone:     phone,
-		}
-	}
+	dto.ShippingAddress = addressToDTO(o.ShippingAddress)
+	dto.BillingAddress = addressToDTO(o.BillingAddress)
 
 	return dto, nil
 }
@@ -870,36 +787,8 @@ func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string
 		}
 	}
 
-	if o.ShippingAddress != nil {
-		firstName := ""
-		lastName := ""
-		if o.ShippingAddress.FirstName != nil {
-			firstName = *o.ShippingAddress.FirstName
-		}
-		if o.ShippingAddress.LastName != nil {
-			lastName = *o.ShippingAddress.LastName
-		}
-		address2 := ""
-		if o.ShippingAddress.Address2 != nil {
-			address2 = *o.ShippingAddress.Address2
-		}
-		phone := ""
-		if o.ShippingAddress.Phone != nil {
-			phone = *o.ShippingAddress.Phone
-		}
-
-		dto.ShippingAddress = &AddressDTO{
-			FirstName: firstName,
-			LastName:  lastName,
-			Address1:  o.ShippingAddress.Address1,
-			Address2:  address2,
-			City:      o.ShippingAddress.City,
-			Province:  o.ShippingAddress.Province,
-			Country:   o.ShippingAddress.Country,
-			Zip:       o.ShippingAddress.Zip,
-			Phone:     phone,
-		}
-	}
+	dto.ShippingAddress = addressToDTO(o.ShippingAddress)
+	dto.BillingAddress = addressToDTO(o.BillingAddress)
 
 	if len(preOrder) > 0 {
 		shipment, err := s.store.GetPreorderShipment(ctx, o.ID)

@@ -370,6 +370,22 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		resolvedAddr,
 	)
 
+	var billingAddressID *string
+	if payload.BillingAddress != nil && strings.TrimSpace(payload.BillingAddress.Address1) != "" {
+		if shippingAddressID != nil && addressesEqual(resolvedAddr, payload.BillingAddress) {
+			billingAddressID = shippingAddressID
+		} else {
+			billingAddressID = createCustomerBillingAddress(
+				ctx,
+				s.customerStore,
+				customerID,
+				payload.BillingAddress,
+			)
+		}
+	} else if shippingAddressID != nil {
+		billingAddressID = shippingAddressID
+	}
+
 	var total float64
 	var orderItems []order.OrderItem
 
@@ -543,6 +559,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		OrderNumber:       orderNumber,
 		CustomerID:        customerID,
 		ShippingAddressID: shippingAddressID,
+		BillingAddressID:  billingAddressID,
 		TotalPrice:        total,
 		AggregateStatus:   "processing", // paid
 		FinancialStatus:   "paid",

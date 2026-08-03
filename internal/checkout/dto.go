@@ -48,12 +48,23 @@ type InitiateCheckoutRequest struct {
 	Email                string `json:"email,omitempty"`
 	FirstName            string `json:"first_name,omitempty"`
 	LastName             string `json:"last_name,omitempty"`
+	Company              string `json:"company,omitempty"`
 	Address1             string `json:"address1,omitempty"`
 	City                 string `json:"city,omitempty"`
 	State                string `json:"state,omitempty"`
 	Zip                  string `json:"zip,omitempty"`
 	Country              string `json:"country,omitempty"`
 	Phone                string `json:"phone,omitempty"`
+	SameAsShipping       bool   `json:"same_as_shipping"`
+	BillingFirstName     string `json:"billing_first_name,omitempty"`
+	BillingLastName      string `json:"billing_last_name,omitempty"`
+	BillingCompany       string `json:"billing_company,omitempty"`
+	BillingAddress1      string `json:"billing_address1,omitempty"`
+	BillingCity          string `json:"billing_city,omitempty"`
+	BillingState         string `json:"billing_state,omitempty"`
+	BillingZip           string `json:"billing_zip,omitempty"`
+	BillingCountry       string `json:"billing_country,omitempty"`
+	BillingPhone         string `json:"billing_phone,omitempty"`
 	Origin               string `json:"origin,omitempty"` // pre_order warehouse: east | west
 	AcceptBatchDepletion bool   `json:"accept_batch_depletion"`
 }
@@ -93,18 +104,29 @@ type ManualOrderLineItem struct {
 }
 
 type ManualOrderRequest struct {
-	Email          string                `json:"email" validate:"required,email"`
-	FirstName      string                `json:"first_name" validate:"required"`
-	LastName       string                `json:"last_name" validate:"required"`
-	Phone          string                `json:"phone,omitempty"`
-	Address1       string                `json:"address1" validate:"required"`
-	City           string                `json:"city" validate:"required"`
-	State          string                `json:"state" validate:"required"`
-	Zip            string                `json:"zip" validate:"required"`
-	Country        string                `json:"country" validate:"required"`
-	ShippingMethod string                `json:"shipping_method,omitempty"`
-	Origin         string                `json:"origin,omitempty"`
-	LineItems      []ManualOrderLineItem `json:"line_items" validate:"required,min=1,dive"`
+	Email            string                `json:"email" validate:"required,email"`
+	FirstName        string                `json:"first_name" validate:"required"`
+	LastName         string                `json:"last_name" validate:"required"`
+	Company          string                `json:"company,omitempty"`
+	Phone            string                `json:"phone,omitempty"`
+	Address1         string                `json:"address1" validate:"required"`
+	City             string                `json:"city" validate:"required"`
+	State            string                `json:"state" validate:"required"`
+	Zip              string                `json:"zip" validate:"required"`
+	Country          string                `json:"country" validate:"required"`
+	SameAsShipping   bool                  `json:"same_as_shipping"`
+	BillingFirstName string                `json:"billing_first_name,omitempty"`
+	BillingLastName  string                `json:"billing_last_name,omitempty"`
+	BillingCompany   string                `json:"billing_company,omitempty"`
+	BillingAddress1  string                `json:"billing_address1,omitempty"`
+	BillingCity      string                `json:"billing_city,omitempty"`
+	BillingState     string                `json:"billing_state,omitempty"`
+	BillingZip       string                `json:"billing_zip,omitempty"`
+	BillingCountry   string                `json:"billing_country,omitempty"`
+	BillingPhone     string                `json:"billing_phone,omitempty"`
+	ShippingMethod   string                `json:"shipping_method,omitempty"`
+	Origin           string                `json:"origin,omitempty"`
+	LineItems        []ManualOrderLineItem `json:"line_items" validate:"required,min=1,dive"`
 }
 
 type ManualOrderResponse struct {

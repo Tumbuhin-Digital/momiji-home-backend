@@ -550,7 +550,7 @@ func orderShippingAddressToShopify(addr *customer.Address) *shopify.AddressInput
 		return nil
 	}
 
-	firstName, lastName, phone := "", "", ""
+	firstName, lastName, phone, company := "", "", "", ""
 	if addr.FirstName != nil {
 		firstName = *addr.FirstName
 	}
@@ -560,10 +560,14 @@ func orderShippingAddressToShopify(addr *customer.Address) *shopify.AddressInput
 	if addr.Phone != nil {
 		phone = *addr.Phone
 	}
+	if addr.Company != nil {
+		company = *addr.Company
+	}
 
 	return &shopify.AddressInput{
 		FirstName: firstName,
 		LastName:  lastName,
+		Company:   company,
 		Address1:  addr.Address1,
 		City:      addr.City,
 		Province:  addr.Province,

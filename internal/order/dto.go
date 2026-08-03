@@ -29,6 +29,7 @@ type CustomerDTO struct {
 type AddressDTO struct {
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
+	Company   string `json:"company,omitempty"`
 	Address1  string `json:"address1"`
 	Address2  string `json:"address2,omitempty"`
 	City      string `json:"city"`
@@ -44,6 +45,7 @@ type OrderResponse struct {
 	OrderDate           string         `json:"order_date"`
 	Customer            *CustomerDTO   `json:"customer"`
 	ShippingAddress     *AddressDTO    `json:"shipping_address"`
+	BillingAddress      *AddressDTO    `json:"billing_address"`
 	ShopifyCheckoutURL  string         `json:"shopify_checkout_url,omitempty"`
 	ShopifyDraftInvoice string         `json:"shopify_draft_invoice_url,omitempty"`
 	TotalPrice          string         `json:"total_price"`

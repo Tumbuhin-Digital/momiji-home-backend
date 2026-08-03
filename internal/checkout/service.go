@@ -204,9 +204,10 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	}
 
 	if req.Address1 != "" || req.City != "" {
-		draftInput.ShippingAddress = &shopify.AddressInput{
+		shippingAddr := &shopify.AddressInput{
 			FirstName: req.FirstName,
 			LastName:  req.LastName,
+			Company:   req.Company,
 			Address1:  req.Address1,
 			City:      req.City,
 			Province:  req.State,
@@ -214,6 +215,8 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 			Country:   req.Country,
 			Phone:     req.Phone,
 		}
+		draftInput.ShippingAddress = shippingAddr
+		draftInput.BillingAddress = resolveBillingAddress(req, shippingAddr)
 		if snap := ShippingAddressSnapshotFromRequest(req); snap != nil {
 			if jsonVal, err := snap.JSON(); err != nil {
 				slog.WarnContext(ctx, "failed to marshal checkout shipping address snapshot",
