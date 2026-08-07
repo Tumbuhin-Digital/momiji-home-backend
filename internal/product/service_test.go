@@ -261,7 +261,7 @@ func TestUpdateVariantStatus_ShipReadyZeroInventory(t *testing.T) {
 
 	store.Variants["gid://shopify/ProductVariant/1"] = &product.ProductVariant{
 		ID: "uuid-1", ShopifyVariantID: "gid://shopify/ProductVariant/1",
-		Title: "Peach / Peach", InventoryQuantity: 0, FulfillmentType: "pre_order",
+		Title: "Peach / Peach", InventoryQuantity: 0, FulfillmentType: "pre_order", InventoryTracked: true,
 	}
 
 	_, err := svc.UpdateVariantStatus(context.Background(), "gid://shopify/ProductVariant/1", "ship_ready")

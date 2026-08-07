@@ -18,6 +18,8 @@ type VariantDTO struct {
 	WSPrice            string                  `json:"ws_price"`
 	FulfillmentType    FulfillmentType         `json:"fulfillment_type"`
 	InventoryQuantity  int                     `json:"inventory_quantity"`
+	InventoryTracked   bool                    `json:"inventory_tracked"`
+	CustomLinkState    *string                 `json:"custom_link_state,omitempty"`
 	WeightKg           float64                 `json:"weight_kg"`
 	LengthCm           float64                 `json:"length_cm"`
 	WidthCm            float64                 `json:"width_cm"`
@@ -57,6 +59,8 @@ type ProductDTO struct {
 	ProductType        string            `json:"product_type"`
 	Tags               string            `json:"tags"`
 	Status             string            `json:"status"`
+	Origin             string            `json:"origin"`
+	InternalNote       *string           `json:"internal_note,omitempty"`
 	PreorderBatchLabel *string           `json:"preorder_batch_label"`
 	ExpectedShipDate   *string           `json:"expected_ship_date"`
 	BodyHTML           string            `json:"body_html"`
@@ -70,6 +74,7 @@ type ProductQuery struct {
 	Search                   string `query:"search"`
 	Sort                     string `query:"sort"`
 	FulfillmentType          string `query:"fulfillment_type"`
+	Status                   string `query:"status"`
 	ExcludeInactive          bool   `query:"-"`
 	FilterVariantsInResponse bool   `query:"-"`
 }
@@ -103,4 +108,23 @@ type UpdateVariantStatusRequest struct {
 type UpdateVariantLtlRequest struct {
 	VariantID string `json:"variant_id" validate:"required"`
 	IsLtl     bool   `json:"is_ltl"`
+}
+
+type LinkCustomVariantSKURequest struct {
+	VariantID string `json:"variant_id" validate:"required"`
+	SKU       string `json:"sku" validate:"required"`
+}
+
+type CreateCustomVariantRequest struct {
+	Title    string  `json:"title" validate:"required"`
+	RPPPrice float64 `json:"rpp_price" validate:"required,min=0"`
+	WSPrice  float64 `json:"ws_price" validate:"required,min=0"`
+}
+
+type CreateCustomProductRequest struct {
+	Title             string                       `json:"title" validate:"required"`
+	InternalNote      *string                      `json:"internal_note"`
+	IdempotencyKey    string                       `json:"idempotency_key" validate:"required"`
+	ReferenceImageURL *string                      `json:"reference_image_url"`
+	Variants          []CreateCustomVariantRequest `json:"variants" validate:"required,min=1,max=100,dive"`
 }

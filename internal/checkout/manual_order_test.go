@@ -48,6 +48,9 @@ func (s *stubProductService) UpdateVariantPrice(context.Context, string, *float6
 func (s *stubProductService) UpdateVariantLtl(context.Context, string, bool) (*product.VariantDTO, error) {
 	return nil, nil
 }
+func (s *stubProductService) LinkCustomVariantSKU(context.Context, string, string) (*product.VariantDTO, error) {
+	return nil, nil
+}
 func (s *stubProductService) GetAllVariants(context.Context) ([]product.ProductVariant, error) {
 	return nil, nil
 }
@@ -63,6 +66,9 @@ func (s *stubProductService) ValidateVariantActive(_ context.Context, variantID 
 		return apierror.New(422, "inactive_variant", "inactive")
 	}
 	return nil
+}
+func (s *stubProductService) CreateCustomProduct(context.Context, product.CreateCustomProductInput) (*product.ProductDTO, error) {
+	return nil, nil
 }
 
 type stubCartService struct{}
@@ -137,6 +143,18 @@ func (c *recordingManualShopClient) CreateFulfillmentV2(context.Context, shopify
 	return nil, nil
 }
 func (c *recordingManualShopClient) CreateFulfillmentEvent(context.Context, string, string) error {
+	return nil
+}
+func (c *recordingManualShopClient) CreateUnlistedProduct(context.Context, shopify.CreateUnlistedProductInput) (*shopify.CreatedProduct, error) {
+	return nil, nil
+}
+func (c *recordingManualShopClient) AttachProductMediaFromURL(context.Context, string, string, string) (*shopify.CreatedProductMedia, error) {
+	return nil, nil
+}
+func (c *recordingManualShopClient) AttachProductMediaFromBytes(context.Context, string, string, string, []byte, string) (*shopify.CreatedProductMedia, error) {
+	return nil, nil
+}
+func (c *recordingManualShopClient) LinkVariantSKU(context.Context, string, string) error {
 	return nil
 }
 

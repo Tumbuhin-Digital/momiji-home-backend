@@ -25,9 +25,11 @@ type ProductService interface {
 	UpdateVariantBatchLabelByVariantID(ctx context.Context, variantID string, batchLabel string) (*VariantDTO, error)
 	UpdateVariantPrice(ctx context.Context, variantID string, wsPrice *float64) error
 	UpdateVariantLtl(ctx context.Context, variantID string, isLtl bool) (*VariantDTO, error)
+	LinkCustomVariantSKU(ctx context.Context, variantID, sku string) (*VariantDTO, error)
 	GetAllVariants(ctx context.Context) ([]ProductVariant, error)
 	BulkUpdateDimensions(ctx context.Context, rows []DimensionUpdateInput) (BulkUpdateDimensionsResult, error)
 	ValidateVariantActive(ctx context.Context, variantID string) error
+	CreateCustomProduct(ctx context.Context, input CreateCustomProductInput) (*ProductDTO, error)
 }
 
 type service struct {
@@ -78,7 +80,7 @@ func (s *service) GetProducts(ctx context.Context, query ProductQuery) ([]Produc
 	}
 
 	variantFilter := ""
-	if query.FilterVariantsInResponse && query.FulfillmentType != "" {
+	if query.FilterVariantsInResponse && query.FulfillmentType != "" && query.FulfillmentType != "unlisted" {
 		variantFilter = query.FulfillmentType
 	}
 
@@ -168,12 +170,21 @@ func mapProductToDTO(p *Product, fulfillmentTypeFilter string) ProductDTO {
 		ProductType:        p.ProductType,
 		Tags:               p.Tags,
 		Status:             p.Status,
+		Origin:             originOrDefault(p.Origin),
+		InternalNote:       p.InternalNote,
 		PreorderBatchLabel: batchLabel,
 		ExpectedShipDate:   shipDate,
 		BodyHTML:           p.BodyHTML,
 		Variants:           variants,
 		Images:             images,
 	}
+}
+
+func originOrDefault(origin string) string {
+	if origin == "" {
+		return ProductOriginShopifySync
+	}
+	return origin
 }
 
 func mapVariantToDTO(variant *ProductVariant) *VariantDTO {
@@ -203,6 +214,8 @@ func mapVariantToDTO(variant *ProductVariant) *VariantDTO {
 		WSPrice:            wsPrice,
 		FulfillmentType:    FulfillmentType(ft),
 		InventoryQuantity:  variant.InventoryQuantity,
+		InventoryTracked:   variant.InventoryTracked,
+		CustomLinkState:    variant.CustomLinkState,
 		WeightKg:           variant.WeightKg,
 		LengthCm:           variant.DepthCm, // Mapping Depth to Length
 		WidthCm:            variant.WidthCm,
@@ -248,11 +261,11 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 					node { id url altText }
 				  }
 				}
-				variants(first: 10) {
+				variants(first: 100) {
 				  edges {
 					node {
 						id title sku price inventoryQuantity image { url }
-						inventoryItem { id }
+						inventoryItem { id tracked }
 					}
 				  }
 				}
@@ -270,7 +283,6 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("shopify graphql query failed (page %d): %w", page+1, err)
 		}
-		fmt.Printf("Shopify response (page %d): %s\n", page, string(resBytes))
 
 		var res struct {
 			Data struct {
@@ -306,7 +318,8 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 											Url string `json:"url"`
 										} `json:"image"`
 										InventoryItem struct {
-											ID string `json:"id"`
+											ID      string `json:"id"`
+											Tracked bool   `json:"tracked"`
 										} `json:"inventoryItem"`
 									} `json:"node"`
 								} `json:"edges"`
@@ -375,14 +388,26 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 				price, _ := strconv.ParseFloat(vNode.Price, 64)
 
 				fulfillmentType := "ship_ready"
+				inventoryTracked := true
 
 				// Weight is managed via CSV packaging import — never overwrite from Shopify.
+				// Origin/custom fields (ws_price, custom_link_state, inventory_tracked) are Momiji-owned.
 				existing, _ := s.store.GetVariantByShopifyID(ctx, vNode.ID)
 				if existing != nil && existing.FulfillmentType != "" {
 					fulfillmentType = existing.FulfillmentType
 				}
+				if existing != nil {
+					inventoryTracked = existing.InventoryTracked
+				} else {
+					inventoryTracked = vNode.InventoryItem.Tracked
+				}
+				// Custom products awaiting SKU must stay untracked and must not auto-flip to pre_order.
+				if existing != nil && existing.CustomLinkState != nil &&
+					(*existing.CustomLinkState == CustomLinkStateAwaitingSKU || *existing.CustomLinkState == CustomLinkStateLinked) {
+					inventoryTracked = existing.InventoryTracked
+				}
 
-				if vNode.InventoryQuantity <= 0 && fulfillmentType == "ship_ready" {
+				if inventoryTracked && vNode.InventoryQuantity <= 0 && fulfillmentType == "ship_ready" {
 					fulfillmentType = "pre_order"
 					if existing != nil {
 						s.store.UpdateVariantFulfillmentType(ctx, vNode.ID, "pre_order")
@@ -399,6 +424,11 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 					InventoryQuantity:      vNode.InventoryQuantity,
 					ShopifyInventoryItemID: vNode.InventoryItem.ID,
 					FulfillmentType:        fulfillmentType,
+					InventoryTracked:       inventoryTracked,
+				}
+				if existing != nil {
+					variant.CustomLinkState = existing.CustomLinkState
+					variant.WSPrice = existing.WSPrice
 				}
 				if err := s.store.UpsertVariant(ctx, variant); err != nil {
 					return fmt.Errorf("failed to upsert variant %s: %w", variant.ShopifyVariantID, err)
@@ -482,7 +512,7 @@ func (s *service) UpdateProductStatus(ctx context.Context, productID string, ful
 			return nil, apierror.ErrInternal
 		}
 		for _, v := range variants {
-			if v.InventoryQuantity <= 0 {
+			if v.InventoryTracked && v.InventoryQuantity <= 0 {
 				return nil, apierror.New(400, "inventory_error", "Cannot set status to ship_ready. Variant '"+v.Title+"' has 0 inventory.")
 			}
 		}
@@ -507,7 +537,7 @@ func (s *service) UpdateVariantStatus(ctx context.Context, variantID string, ful
 		return nil, apierror.ErrNotFound
 	}
 
-	if fulfillmentType == "ship_ready" && variant.InventoryQuantity <= 0 {
+	if fulfillmentType == "ship_ready" && variant.InventoryTracked && variant.InventoryQuantity <= 0 {
 		return nil, apierror.New(400, "inventory_error", "Cannot set status to ship_ready. Variant '"+variant.Title+"' has 0 inventory.")
 	}
 
@@ -559,6 +589,52 @@ func (s *service) UpdateVariantLtl(ctx context.Context, variantID string, isLtl 
 	}
 
 	if err := s.store.UpdateVariantLtl(ctx, variantID, isLtl); err != nil {
+		return nil, apierror.ErrInternal
+	}
+
+	return s.GetVariantByID(ctx, variantID)
+}
+
+func (s *service) LinkCustomVariantSKU(ctx context.Context, variantID, sku string) (*VariantDTO, error) {
+	sku = strings.TrimSpace(sku)
+	if sku == "" {
+		return nil, apierror.New(400, "validation_error", "SKU is required")
+	}
+
+	variant, err := s.store.GetVariantByShopifyID(ctx, variantID)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	if variant == nil {
+		return nil, apierror.ErrNotFound
+	}
+
+	product, err := s.store.GetProductByID(ctx, variant.ProductID)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	if product == nil {
+		return nil, apierror.ErrNotFound
+	}
+	if product.Origin != ProductOriginCustom {
+		return nil, apierror.New(400, "validation_error", "Only custom products can be linked")
+	}
+
+	if variant.CustomLinkState != nil && *variant.CustomLinkState == CustomLinkStateLinked {
+		return s.GetVariantByID(ctx, variantID)
+	}
+	if variant.CustomLinkState == nil || *variant.CustomLinkState != CustomLinkStateAwaitingSKU {
+		return nil, apierror.New(400, "validation_error", "Variant is not awaiting SKU")
+	}
+	if variant.ShopifyInventoryItemID == "" {
+		return nil, apierror.New(400, "validation_error", "Variant is missing Shopify inventory item")
+	}
+
+	if err := s.client.LinkVariantSKU(ctx, variant.ShopifyInventoryItemID, sku); err != nil {
+		return nil, apierror.New(502, "shopify_error", err.Error())
+	}
+
+	if err := s.store.MarkCustomVariantLinked(ctx, variantID, sku); err != nil {
 		return nil, apierror.ErrInternal
 	}
 

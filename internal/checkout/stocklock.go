@@ -26,9 +26,13 @@ type StockLockService interface {
 	CleanExpiredLocks(ctx context.Context) error
 }
 
+type variantInventoryLookup interface {
+	GetVariantByID(ctx context.Context, variantID string) (*product.VariantDTO, error)
+}
+
 type stockLockService struct {
 	store          StockLockStore
-	productService product.ProductService
+	productService variantInventoryLookup
 	shopifyCli     shopify.Client
 }
 
@@ -63,8 +67,30 @@ func (s *stockLockService) AcquireLocks(
 		return time.Time{}, fmt.Errorf("failed to check real-time shopify inventory: %w", err)
 	}
 
+	untracked := make(map[string]bool)
+	if s.productService != nil {
+		for _, id := range variantIDs {
+			v, err := s.productService.GetVariantByID(ctx, id)
+			if err == nil && v != nil && !v.InventoryTracked {
+				untracked[id] = true
+			}
+		}
+	}
+
 	var newLocks []StockLock
 	for _, req := range requests {
+		if untracked[req.ShopifyVariantID] {
+			newLocks = append(newLocks, StockLock{
+				UserID:            userID,
+				SessionID:         sessionID,
+				CheckoutReference: &checkoutRef,
+				ShopifyVariantID:  req.ShopifyVariantID,
+				Quantity:          req.Quantity,
+				ExpiresAt:         expiresAt,
+			})
+			continue
+		}
+
 		inventoryQty, ok := realTimeInv[req.ShopifyVariantID]
 		if !ok {
 			return time.Time{}, apierror.New(404, "not_found", "Variant not found in Shopify: "+req.ShopifyVariantID)

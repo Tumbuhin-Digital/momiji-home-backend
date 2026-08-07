@@ -3,6 +3,7 @@ package product
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -48,8 +49,16 @@ func (m *MockProductStore) GetProducts(ctx context.Context, q ProductQuery) ([]P
 		return nil, 0, m.GetVariantsErr
 	}
 	out := make([]Product, 0, len(m.Products))
+	wantedStatus := strings.ToLower(strings.TrimSpace(q.Status))
+	if strings.EqualFold(q.FulfillmentType, "unlisted") {
+		wantedStatus = "unlisted"
+	}
 	for _, p := range m.Products {
-		if !strings.EqualFold(p.Status, "active") {
+		status := strings.ToLower(p.Status)
+		if status != "active" && status != "unlisted" {
+			continue
+		}
+		if wantedStatus != "" && status != wantedStatus {
 			continue
 		}
 		out = append(out, *p)
@@ -60,7 +69,11 @@ func (m *MockProductStore) GetProducts(ctx context.Context, q ProductQuery) ([]P
 func (m *MockProductStore) ListShopifyProductIDs(ctx context.Context) ([]string, error) {
 	ids := make([]string, 0, len(m.Products))
 	for _, p := range m.Products {
-		if strings.EqualFold(p.Status, "deleted") {
+		status := strings.ToLower(p.Status)
+		if status == "deleted" || status == "creating" || status == "failed" {
+			continue
+		}
+		if strings.HasPrefix(p.ShopifyID, "pending:") {
 			continue
 		}
 		ids = append(ids, p.ShopifyID)
@@ -192,10 +205,18 @@ func (m *MockProductStore) GetProductByID(ctx context.Context, productID string)
 	}
 	for _, p := range m.Products {
 		if p.ID == productID {
-			if !strings.EqualFold(p.Status, "active") {
+			status := strings.ToLower(p.Status)
+			if status != "active" && status != "unlisted" {
 				return nil, nil
 			}
-			return p, nil
+			cp := *p
+			cp.Variants = nil
+			for _, v := range m.Variants {
+				if v.ProductID == p.ID {
+					cp.Variants = append(cp.Variants, *v)
+				}
+			}
+			return &cp, nil
 		}
 	}
 	return nil, nil
@@ -207,8 +228,11 @@ func (m *MockProductStore) IsVariantFromActiveProduct(ctx context.Context, shopi
 		return false, nil
 	}
 	for _, p := range m.Products {
-		if p.ID == v.ProductID && strings.EqualFold(p.Status, "active") {
-			return true, nil
+		if p.ID == v.ProductID {
+			status := strings.ToLower(p.Status)
+			if status == "active" || status == "unlisted" {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
@@ -268,9 +292,12 @@ func (m *MockProductStore) GetAllVariants(ctx context.Context) ([]ProductVariant
 	out := []ProductVariant{}
 	for _, v := range m.Variants {
 		for _, p := range m.Products {
-			if p.ID == v.ProductID && strings.EqualFold(p.Status, "active") {
-				out = append(out, *v)
-				break
+			if p.ID == v.ProductID {
+				status := strings.ToLower(p.Status)
+				if status == "active" || status == "unlisted" {
+					out = append(out, *v)
+					break
+				}
 			}
 		}
 	}
@@ -312,6 +339,116 @@ func (m *MockProductStore) BulkUpdateVariantDimensions(ctx context.Context, inpu
 	return result, nil
 }
 
+func (m *MockProductStore) GetProductByIdempotencyKey(ctx context.Context, key string) (*Product, error) {
+	for _, p := range m.Products {
+		if p.CreateIdempotencyKey != nil && *p.CreateIdempotencyKey == key {
+			cp := *p
+			cp.Variants = nil
+			for _, v := range m.Variants {
+				if v.ProductID == p.ID {
+					cp.Variants = append(cp.Variants, *v)
+				}
+			}
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *MockProductStore) CreateCustomProductStub(ctx context.Context, product *Product) error {
+	if product.ID == "" {
+		product.ID = "mock-custom-" + product.ShopifyID
+	}
+	if product.CreateIdempotencyKey != nil {
+		for _, p := range m.Products {
+			if p.CreateIdempotencyKey != nil && *p.CreateIdempotencyKey == *product.CreateIdempotencyKey {
+				return errors.New("duplicate idempotency key")
+			}
+		}
+	}
+	cp := *product
+	m.Products[product.ShopifyID] = &cp
+	return nil
+}
+
+func (m *MockProductStore) FinalizeCustomProduct(ctx context.Context, productID string, product *Product, variants []ProductVariant, images []ProductImage) error {
+	var existing *Product
+	var oldKey string
+	for k, p := range m.Products {
+		if p.ID == productID {
+			existing = p
+			oldKey = k
+			break
+		}
+	}
+	if existing == nil {
+		return errors.New("product stub not found")
+	}
+	existing.ShopifyID = product.ShopifyID
+	existing.Title = product.Title
+	existing.Status = product.Status
+	existing.Handle = product.Handle
+	existing.Origin = product.Origin
+	existing.InternalNote = product.InternalNote
+	if oldKey != product.ShopifyID {
+		delete(m.Products, oldKey)
+		m.Products[product.ShopifyID] = existing
+	}
+	for k, v := range m.Variants {
+		if v.ProductID == productID {
+			delete(m.Variants, k)
+		}
+	}
+	for i := range variants {
+		v := variants[i]
+		v.ProductID = productID
+		if v.ID == "" {
+			v.ID = "mock-variant-" + v.ShopifyVariantID
+		}
+		cp := v
+		m.Variants[v.ShopifyVariantID] = &cp
+	}
+	existing.Images = images
+	return nil
+}
+
+func (m *MockProductStore) MarkCustomProductFailed(ctx context.Context, productID string) error {
+	for _, p := range m.Products {
+		if p.ID == productID {
+			p.Status = ProductStatusFailed
+			return nil
+		}
+	}
+	return errors.New("product not found")
+}
+
+func (m *MockProductStore) DeleteProductByID(ctx context.Context, productID string) error {
+	for k, p := range m.Products {
+		if p.ID == productID {
+			delete(m.Products, k)
+			for vk, v := range m.Variants {
+				if v.ProductID == productID {
+					delete(m.Variants, vk)
+				}
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
+func (m *MockProductStore) MarkCustomVariantLinked(ctx context.Context, shopifyVariantID, sku string) error {
+	v, ok := m.Variants[shopifyVariantID]
+	if !ok {
+		return errors.New("variant not found")
+	}
+	linked := CustomLinkStateLinked
+	v.SKU = sku
+	v.CustomLinkState = &linked
+	v.InventoryTracked = true
+	return nil
+}
+
 // MockShopifyClient is a test double for shopify.Client.
 type MockShopifyClient struct {
 	AdminGraphQLResponse         []byte
@@ -322,6 +459,14 @@ type MockShopifyClient struct {
 	CartErr                      error
 	GetVariantsInventoryResponse map[string]int
 	GetVariantsInventoryErr      error
+	CreateUnlistedProductFn      func(ctx context.Context, input shopify.CreateUnlistedProductInput) (*shopify.CreatedProduct, error)
+	CreateUnlistedProductCalls   int
+	LinkVariantSKUFn             func(ctx context.Context, inventoryItemID, sku string) error
+	LinkVariantSKUCalls          int
+	LastLinkVariantSKUItemID     string
+	LastLinkVariantSKU           string
+	AttachMediaURLFn             func(ctx context.Context, productID, imageURL, alt string) (*shopify.CreatedProductMedia, error)
+	AttachMediaBytesFn           func(ctx context.Context, productID, filename, contentType string, data []byte, alt string) (*shopify.CreatedProductMedia, error)
 }
 
 func (m *MockShopifyClient) QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error) {
@@ -368,12 +513,61 @@ func (m *MockShopifyClient) CreateFulfillmentEvent(ctx context.Context, shopifyF
 	return nil
 }
 
+func (m *MockShopifyClient) CreateUnlistedProduct(ctx context.Context, input shopify.CreateUnlistedProductInput) (*shopify.CreatedProduct, error) {
+	m.CreateUnlistedProductCalls++
+	if m.CreateUnlistedProductFn != nil {
+		return m.CreateUnlistedProductFn(ctx, input)
+	}
+	variants := make([]shopify.CreatedVariant, 0, len(input.Variants))
+	for i, v := range input.Variants {
+		variants = append(variants, shopify.CreatedVariant{
+			ID:                fmt.Sprintf("gid://shopify/ProductVariant/%d", i+1),
+			Title:             v.Title,
+			Price:             v.Price,
+			InventoryItemID:   fmt.Sprintf("gid://shopify/InventoryItem/%d", i+1),
+			InventoryQuantity: 0,
+		})
+	}
+	return &shopify.CreatedProduct{
+		ID:       "gid://shopify/Product/custom-1",
+		Title:    input.Title,
+		Status:   "unlisted",
+		Handle:   "custom-product",
+		Variants: variants,
+	}, nil
+}
+
+func (m *MockShopifyClient) AttachProductMediaFromURL(ctx context.Context, productID, imageURL, alt string) (*shopify.CreatedProductMedia, error) {
+	if m.AttachMediaURLFn != nil {
+		return m.AttachMediaURLFn(ctx, productID, imageURL, alt)
+	}
+	return &shopify.CreatedProductMedia{ID: "gid://shopify/MediaImage/1", URL: imageURL, Alt: alt}, nil
+}
+
+func (m *MockShopifyClient) AttachProductMediaFromBytes(ctx context.Context, productID, filename, contentType string, data []byte, alt string) (*shopify.CreatedProductMedia, error) {
+	if m.AttachMediaBytesFn != nil {
+		return m.AttachMediaBytesFn(ctx, productID, filename, contentType, data, alt)
+	}
+	return &shopify.CreatedProductMedia{ID: "gid://shopify/MediaImage/1", URL: "https://cdn.example.com/" + filename, Alt: alt}, nil
+}
+
+func (m *MockShopifyClient) LinkVariantSKU(ctx context.Context, inventoryItemID, sku string) error {
+	m.LinkVariantSKUCalls++
+	m.LastLinkVariantSKUItemID = inventoryItemID
+	m.LastLinkVariantSKU = sku
+	if m.LinkVariantSKUFn != nil {
+		return m.LinkVariantSKUFn(ctx, inventoryItemID, sku)
+	}
+	return nil
+}
+
 type MockShopifyClientFunc struct {
 	QueryAdminGraphQLFn      func(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error)
 	CreateDraftOrderFn       func(ctx context.Context, input shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error)
 	CreateStorefrontCartFunc func(ctx context.Context, input shopify.CartCreateInput) (*shopify.CartCreateResponse, error)
 	CreateRefundFunc         func(ctx context.Context, shopifyOrderID string, amount float64, currency string, reason string) error
 	GetVariantsInventoryFunc func(ctx context.Context, variantIDs []string) (map[string]int, error)
+	CreateUnlistedProductFn  func(ctx context.Context, input shopify.CreateUnlistedProductInput) (*shopify.CreatedProduct, error)
 }
 
 func (m *MockShopifyClientFunc) QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error) {
@@ -426,5 +620,34 @@ func (m *MockShopifyClientFunc) CreateFulfillmentV2(ctx context.Context, input s
 }
 
 func (m *MockShopifyClientFunc) CreateFulfillmentEvent(ctx context.Context, shopifyFulfillmentID, status string) error {
+	return nil
+}
+
+func (m *MockShopifyClientFunc) CreateUnlistedProduct(ctx context.Context, input shopify.CreateUnlistedProductInput) (*shopify.CreatedProduct, error) {
+	if m.CreateUnlistedProductFn != nil {
+		return m.CreateUnlistedProductFn(ctx, input)
+	}
+	return &shopify.CreatedProduct{
+		ID:     "gid://shopify/Product/func-1",
+		Title:  input.Title,
+		Status: "unlisted",
+		Variants: []shopify.CreatedVariant{{
+			ID:              "gid://shopify/ProductVariant/func-1",
+			Title:           input.Variants[0].Title,
+			Price:           input.Variants[0].Price,
+			InventoryItemID: "gid://shopify/InventoryItem/func-1",
+		}},
+	}, nil
+}
+
+func (m *MockShopifyClientFunc) AttachProductMediaFromURL(ctx context.Context, productID, imageURL, alt string) (*shopify.CreatedProductMedia, error) {
+	return &shopify.CreatedProductMedia{ID: "gid://shopify/MediaImage/1", URL: imageURL, Alt: alt}, nil
+}
+
+func (m *MockShopifyClientFunc) AttachProductMediaFromBytes(ctx context.Context, productID, filename, contentType string, data []byte, alt string) (*shopify.CreatedProductMedia, error) {
+	return &shopify.CreatedProductMedia{ID: "gid://shopify/MediaImage/1", URL: "https://cdn.example.com/" + filename, Alt: alt}, nil
+}
+
+func (m *MockShopifyClientFunc) LinkVariantSKU(ctx context.Context, inventoryItemID, sku string) error {
 	return nil
 }

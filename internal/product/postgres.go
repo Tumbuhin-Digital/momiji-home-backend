@@ -20,9 +20,10 @@ func NewPostgresStore(db *gorm.DB) Store {
 }
 
 const activeProductStatus = "active"
+const unlistedProductStatus = "unlisted"
 
-func scopeActiveProducts(query *gorm.DB) *gorm.DB {
-	return query.Where("LOWER(products.status) = ?", activeProductStatus)
+func scopeListableProducts(query *gorm.DB) *gorm.DB {
+	return query.Where("LOWER(products.status) IN ?", []string{activeProductStatus, unlistedProductStatus})
 }
 
 func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Product, int64, error) {
@@ -30,7 +31,14 @@ func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Prod
 	var total int64
 
 	query := s.db.WithContext(ctx).Model(&Product{})
-	query = scopeActiveProducts(query)
+	query = scopeListableProducts(query)
+
+	if status := strings.ToLower(strings.TrimSpace(q.Status)); status != "" {
+		switch status {
+		case activeProductStatus, unlistedProductStatus:
+			query = query.Where("LOWER(products.status) = ?", status)
+		}
+	}
 
 	if q.Search != "" {
 		searchPattern := "%" + q.Search + "%"
@@ -38,6 +46,9 @@ func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Prod
 	}
 
 	switch q.FulfillmentType {
+	case "unlisted":
+		// Client sends unlisted via the same fulfillment_type param as ship_ready/pre_order.
+		query = query.Where("LOWER(products.status) = ?", unlistedProductStatus)
 	case "mixed":
 		query = query.Where(`products.id IN (
 			SELECT product_id
@@ -75,7 +86,7 @@ func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Prod
 	offset := (page - 1) * limit
 
 	orderStr := "products.created_at DESC" // Fix 1C: Default sorting
-	needsVariantJoin := q.FulfillmentType == "" || q.FulfillmentType == "mixed"
+	needsVariantJoin := q.FulfillmentType == "" || q.FulfillmentType == "mixed" || q.FulfillmentType == "unlisted"
 	switch q.Sort {
 	case "price_asc":
 		if needsVariantJoin {
@@ -110,7 +121,8 @@ func (s *PostgresStore) GetProducts(ctx context.Context, q ProductQuery) ([]Prod
 func (s *PostgresStore) ListShopifyProductIDs(ctx context.Context) ([]string, error) {
 	var ids []string
 	if err := s.db.WithContext(ctx).Model(&Product{}).
-		Where("LOWER(status) <> ?", "deleted").
+		Where("LOWER(status) NOT IN ?", []string{ProductStatusDeleted, ProductStatusCreating, ProductStatusFailed}).
+		Where("shopify_id NOT LIKE ?", "pending:%").
 		Pluck("shopify_id", &ids).Error; err != nil {
 		return nil, err
 	}
@@ -178,7 +190,8 @@ func (s *PostgresStore) UpsertVariant(ctx context.Context, variant *ProductVaria
 			"title", "sku", "price", "image_src",
 			"inventory_quantity", "shopify_inventory_item_id", "updated_at",
 		}),
-	}).Create(variant).Error
+		// Select("*") ensures inventory_tracked=false is written on INSERT (GORM omits bool zero-values).
+	}).Select("*").Create(variant).Error
 }
 
 func (s *PostgresStore) UpsertProductImages(ctx context.Context, productID string, images []ProductImage) error {
@@ -250,11 +263,29 @@ func (s *PostgresStore) UpdateVariantLtl(ctx context.Context, variantID string, 
 	return nil
 }
 
+func (s *PostgresStore) MarkCustomVariantLinked(ctx context.Context, shopifyVariantID, sku string) error {
+	result := s.db.WithContext(ctx).Model(&ProductVariant{}).
+		Where("shopify_variant_id = ?", shopifyVariantID).
+		Updates(map[string]interface{}{
+			"sku":                sku,
+			"custom_link_state":  CustomLinkStateLinked,
+			"inventory_tracked":  true,
+			"updated_at":         gorm.Expr("now()"),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 func (s *PostgresStore) GetAllVariants(ctx context.Context) ([]ProductVariant, error) {
 	var variants []ProductVariant
 	err := s.db.WithContext(ctx).
 		Joins("JOIN products ON products.id = product_variants.product_id").
-		Where("LOWER(products.status) = ?", activeProductStatus).
+		Where("LOWER(products.status) IN ?", []string{activeProductStatus, unlistedProductStatus}).
 		Preload("Product").
 		Find(&variants).Error
 	if err != nil {
@@ -461,7 +492,7 @@ func (s *PostgresStore) GetProductByID(ctx context.Context, productID string) (*
 	err := s.db.WithContext(ctx).
 		Preload("Images").
 		Preload("Variants").
-		Where("id = ? AND LOWER(status) = ?", productID, activeProductStatus).
+		Where("id = ? AND LOWER(status) IN ?", productID, []string{activeProductStatus, unlistedProductStatus}).
 		First(&p).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -477,7 +508,7 @@ func (s *PostgresStore) IsVariantFromActiveProduct(ctx context.Context, shopifyV
 	err := s.db.WithContext(ctx).
 		Model(&ProductVariant{}).
 		Joins("JOIN products ON products.id = product_variants.product_id").
-		Where("product_variants.shopify_variant_id = ? AND LOWER(products.status) = ?", shopifyVariantID, activeProductStatus).
+		Where("product_variants.shopify_variant_id = ? AND LOWER(products.status) IN ?", shopifyVariantID, []string{activeProductStatus, unlistedProductStatus}).
 		Count(&count).Error
 	if err != nil {
 		return false, err
@@ -541,4 +572,78 @@ func (s *PostgresStore) UpdateSingleVariantBatchLabel(ctx context.Context, shopi
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+func (s *PostgresStore) GetProductByIdempotencyKey(ctx context.Context, key string) (*Product, error) {
+	var p Product
+	err := s.db.WithContext(ctx).
+		Preload("Images").
+		Preload("Variants").
+		Where("create_idempotency_key = ?", key).
+		First(&p).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (s *PostgresStore) CreateCustomProductStub(ctx context.Context, product *Product) error {
+	product.ID = ""
+	return s.db.WithContext(ctx).Create(product).Error
+}
+
+func (s *PostgresStore) FinalizeCustomProduct(ctx context.Context, productID string, product *Product, variants []ProductVariant, images []ProductImage) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{
+			"shopify_id": product.ShopifyID,
+			"title":      product.Title,
+			"status":     product.Status,
+			"handle":     product.Handle,
+			"updated_at": gorm.Expr("now()"),
+		}
+		if product.InternalNote != nil {
+			updates["internal_note"] = *product.InternalNote
+		}
+		if err := tx.Model(&Product{}).Where("id = ?", productID).Updates(updates).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Where("product_id = ?", productID).Delete(&ProductVariant{}).Error; err != nil {
+			return err
+		}
+		for i := range variants {
+			variants[i].ID = ""
+			variants[i].ProductID = productID
+			// Select("*") so inventory_tracked=false is persisted (GORM skips bool zero-values otherwise).
+			if err := tx.Select("*").Create(&variants[i]).Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.Where("product_id = ?", productID).Delete(&ProductImage{}).Error; err != nil {
+			return err
+		}
+		for i := range images {
+			images[i].ID = ""
+			images[i].ProductID = productID
+			if err := tx.Create(&images[i]).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (s *PostgresStore) MarkCustomProductFailed(ctx context.Context, productID string) error {
+	return s.db.WithContext(ctx).Model(&Product{}).
+		Where("id = ?", productID).
+		Updates(map[string]interface{}{"status": ProductStatusFailed, "updated_at": gorm.Expr("now()")}).
+		Error
+}
+
+func (s *PostgresStore) DeleteProductByID(ctx context.Context, productID string) error {
+	return s.db.WithContext(ctx).Where("id = ?", productID).Delete(&Product{}).Error
 }

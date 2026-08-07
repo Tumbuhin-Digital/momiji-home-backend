@@ -23,6 +23,10 @@ type Client interface {
 	FetchFulfillmentOrders(ctx context.Context, shopifyOrderID string) ([]FulfillmentOrderData, error)
 	CreateFulfillmentV2(ctx context.Context, input CreateFulfillmentV2Input) (*CreateFulfillmentV2Result, error)
 	CreateFulfillmentEvent(ctx context.Context, shopifyFulfillmentID, status string) error
+	CreateUnlistedProduct(ctx context.Context, input CreateUnlistedProductInput) (*CreatedProduct, error)
+	AttachProductMediaFromURL(ctx context.Context, productID, imageURL, alt string) (*CreatedProductMedia, error)
+	AttachProductMediaFromBytes(ctx context.Context, productID string, filename, contentType string, data []byte, alt string) (*CreatedProductMedia, error)
+	LinkVariantSKU(ctx context.Context, inventoryItemID, sku string) error
 }
 
 type DraftOrderInvoiceEmailInput struct {
@@ -48,7 +52,7 @@ func NewClient(storeDomain, adminToken, storefrontToken string) Client {
 }
 
 func (c *clientImpl) QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error) {
-	url := fmt.Sprintf("https://%s/admin/api/2025-01/graphql.json", c.StoreDomain)
+	url := fmt.Sprintf("https://%s/admin/api/2025-10/graphql.json", c.StoreDomain)
 
 	payload := map[string]interface{}{
 		"query":     query,

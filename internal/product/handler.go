@@ -2,6 +2,8 @@ package product
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"log/slog"
 	"sort"
 	"strconv"
@@ -47,10 +49,12 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	admin.Use(middleware.Auth(h.jwtSecret))
 	admin.Use(middleware.RBAC("admin"))
 	admin.Post("/sync", h.SyncProducts)
+	admin.Post("/custom", h.CreateCustomProduct)
 	admin.Patch("/variant/price", h.UpdateVariantPrice)
 	admin.Patch("/variant/status", h.UpdateVariantStatus)
 	admin.Patch("/variant/ltl", h.UpdateVariantLtl)
 	admin.Patch("/variant/batch-label", h.UpdateVariantBatchLabelByVariantID)
+	admin.Patch("/variant/link-sku", h.LinkCustomVariantSKU)
 	admin.Patch("/:id/status", h.UpdateProductStatus)
 	admin.Patch("/:id/batch", h.UpdateVariantBatchLabel)
 	admin.Get("/variants/dimensions/template", h.DownloadDimensionTemplate)
@@ -66,6 +70,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 // @Param search query string false "Search by title or description"
 // @Param sort query string false "Sort order (e.g. price_asc, price_desc, name_asc, created_at, stock_asc, stock_desc)"
 // @Param fulfillment_type query string false "Filter by fulfillment type (ship_ready, pre_order)"
+// @Param status query string false "Filter by Shopify product status (active, unlisted)"
 // @Success 200 {object} response.Envelope{data=response.PaginatedData}
 // @Router /products [get]
 func (h *Handler) GetProducts(c *fiber.Ctx) error {
@@ -168,6 +173,90 @@ func (h *Handler) SyncProducts(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Products synced successfully", nil)
+}
+
+// CreateCustomProduct godoc
+// @Summary Create a custom UNLISTED Shopify product
+// @Tags Product
+// @Accept json,multipart/form-data
+// @Produce json
+// @Security BearerAuth
+// @Success 201 {object} response.Envelope{data=ProductDTO}
+// @Router /products/custom [post]
+func (h *Handler) CreateCustomProduct(c *fiber.Ctx) error {
+	var req CreateCustomProductRequest
+	var imageBytes *ReferenceImageBytes
+
+	contentType := string(c.Request().Header.ContentType())
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		req.Title = strings.TrimSpace(c.FormValue("title"))
+		req.IdempotencyKey = strings.TrimSpace(c.FormValue("idempotency_key"))
+		if note := strings.TrimSpace(c.FormValue("internal_note")); note != "" {
+			req.InternalNote = &note
+		}
+		if imageURL := strings.TrimSpace(c.FormValue("reference_image_url")); imageURL != "" {
+			req.ReferenceImageURL = &imageURL
+		}
+		variantsJSON := c.FormValue("variants")
+		if variantsJSON == "" {
+			return response.Error(c, apierror.New(400, "validation_error", "variants is required"))
+		}
+		if err := json.Unmarshal([]byte(variantsJSON), &req.Variants); err != nil {
+			return response.Error(c, apierror.New(400, "validation_error", "variants must be valid JSON"))
+		}
+		if fileHeader, err := c.FormFile("reference_image"); err == nil && fileHeader != nil {
+			file, err := fileHeader.Open()
+			if err != nil {
+				return response.Error(c, apierror.New(400, "validation_error", "failed to read reference image"))
+			}
+			defer file.Close()
+			data, err := io.ReadAll(file)
+			if err != nil {
+				return response.Error(c, apierror.New(400, "validation_error", "failed to read reference image"))
+			}
+			ct := fileHeader.Header.Get("Content-Type")
+			if ct == "" {
+				ct = "image/jpeg"
+			}
+			imageBytes = &ReferenceImageBytes{
+				Filename:    fileHeader.Filename,
+				ContentType: ct,
+				Data:        data,
+			}
+		}
+	} else {
+		if err := c.BodyParser(&req); err != nil {
+			return response.Error(c, apierror.ErrBadRequest)
+		}
+		if err := validator.ValidateStruct(&req); err != nil {
+			return response.Error(c, err)
+		}
+	}
+
+	if req.Title == "" || req.IdempotencyKey == "" || len(req.Variants) == 0 {
+		return response.Error(c, apierror.New(400, "validation_error", "title, idempotency_key, and variants are required"))
+	}
+
+	input := CreateCustomProductInput{
+		Title:             req.Title,
+		InternalNote:      req.InternalNote,
+		IdempotencyKey:    req.IdempotencyKey,
+		ReferenceImageURL: req.ReferenceImageURL,
+		ReferenceImage:    imageBytes,
+	}
+	for _, v := range req.Variants {
+		input.Variants = append(input.Variants, CreateCustomVariantInput{
+			Title:    v.Title,
+			RPPPrice: v.RPPPrice,
+			WSPrice:  v.WSPrice,
+		})
+	}
+
+	dto, err := h.service.CreateCustomProduct(c.Context(), input)
+	if err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusCreated, "Custom product created", dto)
 }
 
 // GetProductByID godoc
@@ -413,6 +502,37 @@ func (h *Handler) UpdateVariantLtl(c *fiber.Ctx) error {
 	}
 
 	return response.Success(c, fiber.StatusOK, "Variant LTL status updated", dto)
+}
+
+// LinkCustomVariantSKU godoc
+// @Summary Link custom variant SKU to Shopify and enable inventory tracking
+// @Tags Product
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body LinkCustomVariantSKURequest true "Link SKU Request"
+// @Success 200 {object} response.Envelope{data=VariantDTO}
+// @Router /products/variant/link-sku [patch]
+func (h *Handler) LinkCustomVariantSKU(c *fiber.Ctx) error {
+	var req LinkCustomVariantSKURequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	slog.InfoContext(c.Context(), "LinkCustomVariantSKU",
+		slog.String("variant_id", req.VariantID),
+		slog.String("sku", req.SKU),
+	)
+
+	dto, err := h.service.LinkCustomVariantSKU(c.Context(), req.VariantID, req.SKU)
+	if err != nil {
+		return response.Error(c, err)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Variant linked to Shopify", dto)
 }
 
 func (h *Handler) cancelOpenVariantBatchesForProductIfNeeded(ctx context.Context, productID string, nextFulfillmentType string, confirm bool) error {

@@ -76,6 +76,16 @@ func (c *failingShopClient) CreateFulfillmentV2(context.Context, shopify.CreateF
 }
 
 func (c *failingShopClient) CreateFulfillmentEvent(context.Context, string, string) error { return nil }
+func (c *failingShopClient) CreateUnlistedProduct(context.Context, shopify.CreateUnlistedProductInput) (*shopify.CreatedProduct, error) {
+	return nil, nil
+}
+func (c *failingShopClient) AttachProductMediaFromURL(context.Context, string, string, string) (*shopify.CreatedProductMedia, error) {
+	return nil, nil
+}
+func (c *failingShopClient) AttachProductMediaFromBytes(context.Context, string, string, string, []byte, string) (*shopify.CreatedProductMedia, error) {
+	return nil, nil
+}
+func (c *failingShopClient) LinkVariantSKU(context.Context, string, string) error { return nil }
 
 func (c *recordingShopClient) CreateStorefrontCart(context.Context, shopify.CartCreateInput) (*shopify.CartCreateResponse, error) {
 	return nil, nil
@@ -100,6 +110,16 @@ func (c *recordingShopClient) CreateFulfillmentV2(context.Context, shopify.Creat
 }
 
 func (c *recordingShopClient) CreateFulfillmentEvent(context.Context, string, string) error { return nil }
+func (c *recordingShopClient) CreateUnlistedProduct(context.Context, shopify.CreateUnlistedProductInput) (*shopify.CreatedProduct, error) {
+	return nil, nil
+}
+func (c *recordingShopClient) AttachProductMediaFromURL(context.Context, string, string, string) (*shopify.CreatedProductMedia, error) {
+	return nil, nil
+}
+func (c *recordingShopClient) AttachProductMediaFromBytes(context.Context, string, string, string, []byte, string) (*shopify.CreatedProductMedia, error) {
+	return nil, nil
+}
+func (c *recordingShopClient) LinkVariantSKU(context.Context, string, string) error { return nil }
 
 type invoiceTestStore struct {
 	settlements  map[string]Settlement

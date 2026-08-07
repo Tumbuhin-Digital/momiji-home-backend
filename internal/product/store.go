@@ -5,19 +5,36 @@ import (
 	"time"
 )
 
+const (
+	ProductOriginShopifySync = "shopify_sync"
+	ProductOriginCustom      = "custom"
+
+	ProductStatusCreating = "creating"
+	ProductStatusFailed   = "failed"
+	ProductStatusUnlisted = "unlisted"
+	ProductStatusActive   = "active"
+	ProductStatusDeleted  = "deleted"
+
+	CustomLinkStateAwaitingSKU = "awaiting_sku"
+	CustomLinkStateLinked      = "linked"
+)
+
 type Product struct {
-	ID          string `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
-	ShopifyID   string `gorm:"uniqueIndex"`
-	Handle      string
-	Title       string
-	Description string
-	Vendor      string
-	ProductType string
-	Tags        string
-	Status      string
-	BodyHTML    string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID                   string `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	ShopifyID            string `gorm:"uniqueIndex"`
+	Handle               string
+	Title                string
+	Description          string
+	Vendor               string
+	ProductType          string
+	Tags                 string
+	Status               string
+	BodyHTML             string
+	Origin               string  `gorm:"default:shopify_sync"`
+	InternalNote         *string
+	CreateIdempotencyKey *string `gorm:"uniqueIndex"`
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 
 	Variants []ProductVariant `gorm:"foreignKey:ProductID"`
 	Images   []ProductImage   `gorm:"foreignKey:ProductID"`
@@ -53,6 +70,8 @@ type ProductVariant struct {
 	InventoryQuantity      int
 	ShopifyInventoryItemID string
 	IsLtl                  bool
+	CustomLinkState        *string
+	InventoryTracked       bool `gorm:"default:true"`
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
 	BatchSummary           *VariantBatchSummary `gorm:"-"`
@@ -93,6 +112,12 @@ type Store interface {
 	UpdateSingleVariantBatchLabel(ctx context.Context, shopifyVariantID string, batchLabel string) error
 	UpsertProductImages(ctx context.Context, productID string, images []ProductImage) error
 	BulkUpdateVariantDimensions(ctx context.Context, inputs []DimensionUpdateInput) (BulkUpdateDimensionsResult, error)
+	GetProductByIdempotencyKey(ctx context.Context, key string) (*Product, error)
+	CreateCustomProductStub(ctx context.Context, product *Product) error
+	FinalizeCustomProduct(ctx context.Context, productID string, product *Product, variants []ProductVariant, images []ProductImage) error
+	MarkCustomProductFailed(ctx context.Context, productID string) error
+	DeleteProductByID(ctx context.Context, productID string) error
+	MarkCustomVariantLinked(ctx context.Context, shopifyVariantID, sku string) error
 }
 
 type DimensionUpdateInput struct {

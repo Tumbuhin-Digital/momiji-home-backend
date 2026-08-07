@@ -2,11 +2,13 @@ package checkout
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 )
 
@@ -210,6 +212,22 @@ func (m *mockShopifyInventoryClient) CreateFulfillmentEvent(context.Context, str
 	return nil
 }
 
+func (m *mockShopifyInventoryClient) CreateUnlistedProduct(context.Context, shopify.CreateUnlistedProductInput) (*shopify.CreatedProduct, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *mockShopifyInventoryClient) AttachProductMediaFromURL(context.Context, string, string, string) (*shopify.CreatedProductMedia, error) {
+	return nil, nil
+}
+
+func (m *mockShopifyInventoryClient) AttachProductMediaFromBytes(context.Context, string, string, string, []byte, string) (*shopify.CreatedProductMedia, error) {
+	return nil, nil
+}
+
+func (m *mockShopifyInventoryClient) LinkVariantSKU(context.Context, string, string) error {
+	return nil
+}
+
 func (m *mockShopifyInventoryClient) GetVariantsInventory(_ context.Context, variantIDs []string) (map[string]int, error) {
 	result := make(map[string]int, len(variantIDs))
 	for _, id := range variantIDs {
@@ -222,6 +240,43 @@ func newTestStockLockService(store StockLockStore, inventory map[string]int) Sto
 	return &stockLockService{
 		store:      store,
 		shopifyCli: &mockShopifyInventoryClient{inventory: inventory},
+	}
+}
+
+type mockProductServiceForLocks struct {
+	untracked map[string]bool
+}
+
+func (m *mockProductServiceForLocks) GetVariantByID(_ context.Context, variantID string) (*product.VariantDTO, error) {
+	tracked := !m.untracked[variantID]
+	return &product.VariantDTO{
+		ID:               variantID,
+		InventoryTracked: tracked,
+		FulfillmentType:  product.FulfillmentTypeShipReady,
+	}, nil
+}
+
+func TestAcquireLocks_SkipsQtyCheckForUntrackedVariants(t *testing.T) {
+	store := &memoryStockLockStore{}
+	svc := &stockLockService{
+		store: store,
+		shopifyCli: &mockShopifyInventoryClient{
+			inventory: map[string]int{}, // missing / zero — would fail if checked
+		},
+		productService: &mockProductServiceForLocks{
+			untracked: map[string]bool{"custom-variant": true},
+		},
+	}
+
+	sessionID := "sess_custom"
+	_, err := svc.AcquireLocks(context.Background(), nil, &sessionID, "ref-custom", []LockRequest{
+		{ShopifyVariantID: "custom-variant", Quantity: 5},
+	})
+	if err != nil {
+		t.Fatalf("expected untracked variant to skip stock check, got %v", err)
+	}
+	if store.lockedQtyForVariant("custom-variant") != 5 {
+		t.Fatalf("expected lock qty 5, got %d", store.lockedQtyForVariant("custom-variant"))
 	}
 }
 
