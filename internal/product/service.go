@@ -385,8 +385,10 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 				slog.ErrorContext(ctx, "failed to upsert product images", slog.String("error", err.Error()))
 			}
 
+			syncedVariantIDs := make([]string, 0, len(pNode.Variants.Edges))
 			for _, vEdge := range pNode.Variants.Edges {
 				vNode := vEdge.Node
+				syncedVariantIDs = append(syncedVariantIDs, vNode.ID)
 				price, _ := strconv.ParseFloat(vNode.Price, 64)
 
 				fulfillmentType := "ship_ready"
@@ -435,6 +437,10 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 				if err := s.store.UpsertVariant(ctx, variant); err != nil {
 					return fmt.Errorf("failed to upsert variant %s: %w", variant.ShopifyVariantID, err)
 				}
+			}
+			// Drop local variants removed from Shopify (e.g. deleted after add-variant).
+			if err := s.store.DeleteVariantsNotIn(ctx, p.ID, syncedVariantIDs); err != nil {
+				return fmt.Errorf("failed to reconcile variants for product %s: %w", p.ShopifyID, err)
 			}
 		}
 

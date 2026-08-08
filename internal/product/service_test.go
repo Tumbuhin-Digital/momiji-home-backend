@@ -173,6 +173,46 @@ func TestSyncFromShopify_MarksMissingProductsAsDeleted(t *testing.T) {
 	}
 }
 
+func TestSyncFromShopify_RemovesOrphanVariants(t *testing.T) {
+	store := product.NewMockProductStore()
+	// UpsertProduct assigns ID "mock-product-uuid" when empty — match that for orphan cleanup.
+	store.Products["gid://shopify/Product/1"] = &product.Product{
+		ID:        "mock-product-uuid",
+		ShopifyID: "gid://shopify/Product/1",
+		Title:     "Almond Hanging Planter",
+		Status:    "active",
+	}
+	store.Variants["gid://shopify/ProductVariant/1"] = &product.ProductVariant{
+		ID:               "v1",
+		ProductID:        "mock-product-uuid",
+		ShopifyVariantID: "gid://shopify/ProductVariant/1",
+		Title:            "Default Title",
+	}
+	store.Variants["gid://shopify/ProductVariant/orphan"] = &product.ProductVariant{
+		ID:               "v-orphan",
+		ProductID:        "mock-product-uuid",
+		ShopifyVariantID: "gid://shopify/ProductVariant/orphan",
+		Title:            "Grey",
+	}
+
+	mockClient := &product.MockShopifyClient{
+		AdminGraphQLResponse: buildShopifyProductResponse(
+			"gid://shopify/Product/1", "gid://shopify/ProductVariant/1", "Almond Hanging Planter", "100.00",
+		),
+	}
+	svc := product.NewProductService(store, mockClient, preordercustomtext.NewMockService())
+
+	if err := svc.SyncFromShopify(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := store.Variants["gid://shopify/ProductVariant/1"]; !ok {
+		t.Fatal("expected kept Shopify variant to remain")
+	}
+	if _, ok := store.Variants["gid://shopify/ProductVariant/orphan"]; ok {
+		t.Fatal("expected orphan local variant deleted after sync")
+	}
+}
+
 func TestGetProductByID_NotFound(t *testing.T) {
 	store := product.NewMockProductStore()
 	svc := product.NewProductService(store, &product.MockShopifyClient{}, preordercustomtext.NewMockService())

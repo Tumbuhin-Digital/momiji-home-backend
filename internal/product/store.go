@@ -100,6 +100,9 @@ type Store interface {
 	MarkProductDeletedByShopifyID(ctx context.Context, shopifyID string) error
 	UpsertVariant(ctx context.Context, variant *ProductVariant) error
 	DeleteVariantByShopifyID(ctx context.Context, shopifyVariantID string) error
+	// DeleteVariantsNotIn removes local variants for productID whose shopify_variant_id is not in keepShopifyVariantIDs.
+	// If keepShopifyVariantIDs is empty, no rows are deleted (safety).
+	DeleteVariantsNotIn(ctx context.Context, productID string, keepShopifyVariantIDs []string) error
 	UpdateInventoryQuantity(ctx context.Context, shopifyVariantID string, quantity int) error
 	UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64) error
 	UpdateVariantLtl(ctx context.Context, variantID string, isLtl bool) error

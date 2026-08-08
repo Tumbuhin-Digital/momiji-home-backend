@@ -200,6 +200,15 @@ func (s *PostgresStore) DeleteVariantByShopifyID(ctx context.Context, shopifyVar
 		Delete(&ProductVariant{}).Error
 }
 
+func (s *PostgresStore) DeleteVariantsNotIn(ctx context.Context, productID string, keepShopifyVariantIDs []string) error {
+	if productID == "" || len(keepShopifyVariantIDs) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).
+		Where("product_id = ? AND shopify_variant_id NOT IN ?", productID, keepShopifyVariantIDs).
+		Delete(&ProductVariant{}).Error
+}
+
 func (s *PostgresStore) UpdateInventoryQuantity(ctx context.Context, shopifyVariantID string, quantity int) error {
 	return s.db.WithContext(ctx).Model(&ProductVariant{}).
 		Where("shopify_variant_id = ?", shopifyVariantID).

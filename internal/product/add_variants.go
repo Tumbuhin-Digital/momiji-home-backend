@@ -138,9 +138,16 @@ func (s *service) AddProductVariants(ctx context.Context, input AddProductVarian
 		}
 	}
 
-	// REMOVE_STANDALONE_VARIANT deleted Default Title on Shopify — drop the local row.
-	if len(existingVariants) == 1 && strings.EqualFold(strings.TrimSpace(existingVariants[0].Title), "Default Title") {
-		_ = s.store.DeleteVariantByShopifyID(ctx, existingVariants[0].ShopifyVariantID)
+	// Reconcile local variants to Shopify truth (drops Default Title after REMOVE_STANDALONE_VARIANT,
+	// and any other Shopify-removed variants).
+	keepIDs, listErr := s.client.ListProductVariantIDs(ctx, product.ShopifyID)
+	if listErr != nil {
+		// Fallback: at least drop Default Title when that was the only prior local variant.
+		if len(existingVariants) == 1 && strings.EqualFold(strings.TrimSpace(existingVariants[0].Title), "Default Title") {
+			_ = s.store.DeleteVariantByShopifyID(ctx, existingVariants[0].ShopifyVariantID)
+		}
+	} else if err := s.store.DeleteVariantsNotIn(ctx, product.ID, keepIDs); err != nil {
+		return nil, apierror.New(500, "persist_failed", "Failed to reconcile local variants after Shopify update")
 	}
 
 	persisted, err := s.store.GetProductByID(ctx, product.ID)

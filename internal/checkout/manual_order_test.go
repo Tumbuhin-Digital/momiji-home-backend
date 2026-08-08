@@ -160,6 +160,9 @@ func (c *recordingManualShopClient) CreateUnlistedProduct(context.Context, shopi
 func (c *recordingManualShopClient) AddProductVariants(context.Context, shopify.AddProductVariantsInput) ([]shopify.CreatedVariant, error) {
 	return nil, nil
 }
+func (c *recordingManualShopClient) ListProductVariantIDs(context.Context, string) ([]string, error) {
+	return nil, nil
+}
 func (c *recordingManualShopClient) AttachProductMediaFromURL(context.Context, string, string, string) (*shopify.CreatedProductMedia, error) {
 	return nil, nil
 }

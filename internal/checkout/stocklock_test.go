@@ -220,6 +220,10 @@ func (m *mockShopifyInventoryClient) AddProductVariants(context.Context, shopify
 	return nil, fmt.Errorf("not implemented")
 }
 
+func (m *mockShopifyInventoryClient) ListProductVariantIDs(context.Context, string) ([]string, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 func (m *mockShopifyInventoryClient) AttachProductMediaFromURL(context.Context, string, string, string) (*shopify.CreatedProductMedia, error) {
 	return nil, nil
 }

@@ -188,6 +188,29 @@ func (m *MockProductStore) DeleteVariantByShopifyID(ctx context.Context, shopify
 	return nil
 }
 
+func (m *MockProductStore) DeleteVariantsNotIn(ctx context.Context, productID string, keepShopifyVariantIDs []string) error {
+	if productID == "" || len(keepShopifyVariantIDs) == 0 {
+		return nil
+	}
+	keep := make(map[string]struct{}, len(keepShopifyVariantIDs))
+	for _, id := range keepShopifyVariantIDs {
+		keep[id] = struct{}{}
+	}
+	for sid, v := range m.Variants {
+		if v.ProductID != productID {
+			continue
+		}
+		if _, ok := keep[sid]; ok {
+			continue
+		}
+		delete(m.Variants, sid)
+		if v.ID != "" {
+			delete(m.VariantsByID, v.ID)
+		}
+	}
+	return nil
+}
+
 func (m *MockProductStore) UpdateInventoryQuantity(ctx context.Context, shopifyVariantID string, quantity int) error {
 	if v, ok := m.Variants[shopifyVariantID]; ok {
 		v.InventoryQuantity = quantity
@@ -480,6 +503,8 @@ type MockShopifyClient struct {
 	CreateUnlistedProductCalls   int
 	AddProductVariantsFn         func(ctx context.Context, input shopify.AddProductVariantsInput) ([]shopify.CreatedVariant, error)
 	AddProductVariantsCalls      int
+	LastAddedVariantIDs          []string
+	ListProductVariantIDsFn      func(ctx context.Context, productID string) ([]string, error)
 	LinkVariantSKUFn             func(ctx context.Context, inventoryItemID, sku string) error
 	LinkVariantSKUCalls          int
 	LastLinkVariantSKUItemID     string
@@ -559,12 +584,22 @@ func (m *MockShopifyClient) CreateUnlistedProduct(ctx context.Context, input sho
 func (m *MockShopifyClient) AddProductVariants(ctx context.Context, input shopify.AddProductVariantsInput) ([]shopify.CreatedVariant, error) {
 	m.AddProductVariantsCalls++
 	if m.AddProductVariantsFn != nil {
-		return m.AddProductVariantsFn(ctx, input)
+		variants, err := m.AddProductVariantsFn(ctx, input)
+		if err == nil {
+			m.LastAddedVariantIDs = make([]string, 0, len(variants))
+			for _, v := range variants {
+				m.LastAddedVariantIDs = append(m.LastAddedVariantIDs, v.ID)
+			}
+		}
+		return variants, err
 	}
 	variants := make([]shopify.CreatedVariant, 0, len(input.Variants))
+	ids := make([]string, 0, len(input.Variants))
 	for i, v := range input.Variants {
+		id := fmt.Sprintf("gid://shopify/ProductVariant/added-%d", i+1)
+		ids = append(ids, id)
 		variants = append(variants, shopify.CreatedVariant{
-			ID:                   fmt.Sprintf("gid://shopify/ProductVariant/added-%d", i+1),
+			ID:                   id,
 			Title:                v.Title,
 			Price:                v.Price,
 			InventoryItemID:      fmt.Sprintf("gid://shopify/InventoryItem/added-%d", i+1),
@@ -572,7 +607,18 @@ func (m *MockShopifyClient) AddProductVariants(ctx context.Context, input shopif
 			InventoryItemTracked: input.InventoryTracked,
 		})
 	}
+	m.LastAddedVariantIDs = ids
 	return variants, nil
+}
+
+func (m *MockShopifyClient) ListProductVariantIDs(ctx context.Context, productID string) ([]string, error) {
+	if m.ListProductVariantIDsFn != nil {
+		return m.ListProductVariantIDsFn(ctx, productID)
+	}
+	if len(m.LastAddedVariantIDs) > 0 {
+		return append([]string(nil), m.LastAddedVariantIDs...), nil
+	}
+	return nil, nil
 }
 
 func (m *MockShopifyClient) AttachProductMediaFromURL(ctx context.Context, productID, imageURL, alt string) (*shopify.CreatedProductMedia, error) {
@@ -690,6 +736,10 @@ func (m *MockShopifyClientFunc) AddProductVariants(ctx context.Context, input sh
 		})
 	}
 	return variants, nil
+}
+
+func (m *MockShopifyClientFunc) ListProductVariantIDs(ctx context.Context, productID string) ([]string, error) {
+	return nil, nil
 }
 
 func (m *MockShopifyClientFunc) AttachProductMediaFromURL(ctx context.Context, productID, imageURL, alt string) (*shopify.CreatedProductMedia, error) {

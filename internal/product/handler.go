@@ -309,8 +309,15 @@ func (h *Handler) AddProductVariants(c *fiber.Ctx) error {
 // @Failure 404 {object} response.Envelope{error=response.ErrorBlock}
 // @Router /products/{id} [get]
 func (h *Handler) GetProductByID(c *fiber.Ctx) error {
-	slog.InfoContext(c.Context(), "GetProductByID", slog.String("product_id", c.Params("id")))
-	dto, err := h.service.GetProductByID(c.Context(), c.Params("id"))
+	productID := c.Params("id")
+	// Reserved path segments must not be treated as product UUIDs
+	// (e.g. a mistaken GET /products/sync after POST sync).
+	switch strings.ToLower(productID) {
+	case "sync", "custom", "catalog":
+		return response.Error(c, apierror.ErrNotFound)
+	}
+	slog.InfoContext(c.Context(), "GetProductByID", slog.String("product_id", productID))
+	dto, err := h.service.GetProductByID(c.Context(), productID)
 	if err != nil {
 		return response.Error(c, err)
 	}

@@ -99,6 +99,12 @@ func TestAddProductVariants_ShopifySyncTracked(t *testing.T) {
 				InventoryItemTracked: true,
 			}}, nil
 		},
+		ListProductVariantIDsFn: func(ctx context.Context, productID string) ([]string, error) {
+			return []string{
+				"gid://shopify/ProductVariant/a",
+				"gid://shopify/ProductVariant/new",
+			}, nil
+		},
 	}
 	svc := product.NewProductService(store, client, preordercustomtext.NewMockService())
 

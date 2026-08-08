@@ -150,6 +150,57 @@ func (c *clientImpl) AddProductVariants(ctx context.Context, input AddProductVar
 	return created, nil
 }
 
+// ListProductVariantIDs returns Shopify variant GIDs currently on the product.
+func (c *clientImpl) ListProductVariantIDs(ctx context.Context, productID string) ([]string, error) {
+	productID = strings.TrimSpace(productID)
+	if productID == "" {
+		return nil, fmt.Errorf("product id is required")
+	}
+	query := `
+		query productVariantIDs($id: ID!) {
+		  product(id: $id) {
+			variants(first: 100) {
+			  nodes { id }
+			}
+		  }
+		}
+	`
+	resBytes, err := c.QueryAdminGraphQL(ctx, query, map[string]interface{}{"id": productID})
+	if err != nil {
+		return nil, err
+	}
+	var res struct {
+		Data struct {
+			Product *struct {
+				Variants struct {
+					Nodes []struct {
+						ID string `json:"id"`
+					} `json:"nodes"`
+				} `json:"variants"`
+			} `json:"product"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(resBytes, &res); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal product variants: %w", err)
+	}
+	if len(res.Errors) > 0 {
+		return nil, fmt.Errorf("shopify product query error: %s", res.Errors[0].Message)
+	}
+	if res.Data.Product == nil {
+		return nil, fmt.Errorf("shopify product not found")
+	}
+	ids := make([]string, 0, len(res.Data.Product.Variants.Nodes))
+	for _, n := range res.Data.Product.Variants.Nodes {
+		if n.ID != "" {
+			ids = append(ids, n.ID)
+		}
+	}
+	return ids, nil
+}
+
 func (c *clientImpl) resolveAddVariantsStrategy(ctx context.Context, productID string, newTitlesLower map[string]struct{}) (optionName string, strategy string, err error) {
 	query := `
 		query productOptions($id: ID!) {

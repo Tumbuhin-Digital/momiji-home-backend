@@ -25,6 +25,7 @@ type Client interface {
 	CreateFulfillmentEvent(ctx context.Context, shopifyFulfillmentID, status string) error
 	CreateUnlistedProduct(ctx context.Context, input CreateUnlistedProductInput) (*CreatedProduct, error)
 	AddProductVariants(ctx context.Context, input AddProductVariantsInput) ([]CreatedVariant, error)
+	ListProductVariantIDs(ctx context.Context, productID string) ([]string, error)
 	AttachProductMediaFromURL(ctx context.Context, productID, imageURL, alt string) (*CreatedProductMedia, error)
 	AttachProductMediaFromBytes(ctx context.Context, productID string, filename, contentType string, data []byte, alt string) (*CreatedProductMedia, error)
 	LinkVariantSKU(ctx context.Context, inventoryItemID, sku string) error
