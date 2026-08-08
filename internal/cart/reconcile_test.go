@@ -59,6 +59,9 @@ func (s *reconcileProductStub) ValidateVariantActive(context.Context, string) er
 func (s *reconcileProductStub) CreateCustomProduct(context.Context, product.CreateCustomProductInput) (*product.ProductDTO, error) {
 	return nil, nil
 }
+func (s *reconcileProductStub) AddProductVariants(context.Context, product.AddProductVariantsInput) (*product.ProductDTO, error) {
+	return nil, nil
+}
 func (s *reconcileProductStub) SyncInventoryQuantities(context.Context, map[string]int) error {
 	return nil
 }

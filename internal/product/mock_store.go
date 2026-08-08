@@ -178,6 +178,16 @@ func (m *MockProductStore) UpsertVariant(ctx context.Context, variant *ProductVa
 	return nil
 }
 
+func (m *MockProductStore) DeleteVariantByShopifyID(ctx context.Context, shopifyVariantID string) error {
+	if v, ok := m.Variants[shopifyVariantID]; ok {
+		delete(m.Variants, shopifyVariantID)
+		if v.ID != "" {
+			delete(m.VariantsByID, v.ID)
+		}
+	}
+	return nil
+}
+
 func (m *MockProductStore) UpdateInventoryQuantity(ctx context.Context, shopifyVariantID string, quantity int) error {
 	if v, ok := m.Variants[shopifyVariantID]; ok {
 		v.InventoryQuantity = quantity
@@ -468,6 +478,8 @@ type MockShopifyClient struct {
 	GetVariantsInventoryErr      error
 	CreateUnlistedProductFn      func(ctx context.Context, input shopify.CreateUnlistedProductInput) (*shopify.CreatedProduct, error)
 	CreateUnlistedProductCalls   int
+	AddProductVariantsFn         func(ctx context.Context, input shopify.AddProductVariantsInput) ([]shopify.CreatedVariant, error)
+	AddProductVariantsCalls      int
 	LinkVariantSKUFn             func(ctx context.Context, inventoryItemID, sku string) error
 	LinkVariantSKUCalls          int
 	LastLinkVariantSKUItemID     string
@@ -542,6 +554,25 @@ func (m *MockShopifyClient) CreateUnlistedProduct(ctx context.Context, input sho
 		Handle:   "custom-product",
 		Variants: variants,
 	}, nil
+}
+
+func (m *MockShopifyClient) AddProductVariants(ctx context.Context, input shopify.AddProductVariantsInput) ([]shopify.CreatedVariant, error) {
+	m.AddProductVariantsCalls++
+	if m.AddProductVariantsFn != nil {
+		return m.AddProductVariantsFn(ctx, input)
+	}
+	variants := make([]shopify.CreatedVariant, 0, len(input.Variants))
+	for i, v := range input.Variants {
+		variants = append(variants, shopify.CreatedVariant{
+			ID:                   fmt.Sprintf("gid://shopify/ProductVariant/added-%d", i+1),
+			Title:                v.Title,
+			Price:                v.Price,
+			InventoryItemID:      fmt.Sprintf("gid://shopify/InventoryItem/added-%d", i+1),
+			InventoryQuantity:    0,
+			InventoryItemTracked: input.InventoryTracked,
+		})
+	}
+	return variants, nil
 }
 
 func (m *MockShopifyClient) AttachProductMediaFromURL(ctx context.Context, productID, imageURL, alt string) (*shopify.CreatedProductMedia, error) {
@@ -645,6 +676,20 @@ func (m *MockShopifyClientFunc) CreateUnlistedProduct(ctx context.Context, input
 			InventoryItemID: "gid://shopify/InventoryItem/func-1",
 		}},
 	}, nil
+}
+
+func (m *MockShopifyClientFunc) AddProductVariants(ctx context.Context, input shopify.AddProductVariantsInput) ([]shopify.CreatedVariant, error) {
+	variants := make([]shopify.CreatedVariant, 0, len(input.Variants))
+	for i, v := range input.Variants {
+		variants = append(variants, shopify.CreatedVariant{
+			ID:                   fmt.Sprintf("gid://shopify/ProductVariant/func-added-%d", i+1),
+			Title:                v.Title,
+			Price:                v.Price,
+			InventoryItemID:      fmt.Sprintf("gid://shopify/InventoryItem/func-added-%d", i+1),
+			InventoryItemTracked: input.InventoryTracked,
+		})
+	}
+	return variants, nil
 }
 
 func (m *MockShopifyClientFunc) AttachProductMediaFromURL(ctx context.Context, productID, imageURL, alt string) (*shopify.CreatedProductMedia, error) {

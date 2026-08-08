@@ -194,6 +194,12 @@ func (s *PostgresStore) UpsertVariant(ctx context.Context, variant *ProductVaria
 	}).Select("*").Create(variant).Error
 }
 
+func (s *PostgresStore) DeleteVariantByShopifyID(ctx context.Context, shopifyVariantID string) error {
+	return s.db.WithContext(ctx).
+		Where("shopify_variant_id = ?", shopifyVariantID).
+		Delete(&ProductVariant{}).Error
+}
+
 func (s *PostgresStore) UpdateInventoryQuantity(ctx context.Context, shopifyVariantID string, quantity int) error {
 	return s.db.WithContext(ctx).Model(&ProductVariant{}).
 		Where("shopify_variant_id = ?", shopifyVariantID).

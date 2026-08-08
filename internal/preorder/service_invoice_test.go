@@ -79,6 +79,9 @@ func (c *failingShopClient) CreateFulfillmentEvent(context.Context, string, stri
 func (c *failingShopClient) CreateUnlistedProduct(context.Context, shopify.CreateUnlistedProductInput) (*shopify.CreatedProduct, error) {
 	return nil, nil
 }
+func (c *failingShopClient) AddProductVariants(context.Context, shopify.AddProductVariantsInput) ([]shopify.CreatedVariant, error) {
+	return nil, nil
+}
 func (c *failingShopClient) AttachProductMediaFromURL(context.Context, string, string, string) (*shopify.CreatedProductMedia, error) {
 	return nil, nil
 }
@@ -111,6 +114,9 @@ func (c *recordingShopClient) CreateFulfillmentV2(context.Context, shopify.Creat
 
 func (c *recordingShopClient) CreateFulfillmentEvent(context.Context, string, string) error { return nil }
 func (c *recordingShopClient) CreateUnlistedProduct(context.Context, shopify.CreateUnlistedProductInput) (*shopify.CreatedProduct, error) {
+	return nil, nil
+}
+func (c *recordingShopClient) AddProductVariants(context.Context, shopify.AddProductVariantsInput) ([]shopify.CreatedVariant, error) {
 	return nil, nil
 }
 func (c *recordingShopClient) AttachProductMediaFromURL(context.Context, string, string, string) (*shopify.CreatedProductMedia, error) {

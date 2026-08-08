@@ -30,6 +30,7 @@ type ProductService interface {
 	BulkUpdateDimensions(ctx context.Context, rows []DimensionUpdateInput) (BulkUpdateDimensionsResult, error)
 	ValidateVariantActive(ctx context.Context, variantID string) error
 	CreateCustomProduct(ctx context.Context, input CreateCustomProductInput) (*ProductDTO, error)
+	AddProductVariants(ctx context.Context, input AddProductVariantsInput) (*ProductDTO, error)
 	SyncInventoryQuantities(ctx context.Context, quantities map[string]int) error
 }
 

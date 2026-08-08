@@ -216,6 +216,10 @@ func (m *mockShopifyInventoryClient) CreateUnlistedProduct(context.Context, shop
 	return nil, fmt.Errorf("not implemented")
 }
 
+func (m *mockShopifyInventoryClient) AddProductVariants(context.Context, shopify.AddProductVariantsInput) ([]shopify.CreatedVariant, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 func (m *mockShopifyInventoryClient) AttachProductMediaFromURL(context.Context, string, string, string) (*shopify.CreatedProductMedia, error) {
 	return nil, nil
 }

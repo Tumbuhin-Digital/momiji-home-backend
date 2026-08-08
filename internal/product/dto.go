@@ -128,3 +128,8 @@ type CreateCustomProductRequest struct {
 	ReferenceImageURL *string                      `json:"reference_image_url"`
 	Variants          []CreateCustomVariantRequest `json:"variants" validate:"required,min=1,max=100,dive"`
 }
+
+type AddProductVariantsRequest struct {
+	IdempotencyKey string                       `json:"idempotency_key" validate:"required"`
+	Variants       []CreateCustomVariantRequest `json:"variants" validate:"required,min=1,max=100,dive"`
+}

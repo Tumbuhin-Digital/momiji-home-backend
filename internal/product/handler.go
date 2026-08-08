@@ -50,6 +50,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	admin.Use(middleware.RBAC("admin"))
 	admin.Post("/sync", h.SyncProducts)
 	admin.Post("/custom", h.CreateCustomProduct)
+	admin.Post("/:id/variants", h.AddProductVariants)
 	admin.Patch("/variant/price", h.UpdateVariantPrice)
 	admin.Patch("/variant/status", h.UpdateVariantStatus)
 	admin.Patch("/variant/ltl", h.UpdateVariantLtl)
@@ -257,6 +258,46 @@ func (h *Handler) CreateCustomProduct(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusCreated, "Custom product created", dto)
+}
+
+// AddProductVariants godoc
+// @Summary Add variants to an existing product
+// @Tags Product
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Product ID"
+// @Success 200 {object} response.Envelope{data=ProductDTO}
+// @Router /products/{id}/variants [post]
+func (h *Handler) AddProductVariants(c *fiber.Ctx) error {
+	var req AddProductVariantsRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, apierror.ErrBadRequest)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if req.IdempotencyKey == "" || len(req.Variants) == 0 {
+		return response.Error(c, apierror.New(400, "validation_error", "idempotency_key and variants are required"))
+	}
+
+	input := AddProductVariantsInput{
+		ProductID:      c.Params("id"),
+		IdempotencyKey: req.IdempotencyKey,
+	}
+	for _, v := range req.Variants {
+		input.Variants = append(input.Variants, CreateCustomVariantInput{
+			Title:    v.Title,
+			RPPPrice: v.RPPPrice,
+			WSPrice:  v.WSPrice,
+		})
+	}
+
+	dto, err := h.service.AddProductVariants(c.Context(), input)
+	if err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Variants added", dto)
 }
 
 // GetProductByID godoc

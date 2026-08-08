@@ -70,6 +70,9 @@ func (s *stubProductService) ValidateVariantActive(_ context.Context, variantID 
 func (s *stubProductService) CreateCustomProduct(context.Context, product.CreateCustomProductInput) (*product.ProductDTO, error) {
 	return nil, nil
 }
+func (s *stubProductService) AddProductVariants(context.Context, product.AddProductVariantsInput) (*product.ProductDTO, error) {
+	return nil, nil
+}
 func (s *stubProductService) SyncInventoryQuantities(context.Context, map[string]int) error {
 	return nil
 }
@@ -152,6 +155,9 @@ func (c *recordingManualShopClient) CreateFulfillmentEvent(context.Context, stri
 	return nil
 }
 func (c *recordingManualShopClient) CreateUnlistedProduct(context.Context, shopify.CreateUnlistedProductInput) (*shopify.CreatedProduct, error) {
+	return nil, nil
+}
+func (c *recordingManualShopClient) AddProductVariants(context.Context, shopify.AddProductVariantsInput) ([]shopify.CreatedVariant, error) {
 	return nil, nil
 }
 func (c *recordingManualShopClient) AttachProductMediaFromURL(context.Context, string, string, string) (*shopify.CreatedProductMedia, error) {

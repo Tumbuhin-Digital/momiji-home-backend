@@ -24,6 +24,7 @@ type Client interface {
 	CreateFulfillmentV2(ctx context.Context, input CreateFulfillmentV2Input) (*CreateFulfillmentV2Result, error)
 	CreateFulfillmentEvent(ctx context.Context, shopifyFulfillmentID, status string) error
 	CreateUnlistedProduct(ctx context.Context, input CreateUnlistedProductInput) (*CreatedProduct, error)
+	AddProductVariants(ctx context.Context, input AddProductVariantsInput) ([]CreatedVariant, error)
 	AttachProductMediaFromURL(ctx context.Context, productID, imageURL, alt string) (*CreatedProductMedia, error)
 	AttachProductMediaFromBytes(ctx context.Context, productID string, filename, contentType string, data []byte, alt string) (*CreatedProductMedia, error)
 	LinkVariantSKU(ctx context.Context, inventoryItemID, sku string) error
