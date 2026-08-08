@@ -163,6 +163,10 @@ func (s *service) buildFulfillmentGroups(
 		scrubGroupSliceFulfillmentState(&groups[i])
 	}
 
+	if err := s.markShipTogetherCombinedGroups(ctx, o, groups[preorderStart:]); err != nil {
+		return nil, nil, err
+	}
+
 	second := s.buildSecondPaymentSummary(o, groups)
 	return groups, second, nil
 }

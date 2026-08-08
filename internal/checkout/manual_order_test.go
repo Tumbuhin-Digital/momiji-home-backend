@@ -70,6 +70,9 @@ func (s *stubProductService) ValidateVariantActive(_ context.Context, variantID 
 func (s *stubProductService) CreateCustomProduct(context.Context, product.CreateCustomProductInput) (*product.ProductDTO, error) {
 	return nil, nil
 }
+func (s *stubProductService) SyncInventoryQuantities(context.Context, map[string]int) error {
+	return nil
+}
 
 type stubCartService struct{}
 
@@ -93,6 +96,9 @@ func (s *stubCartService) ClearCart(context.Context, *string, *string) error    
 func (s *stubCartService) MergeCarts(context.Context, string, string) error           { return nil }
 func (s *stubCartService) SetVariantQuantity(context.Context, *string, *string, string, int, bool, bool) (*cart.SetVariantQuantityResponse, error) {
 	return &cart.SetVariantQuantityResponse{}, nil
+}
+func (s *stubCartService) ReconcileShipReadyAgainstInventory(context.Context, *string, *string, map[string]int) (*cart.ReconcileShipReadyResult, error) {
+	return &cart.ReconcileShipReadyResult{}, nil
 }
 
 type recordingManualShopClient struct {
@@ -280,6 +286,79 @@ func TestCreateManualOrder_SendsInvoice(t *testing.T) {
 	}
 	if len(shop.lastDraft.LineItems) != 2 {
 		t.Fatalf("expected 2 draft lines, got %d", len(shop.lastDraft.LineItems))
+	}
+}
+
+func TestCreateManualOrder_ShipTogetherTreatsAllAsPreorder(t *testing.T) {
+	products := &stubProductService{variants: map[string]*product.VariantDTO{
+		"gid://v/1": {
+			ID:                "gid://v/1",
+			Title:             "Shelf",
+			WSPrice:           "180.00",
+			RetailPrice:       "300.00",
+			FulfillmentType:   product.FulfillmentTypeShipReady,
+			InventoryQuantity: 10,
+		},
+		"gid://v/2": {
+			ID:                "gid://v/2",
+			Title:             "Pre Shelf",
+			WSPrice:           "200.00",
+			RetailPrice:       "400.00",
+			FulfillmentType:   product.FulfillmentTypePreOrder,
+			InventoryQuantity: 0,
+		},
+	}}
+	shop := &recordingManualShopClient{}
+	svc := newManualOrderService(products, shop)
+
+	_, err := svc.CreateManualOrder(context.Background(), ManualOrderRequest{
+		Email:          "jane@example.com",
+		FirstName:      "Jane",
+		LastName:       "Doe",
+		Phone:          "+15551234567",
+		Address1:       "1 Main St",
+		City:           "New York",
+		State:          "NY",
+		Zip:            "10001",
+		Country:        "US",
+		ShippingMethod: "ups_ground",
+		ShipTogether:   true,
+		LineItems: []ManualOrderLineItem{
+			{VariantID: "gid://v/1", Quantity: 1},
+			{VariantID: "gid://v/2", Quantity: 1},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateManualOrder error: %v", err)
+	}
+	if len(shop.lastDraft.LineItems) != 2 {
+		t.Fatalf("expected 2 draft lines, got %d", len(shop.lastDraft.LineItems))
+	}
+	for i, line := range shop.lastDraft.LineItems {
+		if line.VariantID != "" {
+			t.Fatalf("line %d should not use Shopify variant (no stock touch), got %q", i, line.VariantID)
+		}
+		hasType := false
+		for _, attr := range line.CustomAttributes {
+			if attr.Key == "type" && attr.Value == "preorder_dp" {
+				hasType = true
+			}
+		}
+		if !hasType {
+			t.Fatalf("line %d missing preorder_dp: %+v", i, line)
+		}
+	}
+	if shop.lastDraft.ShippingLine != nil {
+		t.Fatal("expected no ship-ready shipping line when ship_together")
+	}
+	foundShipTogether := false
+	for _, attr := range shop.lastDraft.CustomAttributes {
+		if attr.Key == "ship_together" && attr.Value == "true" {
+			foundShipTogether = true
+		}
+	}
+	if !foundShipTogether {
+		t.Fatal("expected ship_together note attribute")
 	}
 }
 

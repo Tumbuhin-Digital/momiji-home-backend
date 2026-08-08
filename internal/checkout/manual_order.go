@@ -30,6 +30,12 @@ func (s *service) CreateManualOrder(ctx context.Context, req ManualOrderRequest)
 	if len(shipReady) == 0 && len(preOrder) == 0 {
 		return nil, apierror.New(400, "bad_request", "no valid line items")
 	}
+	if err := validateShipTogetherSegments(shipReady, preOrder, req.ShipTogether); err != nil {
+		return nil, err
+	}
+
+	shipReady, preOrder = applyShipTogetherSegments(shipReady, preOrder, req.ShipTogether)
+
 	if len(preOrder) > 0 && strings.TrimSpace(req.ShippingMethod) == "" {
 		return nil, apierror.New(400, "bad_request", "shipping_method is required when pre-order items are present")
 	}
@@ -50,6 +56,7 @@ func (s *service) CreateManualOrder(ctx context.Context, req ManualOrderRequest)
 
 	slog.InfoContext(ctx, "Creating manual order draft",
 		slog.String("checkout_reference", checkoutRef),
+		slog.Bool("ship_together", req.ShipTogether),
 		slog.Int("ship_ready_items", len(shipReady)),
 		slog.Int("pre_order_items", len(preOrder)))
 
@@ -75,6 +82,23 @@ func (s *service) CreateManualOrder(ctx context.Context, req ManualOrderRequest)
 		draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
 			Key: "preorder_warehouse_origin", Value: preOrderOrigin,
 		})
+	}
+
+	if req.ShipTogether {
+		draftInput.CustomAttributes = append(draftInput.CustomAttributes,
+			shopify.AttributeInput{Key: "ship_together", Value: "true"},
+		)
+		batchNames, batchErr := collectCheckoutBatchNames(ctx, s.batchService, preOrder, nil, nil)
+		if batchErr != nil {
+			slog.WarnContext(ctx, "manual order ship_together batch name lookup failed",
+				slog.String("checkout_reference", checkoutRef),
+				slog.Any("error", batchErr))
+		} else if batchNames != "" {
+			draftInput.CustomAttributes = append(draftInput.CustomAttributes,
+				shopify.AttributeInput{Key: "hold_until_batch", Value: batchNames},
+			)
+		}
+		draftInput.Note = formatShipTogetherHoldNote(batchNames)
 	}
 
 	country := req.Country

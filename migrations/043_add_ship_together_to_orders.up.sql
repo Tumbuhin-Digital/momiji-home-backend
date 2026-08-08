@@ -1,0 +1,3 @@
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS ship_together BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS hold_until_batch TEXT NULL;

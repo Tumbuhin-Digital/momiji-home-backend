@@ -22,6 +22,7 @@ type CartService interface {
 	ClearCart(ctx context.Context, userID, sessionID *string) error
 	MergeCarts(ctx context.Context, userID string, guestSessionID string) error
 	SetVariantQuantity(ctx context.Context, userID, sessionID *string, variantID string, totalQty int, acceptBatchDepletion bool, validateBatch bool) (*SetVariantQuantityResponse, error)
+	ReconcileShipReadyAgainstInventory(ctx context.Context, userID, sessionID *string, liveInv map[string]int) (*ReconcileShipReadyResult, error)
 }
 
 type service struct {
@@ -308,4 +309,107 @@ func (s *service) SetVariantQuantity(ctx context.Context, userID, sessionID *str
 		return nil, err
 	}
 	return response, nil
+}
+
+// ReconcileShipReadyAgainstInventory re-splits cart lines using live inventory.
+// Total qty per variant is preserved; shortage moves from ship_ready to pre_order.
+func (s *service) ReconcileShipReadyAgainstInventory(ctx context.Context, userID, sessionID *string, liveInv map[string]int) (*ReconcileShipReadyResult, error) {
+	result := &ReconcileShipReadyResult{Variants: make([]ShipReadyInventoryDepletionEvent, 0)}
+	if len(liveInv) == 0 {
+		return result, nil
+	}
+
+	cart, err := s.store.GetCart(ctx, userID, sessionID)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	if cart == nil {
+		return result, nil
+	}
+
+	totals := make(map[string]struct {
+		shipReady int
+		preOrder  int
+	})
+	for _, item := range cart.Items {
+		t := totals[item.ShopifyVariantID]
+		if item.FulfillmentType == string(product.FulfillmentTypeShipReady) {
+			t.shipReady += item.Quantity
+		} else if item.FulfillmentType == string(product.FulfillmentTypePreOrder) {
+			t.preOrder += item.Quantity
+		}
+		totals[item.ShopifyVariantID] = t
+	}
+
+	for variantID, qty := range totals {
+		if qty.shipReady <= 0 {
+			continue
+		}
+		liveQty, ok := liveInv[variantID]
+		if !ok {
+			continue
+		}
+		if liveQty < 0 {
+			liveQty = 0
+		}
+
+		variant, err := s.productService.GetVariantByID(ctx, variantID)
+		if err != nil || variant == nil {
+			continue
+		}
+		// Admin-forced preorder: nothing to reconcile from ship_ready inventory.
+		if string(variant.FulfillmentType) == string(product.FulfillmentTypePreOrder) {
+			continue
+		}
+		// Untracked inventory is not constrained by Shopify available qty.
+		if !variant.InventoryTracked {
+			continue
+		}
+
+		totalQty := qty.shipReady + qty.preOrder
+		newShipReady := liveQty
+		if newShipReady > totalQty {
+			newShipReady = totalQty
+		}
+		if newShipReady < 0 {
+			newShipReady = 0
+		}
+		newPreOrder := totalQty - newShipReady
+		if newShipReady == qty.shipReady && newPreOrder == qty.preOrder {
+			continue
+		}
+		moved := qty.shipReady - newShipReady
+		if moved < 0 {
+			moved = 0
+		}
+
+		var price float64
+		fmt.Sscanf(variant.WSPrice, "%f", &price)
+		if price <= 0 {
+			fmt.Sscanf(variant.RetailPrice, "%f", &price)
+		}
+		if err := s.store.UpsertVariantItems(ctx, cart.ID, variantID, newShipReady, newPreOrder, price); err != nil {
+			return nil, apierror.ErrInternal
+		}
+
+		if moved > 0 {
+			result.Changed = true
+			sku := ""
+			if variant.SKU != nil {
+				sku = *variant.SKU
+			}
+			result.Variants = append(result.Variants, ShipReadyInventoryDepletionEvent{
+				VariantID:       variantID,
+				ProductTitle:    variant.Title,
+				ImageURL:        variant.ImageSrc,
+				SKU:             sku,
+				Available:       liveQty,
+				MovedToPreorder: moved,
+				OldShipReady:    qty.shipReady,
+				NewShipReady:    newShipReady,
+			})
+		}
+	}
+
+	return result, nil
 }

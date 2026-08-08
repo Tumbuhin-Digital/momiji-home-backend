@@ -52,6 +52,10 @@ func (s *fulfillmentTestStore) UpdateOrderStatus(_ context.Context, _ string, ag
 	return nil
 }
 
+func (s *fulfillmentTestStore) UpdateOrderHoldUntilBatch(context.Context, string, *string) error {
+	return nil
+}
+
 func (s *fulfillmentTestStore) GetNextFulfillmentSequence(context.Context, string) (int, error) {
 	return 1, nil
 }

@@ -123,6 +123,9 @@ func (s *updateShippingWarehouseStore) GetAllOrdersForExport(context.Context, Or
 func (s *updateShippingWarehouseStore) UpdateOrderStatus(context.Context, string, string, string, string) error {
 	return nil
 }
+func (s *updateShippingWarehouseStore) UpdateOrderHoldUntilBatch(context.Context, string, *string) error {
+	return nil
+}
 func (s *updateShippingWarehouseStore) UpdateItemStatusByType(context.Context, string, string, string) error {
 	return nil
 }
@@ -177,7 +180,9 @@ func (s *updateShippingWarehouseStore) GetFOLIByOrderLineItemIDs(context.Context
 func (s *updateShippingWarehouseStore) DecrementFOLIRemaining(context.Context, string, int) error {
 	return nil
 }
-func (s *updateShippingWarehouseStore) CreateFulfillment(context.Context, *Fulfillment) error { return nil }
+func (s *updateShippingWarehouseStore) CreateFulfillment(context.Context, *Fulfillment) error {
+	return nil
+}
 func (s *updateShippingWarehouseStore) UpsertFulfillmentByShopifyID(context.Context, *Fulfillment, []FulfillmentLineItem) error {
 	return nil
 }

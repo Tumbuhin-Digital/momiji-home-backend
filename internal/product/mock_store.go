@@ -178,6 +178,13 @@ func (m *MockProductStore) UpsertVariant(ctx context.Context, variant *ProductVa
 	return nil
 }
 
+func (m *MockProductStore) UpdateInventoryQuantity(ctx context.Context, shopifyVariantID string, quantity int) error {
+	if v, ok := m.Variants[shopifyVariantID]; ok {
+		v.InventoryQuantity = quantity
+	}
+	return nil
+}
+
 func (m *MockProductStore) UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64) error {
 	if m.UpdateVariantPricesErr != nil {
 		return m.UpdateVariantPricesErr

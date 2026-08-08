@@ -25,6 +25,29 @@ func BuildDefaultPackingDTO(items []OrderItem) []PackingItemDTO {
 	return packing
 }
 
+// mergeDefaultPackingForMissingItems adds 1-box-per-unit rows for any group items
+// not already present in packing (e.g. deferred ship-ready on ship_together orders).
+func mergeDefaultPackingForMissingItems(packing []PackingItemDTO, groupItems []OrderItem) []PackingItemDTO {
+	have := make(map[string]struct{}, len(packing))
+	for _, p := range packing {
+		have[p.LineItemID] = struct{}{}
+	}
+	out := make([]PackingItemDTO, len(packing), len(packing)+len(groupItems))
+	copy(out, packing)
+	for _, it := range groupItems {
+		if _, ok := have[it.ID]; ok {
+			continue
+		}
+		out = append(out, PackingItemDTO{
+			LineItemID: it.ID,
+			Quantity:   it.Quantity,
+			BoxCount:   it.Quantity,
+			IsNested:   false,
+		})
+	}
+	return out
+}
+
 func PackingToDBItems(packing []PackingItemDTO) []PreorderPackingItem {
 	dbPacking := make([]PreorderPackingItem, 0, len(packing))
 	for _, p := range packing {

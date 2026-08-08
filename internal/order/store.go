@@ -27,6 +27,8 @@ type Order struct {
 	TotalChargedNow     float64
 	Currency            string
 	Note                *string
+	ShipTogether        bool
+	HoldUntilBatch      *string
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 
@@ -73,6 +75,7 @@ type Store interface {
 	GetOrdersByCustomer(ctx context.Context, customerID string, query OrderQuery) ([]Order, int64, error)
 	GetAllOrdersForExport(ctx context.Context, query OrderQuery) ([]Order, error)
 	UpdateOrderStatus(ctx context.Context, orderID string, aggregateStatus, financialStatus, fulfillmentStatus string) error
+	UpdateOrderHoldUntilBatch(ctx context.Context, orderID string, holdUntilBatch *string) error
 	UpdateItemStatusByType(ctx context.Context, orderID string, itemType string, status string) error
 	UpdateItemStatusByID(ctx context.Context, itemID string, status string) error
 	UpdateItemStepByType(ctx context.Context, orderID string, itemType string, step int) error

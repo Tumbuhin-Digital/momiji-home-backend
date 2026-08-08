@@ -87,18 +87,42 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		return nil, apierror.New(400, "bad_request", "cart is empty")
 	}
 
+	if err := validateShipTogether(cartRes, req.ShipTogether); err != nil {
+		return nil, err
+	}
+
 	for _, item := range append(cartRes.ShipReady, cartRes.PreOrder...) {
 		if err := s.productService.ValidateVariantActive(ctx, item.VariantID); err != nil {
 			return nil, err
 		}
 	}
 
+	// Pre-lock inventory reconcile only when ship-ready stock will actually be reserved.
+	if !req.ShipTogether {
+		if depleted, err := s.reconcileShipReadyInventory(ctx, userID, sessionID, cartRes.ShipReady); err != nil {
+			return nil, err
+		} else if depleted != nil {
+			return nil, shipReadyInventoryDepletedError(depleted)
+		}
+
+		// Cart may have been unchanged; re-load so lock qty matches latest split.
+		cartRes, err = s.cartService.GetCartResponse(ctx, userID, sessionID)
+		if err != nil {
+			return nil, apierror.ErrInternal
+		}
+		if len(cartRes.ShipReady) == 0 && len(cartRes.PreOrder) == 0 {
+			return nil, apierror.New(400, "bad_request", "cart is empty")
+		}
+	}
+
+	shipReadyItems, preOrderItems := applyShipTogetherSegments(cartRes.ShipReady, cartRes.PreOrder, req.ShipTogether)
+
 	checkoutRef := uuid.NewString()
 
 	var draftLines []shopify.DraftOrderLineItem
 	var lockReqs []LockRequest
 
-	for _, item := range cartRes.ShipReady {
+	for _, item := range shipReadyItems {
 		draftLine := buildShipReadyDraftLine(item)
 		draftLines = append(draftLines, draftLine)
 		lockReqs = append(lockReqs, LockRequest{
@@ -111,12 +135,19 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	if len(lockReqs) > 0 {
 		expiresAt, err := s.stockLockService.AcquireLocks(ctx, userID, sessionID, checkoutRef, lockReqs)
 		if err != nil {
+			if isOutOfStockError(err) {
+				if depleted, recErr := s.reconcileShipReadyInventory(ctx, userID, sessionID, cartRes.ShipReady); recErr != nil {
+					return nil, recErr
+				} else if depleted != nil {
+					return nil, shipReadyInventoryDepletedError(depleted)
+				}
+			}
 			return nil, err
 		}
 		lockExpiresAt = expiresAt
 	}
 
-	for _, item := range cartRes.PreOrder {
+	for _, item := range preOrderItems {
 		if s.batchService != nil {
 			preview, err := s.batchService.PreviewAllocation(ctx, item.VariantID, item.Quantity, userID, sessionID)
 			if err != nil {
@@ -129,9 +160,9 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		draftLines = append(draftLines, buildPreOrderDraftLine(item))
 	}
 
-	if s.batchLockService != nil && len(cartRes.PreOrder) > 0 {
-		batchLockReqs := make([]preorderbatch.BatchLockRequest, 0, len(cartRes.PreOrder))
-		for _, item := range cartRes.PreOrder {
+	if s.batchLockService != nil && len(preOrderItems) > 0 {
+		batchLockReqs := make([]preorderbatch.BatchLockRequest, 0, len(preOrderItems))
+		for _, item := range preOrderItems {
 			batchLockReqs = append(batchLockReqs, preorderbatch.BatchLockRequest{
 				ShopifyVariantID: item.VariantID,
 				Quantity:         item.Quantity,
@@ -159,7 +190,11 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		draftInput.Email = req.Email
 	}
 
-	slog.InfoContext(ctx, "Initiating checkout", slog.String("checkout_reference", checkoutRef), slog.Int("ship_ready_items", len(cartRes.ShipReady)), slog.Int("pre_order_items", len(cartRes.PreOrder)))
+	slog.InfoContext(ctx, "Initiating checkout",
+		slog.String("checkout_reference", checkoutRef),
+		slog.Bool("ship_together", req.ShipTogether),
+		slog.Int("ship_ready_items", len(shipReadyItems)),
+		slog.Int("pre_order_items", len(preOrderItems)))
 
 	draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
 		Key: "checkout_reference", Value: checkoutRef,
@@ -173,18 +208,10 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	}
 
 	hasLtl := false
-	for _, item := range cartRes.ShipReady {
+	for _, item := range append(shipReadyItems, preOrderItems...) {
 		if item.IsLtl {
 			hasLtl = true
 			break
-		}
-	}
-	if !hasLtl {
-		for _, item := range cartRes.PreOrder {
-			if item.IsLtl {
-				hasLtl = true
-				break
-			}
 		}
 	}
 	if hasLtl {
@@ -193,7 +220,7 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		})
 	}
 
-	if len(cartRes.PreOrder) > 0 {
+	if len(preOrderItems) > 0 {
 		preOrderOrigin := warehouse.CodeEast
 		if s.warehouseResolver != nil {
 			preOrderOrigin = s.warehouseResolver.ResolveOrigin("pre_order", req.Origin)
@@ -201,6 +228,26 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 		draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
 			Key: "preorder_warehouse_origin", Value: preOrderOrigin,
 		})
+	}
+
+	if req.ShipTogether {
+		batchNames, err := collectCheckoutBatchNames(ctx, s.batchService, preOrderItems, userID, sessionID)
+		if err != nil {
+			_ = s.stockLockService.ReleaseLocksByCheckoutReference(ctx, checkoutRef)
+			if s.batchLockService != nil {
+				_ = s.batchLockService.ReleaseBatchLocksByCheckoutReference(ctx, checkoutRef)
+			}
+			return nil, err
+		}
+		draftInput.CustomAttributes = append(draftInput.CustomAttributes,
+			shopify.AttributeInput{Key: "ship_together", Value: "true"},
+		)
+		if batchNames != "" {
+			draftInput.CustomAttributes = append(draftInput.CustomAttributes,
+				shopify.AttributeInput{Key: "hold_until_batch", Value: batchNames},
+			)
+		}
+		draftInput.Note = formatShipTogetherHoldNote(batchNames)
 	}
 
 	if req.Address1 != "" || req.City != "" {
@@ -231,7 +278,7 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 	}
 
 	// Set shipping line for ship-ready items using live ShipStation rates
-	if len(cartRes.ShipReady) > 0 {
+	if len(shipReadyItems) > 0 {
 		if req.Zip == "" {
 			slog.WarnContext(ctx, "ship ready shipping skipped: zip code missing",
 				slog.String("checkout_reference", checkoutRef))
@@ -273,9 +320,9 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 
 	// Persist pre-order shipping estimate for admin fulfillment (balance-due invoice).
 	// Skip when every pre-order line is LTL — freight is calculated manually by the team.
-	if len(cartRes.PreOrder) > 0 {
+	if len(preOrderItems) > 0 {
 		allPreOrderLtl := true
-		for _, item := range cartRes.PreOrder {
+		for _, item := range preOrderItems {
 			if !item.IsLtl {
 				allPreOrderLtl = false
 				break
@@ -302,6 +349,10 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 				Country:  country,
 				Segment:  "pre_order",
 				Origin:   req.Origin,
+			}
+			// When ship_together, cart segment alone omits reclassified ship-ready weight.
+			if req.ShipTogether {
+				ratesReq.LineItems = toShippingRateLineItems(preOrderItems)
 			}
 			rates, rateErr := s.GetShippingRates(ctx, userID, sessionID, ratesReq)
 			if rateErr != nil {

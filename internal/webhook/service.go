@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -54,6 +55,8 @@ type service struct {
 
 type BatchAllocator interface {
 	AllocateToBatch(ctx context.Context, shopifyVariantID string, qty int, ref preorderbatch.AllocationRef) (*preorderbatch.AllocateResult, error)
+	GetCommittedAllocationsByOrderLineItemIDs(ctx context.Context, orderLineItemIDs []string) ([]preorderbatch.BatchAllocation, error)
+	GetBatchesByIDs(ctx context.Context, batchIDs []string) ([]preorderbatch.PreorderBatch, error)
 }
 
 type BatchLockReleaser interface {
@@ -149,6 +152,8 @@ type paidCheckoutMeta struct {
 	ShippingMethod            string
 	PreorderShippingEstimate  string
 	PreorderWarehouseOrigin   string
+	ShipTogether              bool
+	HoldUntilBatch            string
 }
 
 func parsePaidCheckoutMeta(payload ShopifyOrderWebhook) paidCheckoutMeta {
@@ -167,9 +172,57 @@ func parsePaidCheckoutMeta(payload ShopifyOrderWebhook) paidCheckoutMeta {
 			meta.PreorderShippingEstimate = val
 		case "preorder_warehouse_origin":
 			meta.PreorderWarehouseOrigin = val
+		case "ship_together":
+			meta.ShipTogether = val == "true"
+		case "hold_until_batch":
+			meta.HoldUntilBatch = val
 		}
 	}
 	return meta
+}
+
+func (s *service) collectOrderBatchNames(ctx context.Context, o *order.Order) (string, error) {
+	if s.batchService == nil || o == nil {
+		return "", nil
+	}
+	var preLineIDs []string
+	for _, item := range o.Items {
+		if item.Type == "pre_order" {
+			preLineIDs = append(preLineIDs, item.ID)
+		}
+	}
+	if len(preLineIDs) == 0 {
+		return "", nil
+	}
+	allocs, err := s.batchService.GetCommittedAllocationsByOrderLineItemIDs(ctx, preLineIDs)
+	if err != nil {
+		return "", err
+	}
+	batchIDSet := make(map[string]struct{})
+	for _, a := range allocs {
+		if a.BatchID != "" {
+			batchIDSet[a.BatchID] = struct{}{}
+		}
+	}
+	if len(batchIDSet) == 0 {
+		return "", nil
+	}
+	batchIDs := make([]string, 0, len(batchIDSet))
+	for id := range batchIDSet {
+		batchIDs = append(batchIDs, id)
+	}
+	batches, err := s.batchService.GetBatchesByIDs(ctx, batchIDs)
+	if err != nil {
+		return "", err
+	}
+	names := make([]string, 0, len(batches))
+	for _, b := range batches {
+		if b.Name != "" {
+			names = append(names, b.Name)
+		}
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", "), nil
 }
 
 // finalizePaidCheckoutOrder completes post-create side effects for a paid checkout order.
@@ -198,6 +251,23 @@ func (s *service) finalizePaidCheckoutOrder(ctx context.Context, o *order.Order,
 					slog.Any("error", err))
 				return err
 			}
+		}
+	}
+
+	if o.ShipTogether && s.batchService != nil {
+		if batchNames, err := s.collectOrderBatchNames(ctx, o); err != nil {
+			slog.ErrorContext(ctx, "failed to refresh hold_until_batch from allocations",
+				slog.String("order_id", o.ID),
+				slog.Any("error", err))
+			return err
+		} else if batchNames != "" {
+			if err := s.orderStore.UpdateOrderHoldUntilBatch(ctx, o.ID, &batchNames); err != nil {
+				slog.ErrorContext(ctx, "failed to persist hold_until_batch",
+					slog.String("order_id", o.ID),
+					slog.Any("error", err))
+				return err
+			}
+			o.HoldUntilBatch = &batchNames
 		}
 	}
 
@@ -610,6 +680,10 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		Currency:          strings.ToUpper(payload.Currency),
 		Items:             orderItems,
 		ShopifyOrderID:    &shopifyOrderIDStr,
+		ShipTogether:      meta.ShipTogether,
+	}
+	if meta.HoldUntilBatch != "" {
+		newOrder.HoldUntilBatch = &meta.HoldUntilBatch
 	}
 
 	if meta.CheckoutRef != "" {

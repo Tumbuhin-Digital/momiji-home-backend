@@ -63,6 +63,8 @@ type OrderResponse struct {
 	SecondPayment       *SecondPaymentDTO     `json:"second_payment,omitempty"`
 	ShippingMethod      string                `json:"shipping_method,omitempty"`
 	Fulfillments        []FulfillmentDTO      `json:"fulfillments,omitempty"`
+	ShipTogether        bool                  `json:"ship_together"`
+	HoldUntilBatch      string                `json:"hold_until_batch,omitempty"`
 }
 
 type OrderItemDetail struct {
@@ -193,6 +195,7 @@ type FulfillmentGroupDTO struct {
 	SecondPaymentStatus      string               `json:"second_payment_status,omitempty"` // pending | ready | invoiced | paid
 	GroupBalanceDue          *string              `json:"group_balance_due,omitempty"`
 	GroupShipping            *string              `json:"group_shipping,omitempty"`
+	IncludesShipReady        bool                 `json:"includes_ship_ready,omitempty"`
 }
 
 type SecondPaymentDTO struct {

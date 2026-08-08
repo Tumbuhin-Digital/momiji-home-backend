@@ -194,6 +194,15 @@ func (s *PostgresStore) UpsertVariant(ctx context.Context, variant *ProductVaria
 	}).Select("*").Create(variant).Error
 }
 
+func (s *PostgresStore) UpdateInventoryQuantity(ctx context.Context, shopifyVariantID string, quantity int) error {
+	return s.db.WithContext(ctx).Model(&ProductVariant{}).
+		Where("shopify_variant_id = ?", shopifyVariantID).
+		Updates(map[string]interface{}{
+			"inventory_quantity": quantity,
+			"updated_at":         gorm.Expr("now()"),
+		}).Error
+}
+
 func (s *PostgresStore) UpsertProductImages(ctx context.Context, productID string, images []ProductImage) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Get all current image Shopify IDs

@@ -67,6 +67,7 @@ type InitiateCheckoutRequest struct {
 	BillingPhone         string `json:"billing_phone,omitempty"`
 	Origin               string `json:"origin,omitempty"` // pre_order warehouse: east | west
 	AcceptBatchDepletion bool   `json:"accept_batch_depletion"`
+	ShipTogether         bool   `json:"ship_together"`
 }
 
 type InitiateCheckoutResponse struct {
@@ -126,6 +127,7 @@ type ManualOrderRequest struct {
 	BillingPhone     string                `json:"billing_phone,omitempty"`
 	ShippingMethod   string                `json:"shipping_method,omitempty"`
 	Origin           string                `json:"origin,omitempty"`
+	ShipTogether     bool                  `json:"ship_together"`
 	LineItems        []ManualOrderLineItem `json:"line_items" validate:"required,min=1,dive"`
 }
 

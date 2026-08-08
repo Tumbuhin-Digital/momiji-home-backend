@@ -172,6 +172,14 @@ func (a *stubBatchAllocator) AllocateToBatch(context.Context, string, int, preor
 	return &preorderbatch.AllocateResult{}, nil
 }
 
+func (a *stubBatchAllocator) GetCommittedAllocationsByOrderLineItemIDs(context.Context, []string) ([]preorderbatch.BatchAllocation, error) {
+	return nil, nil
+}
+
+func (a *stubBatchAllocator) GetBatchesByIDs(context.Context, []string) ([]preorderbatch.PreorderBatch, error) {
+	return nil, nil
+}
+
 type stubCustomerStore struct{}
 
 func (stubCustomerStore) ListCustomers(context.Context, int, int, string) ([]customer.Customer, int64, error) {

@@ -74,11 +74,16 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 	if err != nil {
 		return nil, apierror.ErrInternal
 	}
+	groupItems, err = s.appendShipReadyForCombinedShipping(ctx, o, batchID, groupItems)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
 	if len(groupItems) == 0 {
 		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "No pre-order items for this fulfillment group")
 	}
 
-	packing := ensurePackingQuantities(req.Packing, groupItems)
+	packing := mergeDefaultPackingForMissingItems(req.Packing, groupItems)
+	packing = ensurePackingQuantities(packing, groupItems)
 	if err := ValidatePacking(packing, groupItems); err != nil {
 		return nil, err
 	}
@@ -235,6 +240,10 @@ func (s *service) UpdatePreorderShipping(ctx context.Context, userID, orderID st
 	if err != nil {
 		return nil, apierror.ErrInternal
 	}
+	groupItems, err = s.appendShipReadyForCombinedShipping(ctx, o, batchID, groupItems)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
 	if len(groupItems) == 0 {
 		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "No pre-order items for this fulfillment group")
 	}
@@ -252,7 +261,8 @@ func (s *service) UpdatePreorderShipping(ctx context.Context, userID, orderID st
 	}
 
 	if len(req.Packing) > 0 {
-		packing := ensurePackingQuantities(req.Packing, groupItems)
+		packing := mergeDefaultPackingForMissingItems(req.Packing, groupItems)
+		packing = ensurePackingQuantities(packing, groupItems)
 		if err := ValidatePacking(packing, groupItems); err != nil {
 			return nil, err
 		}

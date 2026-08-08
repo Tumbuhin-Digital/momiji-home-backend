@@ -179,6 +179,10 @@ func (s *PostgresStore) UpdateOrderStatus(ctx context.Context, orderID, aggregat
 	}).Error
 }
 
+func (s *PostgresStore) UpdateOrderHoldUntilBatch(ctx context.Context, orderID string, holdUntilBatch *string) error {
+	return s.db.WithContext(ctx).Model(&Order{}).Where("id = ?", orderID).Update("hold_until_batch", holdUntilBatch).Error
+}
+
 func (s *PostgresStore) UpdateItemStatusByType(ctx context.Context, orderID, itemType, status string) error {
 	return s.db.WithContext(ctx).Model(&OrderItem{}).
 		Where("order_id = ? AND type = ?", orderID, itemType).

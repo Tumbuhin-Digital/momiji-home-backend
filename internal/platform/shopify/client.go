@@ -89,6 +89,7 @@ type DraftOrderInput struct {
 	BillingAddress   *AddressInput        `json:"billingAddress,omitempty"`
 	ShippingLine     *ShippingLineInput   `json:"shippingLine,omitempty"`
 	CustomAttributes []AttributeInput     `json:"customAttributes,omitempty"`
+	Note             string               `json:"note,omitempty"`
 }
 
 type MoneyInput struct {

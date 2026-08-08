@@ -30,6 +30,7 @@ type ProductService interface {
 	BulkUpdateDimensions(ctx context.Context, rows []DimensionUpdateInput) (BulkUpdateDimensionsResult, error)
 	ValidateVariantActive(ctx context.Context, variantID string) error
 	CreateCustomProduct(ctx context.Context, input CreateCustomProductInput) (*ProductDTO, error)
+	SyncInventoryQuantities(ctx context.Context, quantities map[string]int) error
 }
 
 type service struct {
@@ -656,6 +657,38 @@ func (s *service) ValidateVariantActive(ctx context.Context, variantID string) e
 	}
 	if !active {
 		return apierror.New(400, "product_unavailable", "One or more cart items are no longer available for purchase")
+	}
+	return nil
+}
+
+// SyncInventoryQuantities writes live Shopify inventory into local variants.
+// When available is 0 and the variant is tracked ship_ready, flips fulfillment to pre_order
+// (same rule as the inventory webhook).
+func (s *service) SyncInventoryQuantities(ctx context.Context, quantities map[string]int) error {
+	if len(quantities) == 0 {
+		return nil
+	}
+	for variantID, qty := range quantities {
+		if qty < 0 {
+			qty = 0
+		}
+		variant, err := s.store.GetVariantByShopifyID(ctx, variantID)
+		if err != nil {
+			return apierror.ErrInternal
+		}
+		if variant == nil {
+			continue
+		}
+		if err := s.store.UpdateInventoryQuantity(ctx, variantID, qty); err != nil {
+			return apierror.ErrInternal
+		}
+		if qty <= 0 && variant.FulfillmentType == string(FulfillmentTypeShipReady) && variant.InventoryTracked {
+			if err := s.store.UpdateVariantFulfillmentType(ctx, variantID, string(FulfillmentTypePreOrder)); err != nil {
+				slog.WarnContext(ctx, "failed to update fulfillment type to pre_order after inventory sync",
+					slog.String("variant_id", variantID),
+					slog.Any("error", err))
+			}
+		}
 	}
 	return nil
 }

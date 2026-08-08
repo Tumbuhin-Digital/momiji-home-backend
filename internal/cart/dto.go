@@ -67,3 +67,20 @@ type SetVariantQuantityRequest struct {
 type SetVariantQuantityResponse struct {
 	BatchDepletion *preorderbatch.BatchDepletionEvent `json:"batch_depletion,omitempty"`
 }
+
+// ShipReadyInventoryDepletionEvent is returned when live inventory forces cart re-split.
+type ShipReadyInventoryDepletionEvent struct {
+	VariantID       string `json:"variant_id"`
+	ProductTitle    string `json:"product_title"`
+	ImageURL        string `json:"image_url"`
+	SKU             string `json:"sku"`
+	Available       int    `json:"available"`
+	MovedToPreorder int    `json:"moved_to_preorder"`
+	OldShipReady    int    `json:"old_ship_ready"`
+	NewShipReady    int    `json:"new_ship_ready"`
+}
+
+type ReconcileShipReadyResult struct {
+	Changed  bool                               `json:"changed"`
+	Variants []ShipReadyInventoryDepletionEvent `json:"variants,omitempty"`
+}

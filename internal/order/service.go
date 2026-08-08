@@ -486,6 +486,10 @@ func (s *service) GetOrders(ctx context.Context, userID string, query OrderQuery
 			TotalChargedNow:   fmt.Sprintf("%.2f", o.TotalChargedNow),
 			Currency:          o.Currency,
 			LineItems:         LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
+			ShipTogether:      o.ShipTogether,
+		}
+		if o.HoldUntilBatch != nil {
+			dto.HoldUntilBatch = *o.HoldUntilBatch
 		}
 
 		if o.Customer != nil {
@@ -615,6 +619,11 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 		TotalChargedNow:     fmt.Sprintf("%.2f", o.TotalChargedNow),
 		Currency:            o.Currency,
 		LineItems:           LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
+		ShipTogether:        o.ShipTogether,
+	}
+
+	if o.HoldUntilBatch != nil {
+		dto.HoldUntilBatch = *o.HoldUntilBatch
 	}
 
 	if o.ShippingMethod != nil {
@@ -762,6 +771,10 @@ func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string
 		TotalChargedNow:   fmt.Sprintf("%.2f", o.TotalChargedNow),
 		Currency:          o.Currency,
 		LineItems:         LineItemsGroup{ShipReady: shipReady, PreOrder: preOrder},
+		ShipTogether:      o.ShipTogether,
+	}
+	if o.HoldUntilBatch != nil {
+		dto.HoldUntilBatch = *o.HoldUntilBatch
 	}
 
 	if o.Customer != nil {
@@ -820,6 +833,10 @@ func (s *service) AcceptOrder(ctx context.Context, userID, orderID, fulfillmentT
 		return apierror.New(400, "invalid_transition", fmt.Sprintf("Order cannot be accepted from status: %s", o.AggregateStatus))
 	}
 
+	if fulfillmentType == "ship_ready" && IsShipTogetherHoldActive(o) {
+		return shipTogetherAcceptBlockedError(o)
+	}
+
 	// Update the overall order status
 	if err := s.store.UpdateOrderStatus(ctx, orderID, "on_progress", o.FinancialStatus, "in_progress"); err != nil {
 		return apierror.ErrInternal
@@ -837,7 +854,7 @@ func (s *service) AcceptOrder(ctx context.Context, userID, orderID, fulfillmentT
 		}
 	}
 
-	// NEW: If ship_ready, push to Shopify fulfillment dashboard
+	// If ship_ready, push to Shopify fulfillment dashboard.
 	if fulfillmentType == "ship_ready" {
 		if o.ShopifyOrderID != nil && *o.ShopifyOrderID != "" {
 			go func() {

@@ -99,6 +99,7 @@ type Store interface {
 	UpsertProduct(ctx context.Context, product *Product) error
 	MarkProductDeletedByShopifyID(ctx context.Context, shopifyID string) error
 	UpsertVariant(ctx context.Context, variant *ProductVariant) error
+	UpdateInventoryQuantity(ctx context.Context, shopifyVariantID string, quantity int) error
 	UpdateVariantPrices(ctx context.Context, variantID string, wsPrice *float64) error
 	UpdateVariantLtl(ctx context.Context, variantID string, isLtl bool) error
 	GetProductByID(ctx context.Context, productID string) (*Product, error)

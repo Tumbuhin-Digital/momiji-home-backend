@@ -7,6 +7,21 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/order"
 )
 
+func TestParsePaidCheckoutMeta_ShipTogether(t *testing.T) {
+	meta := parsePaidCheckoutMeta(ShopifyOrderWebhook{
+		NoteAttributes: []ShopifyProperty{
+			{Name: "ship_together", Value: "true"},
+			{Name: "hold_until_batch", Value: "September Batch"},
+		},
+	})
+	if !meta.ShipTogether {
+		t.Fatal("expected ship_together true")
+	}
+	if meta.HoldUntilBatch != "September Batch" {
+		t.Fatalf("got hold_until_batch %q", meta.HoldUntilBatch)
+	}
+}
+
 func TestIsWholesaleMomijiOrder_WithWholesaleSource(t *testing.T) {
 	payload := ShopifyOrderWebhook{
 		ID: 1,
