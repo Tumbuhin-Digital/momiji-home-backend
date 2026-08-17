@@ -104,6 +104,7 @@ func (s *service) buildFulfillmentGroups(
 		}
 		shipmentByBatch[key] = sh
 	}
+	prepaidAllocation := AllocatePrepaidShipping(shipments)
 
 	// Stable batch card order by batch name then id.
 	batchKeys := make([]string, 0, len(batchSlices))
@@ -136,7 +137,7 @@ func (s *service) buildFulfillmentGroups(
 			LineSlices: slices,
 		}
 		if sh := shipmentByBatch[batchID]; sh != nil {
-			dto := s.toPreorderShipmentDTO(sh)
+			dto := s.toPreorderShipmentDTOWithAllocation(sh, prepaidAllocation)
 			group.Shipment = &dto
 		}
 		enrichGroupSecondPayment(&group, o)
@@ -151,7 +152,7 @@ func (s *service) buildFulfillmentGroups(
 			LineSlices: unbatchedSlices,
 		}
 		if sh := shipmentByBatch[""]; sh != nil {
-			dto := s.toPreorderShipmentDTO(sh)
+			dto := s.toPreorderShipmentDTOWithAllocation(sh, prepaidAllocation)
 			group.Shipment = &dto
 		}
 		enrichGroupSecondPayment(&group, o)

@@ -51,6 +51,27 @@ func buildPreOrderDraftLine(item cart.CartItem) shopify.DraftOrderLineItem {
 	return draftLine
 }
 
+// PreOrderShippingDepositTitle labels the upfront 50% shipping charge on the
+// checkout draft order. The remaining half is billed with the settlement invoice.
+const PreOrderShippingDepositTitle = "Shipping (Pre-Order) - 50%"
+
+// PreOrderShippingPrepaidAttribute carries the upfront shipping amount on the draft
+// order so the paid-order webhook can record what the settlement invoice must not re-bill.
+const PreOrderShippingPrepaidAttribute = "preorder_shipping_prepaid"
+
+func buildPreOrderShippingDepositLine(amount float64) shopify.DraftOrderLineItem {
+	requiresShipping := false
+	return shopify.DraftOrderLineItem{
+		Title:             PreOrderShippingDepositTitle,
+		Quantity:          1,
+		OriginalUnitPrice: fmt.Sprintf("%.2f", amount),
+		RequiresShipping:  &requiresShipping,
+		CustomAttributes: []shopify.AttributeInput{
+			{Key: "charge_type", Value: "pre_order_shipping_deposit"},
+		},
+	}
+}
+
 func buildDraftLinesFromSegments(shipReady, preOrder []cart.CartItem) []shopify.DraftOrderLineItem {
 	var draftLines []shopify.DraftOrderLineItem
 	for _, item := range shipReady {

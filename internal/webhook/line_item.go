@@ -13,3 +13,17 @@ func isPreorderShopifyLineItem(item ShopifyOrderLineItem) bool {
 	}
 	return false
 }
+
+// isPreorderShippingDepositLineItem reports whether a paid-order line is the upfront 50%
+// pre-order shipping charge. It carries no variant, so it must be recognised explicitly
+// or it would be dropped as an unknown product and left out of the order totals.
+func isPreorderShippingDepositLineItem(item ShopifyOrderLineItem) bool {
+	for _, prop := range item.Properties {
+		if prop.Name == "charge_type" {
+			if valStr, ok := prop.Value.(string); ok && valStr == "pre_order_shipping_deposit" {
+				return true
+			}
+		}
+	}
+	return false
+}

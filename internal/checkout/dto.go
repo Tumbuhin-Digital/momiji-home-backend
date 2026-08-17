@@ -29,10 +29,11 @@ type CheckoutSummaryResponse struct {
 		EstimatedArrival string `json:"estimated_arrival"`
 	} `json:"shipping"`
 	DueNow struct {
-		ShipReadyTotal  string `json:"ship_ready_total"`
-		Shipping        string `json:"shipping"`
-		PreorderDeposit string `json:"preorder_deposit"`
-		Total           string `json:"total"`
+		ShipReadyTotal          string `json:"ship_ready_total"`
+		Shipping                string `json:"shipping"`
+		PreorderDeposit         string `json:"preorder_deposit"`
+		ShippingPreorderDeposit string `json:"shipping_preorder_deposit"`
+		Total                   string `json:"total"`
 	} `json:"due_now"`
 	DueAugust struct {
 		PreorderBalance  string `json:"preorder_balance"`

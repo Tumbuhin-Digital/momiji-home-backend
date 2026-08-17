@@ -121,7 +121,7 @@ func TestBuildCheckoutPreorderShipment_HappyPath(t *testing.T) {
 	}
 	estimate := 12.34
 
-	shipment, packing, err := order.BuildCheckoutPreorderShipment("order-ok", preItems, dims, &estimate, "west")
+	shipment, packing, err := order.BuildCheckoutPreorderShipment("order-ok", preItems, dims, &estimate, "west", 6.17)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -136,5 +136,8 @@ func TestBuildCheckoutPreorderShipment_HappyPath(t *testing.T) {
 	}
 	if shipment.EstimatedShipping == nil || *shipment.EstimatedShipping != estimate {
 		t.Fatalf("expected estimate preserved")
+	}
+	if shipment.PrepaidShipping != 6.17 {
+		t.Fatalf("expected prepaid shipping 6.17, got %v", shipment.PrepaidShipping)
 	}
 }

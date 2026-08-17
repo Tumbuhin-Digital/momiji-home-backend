@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -11,6 +12,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/warehouse"
 )
 
@@ -198,6 +200,17 @@ func (s *service) CreateManualOrder(ctx context.Context, req ManualOrderRequest)
 				draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
 					Key: "preorder_shipping_estimate", Value: matched.Cost,
 				})
+				estimate, parseErr := strconv.ParseFloat(matched.Cost, 64)
+				if parseErr != nil {
+					slog.WarnContext(ctx, "unparseable manual order pre-order shipping estimate; skipping upfront half",
+						slog.String("checkout_reference", checkoutRef),
+						slog.String("value", matched.Cost))
+				} else if upfront, _ := shipping.SplitHalf(estimate); upfront > 0 {
+					draftInput.LineItems = append(draftInput.LineItems, buildPreOrderShippingDepositLine(upfront))
+					draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
+						Key: PreOrderShippingPrepaidAttribute, Value: fmt.Sprintf("%.2f", upfront),
+					})
+				}
 			}
 		}
 	}

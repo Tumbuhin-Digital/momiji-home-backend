@@ -54,6 +54,9 @@ type GroupInvoiceOptions struct {
 	Lines           []GroupInvoiceLine
 	ShippingTitle   string
 	ShippingPrice   float64
+	// ShippingPrepaid is the shipping half already collected at checkout. When > 0
+	// the shipping line is labelled as the remainder so the customer can reconcile it.
+	ShippingPrepaid float64
 	ShippingNotes   string
 	ShippingAddress *shopify.AddressInput
 	BillingAddress  *shopify.AddressInput
@@ -403,7 +406,7 @@ func (s *service) CreateGroupSecondPaymentInvoice(ctx context.Context, opts Grou
 	}
 
 	if opts.ShippingPrice > 0 {
-		shippingTitle := shipping.CustomerShippingLineTitle(opts.ShippingTitle)
+		shippingTitle := remainingShippingLineTitle(opts.ShippingTitle, opts.ShippingPrepaid)
 		lineItems = append(lineItems, shopify.DraftOrderLineItem{
 			Title:             shippingTitle,
 			OriginalUnitPrice: fmt.Sprintf("%.2f", opts.ShippingPrice),
@@ -455,7 +458,7 @@ func (s *service) CreateGroupSecondPaymentInvoice(ctx context.Context, opts Grou
 		}
 		if opts.ShippingPrice > 0 {
 			emailData.ShippingAmount = fmt.Sprintf("$%.2f", opts.ShippingPrice)
-			emailData.ShippingTitle = shipping.CustomerShippingLineTitle(opts.ShippingTitle)
+			emailData.ShippingTitle = remainingShippingLineTitle(opts.ShippingTitle, opts.ShippingPrepaid)
 		}
 		if err := s.emailService.SendInvoice(bgCtx, opts.CustomerEmail, emailData); err != nil {
 			slog.Error("failed to send group settlement email", "error", err, "email", opts.CustomerEmail)
@@ -767,6 +770,16 @@ func (s *service) ExportPreordersToExcel(ctx context.Context, filter SettlementF
 		return nil, fmt.Errorf("failed to write excel file: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+// remainingShippingLineTitle labels the settlement shipping charge. When part of the
+// shipping was already collected at checkout, the line is marked as the remaining half.
+func remainingShippingLineTitle(method string, prepaid float64) string {
+	title := shipping.CustomerShippingLineTitle(method)
+	if prepaid > 0 {
+		return title + " - Remaining 50%"
+	}
+	return title
 }
 
 func cleanPreorderDisplayTitle(title string) string {

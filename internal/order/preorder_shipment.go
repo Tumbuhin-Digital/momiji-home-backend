@@ -10,7 +10,13 @@ type PreorderShipment struct {
 	BatchID            *string    `gorm:"type:uuid;index"`
 	EstimatedShipping  *float64
 	FinalShippingPrice *float64
-	ShippingNotes      *string
+	// PrepaidShipping is the 50% already collected at checkout; settlement bills the rest.
+	// Collected once per order, so it lands on the checkout-created row and acts as a pool
+	// shared across batch groups — see AllocatePrepaidShipping.
+	PrepaidShipping float64 `gorm:"not null;default:0"`
+	// PrepaidApplied is how much of that pool this group's settlement invoice consumed.
+	PrepaidApplied float64 `gorm:"not null;default:0"`
+	ShippingNotes  *string
 	CreditAmount       float64    `gorm:"not null;default:0"`
 	TotalBoxes         int        `gorm:"not null;default:0"`
 	TotalWeightLb      *float64

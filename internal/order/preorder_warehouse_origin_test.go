@@ -150,7 +150,7 @@ func (s *updateShippingWarehouseStore) UpdateOrderItemReceived(context.Context, 
 func (s *updateShippingWarehouseStore) MarkPreorderInvoiceSent(context.Context, string, time.Time) error {
 	return nil
 }
-func (s *updateShippingWarehouseStore) MarkPreorderShipmentInvoiceSent(context.Context, string, string, string, time.Time) error {
+func (s *updateShippingWarehouseStore) MarkPreorderShipmentInvoiceSent(context.Context, string, string, string, time.Time, float64) error {
 	return nil
 }
 func (s *updateShippingWarehouseStore) MarkPreorderShipmentInvoicePaid(context.Context, string, time.Time) error {

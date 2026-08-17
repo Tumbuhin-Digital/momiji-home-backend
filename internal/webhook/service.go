@@ -148,12 +148,13 @@ func (s *service) getLocalVariant(ctx context.Context, item ShopifyOrderLineItem
 }
 
 type paidCheckoutMeta struct {
-	CheckoutRef               string
-	ShippingMethod            string
-	PreorderShippingEstimate  string
-	PreorderWarehouseOrigin   string
-	ShipTogether              bool
-	HoldUntilBatch            string
+	CheckoutRef              string
+	ShippingMethod           string
+	PreorderShippingEstimate string
+	PreorderShippingPrepaid  string
+	PreorderWarehouseOrigin  string
+	ShipTogether             bool
+	HoldUntilBatch           string
 }
 
 func parsePaidCheckoutMeta(payload ShopifyOrderWebhook) paidCheckoutMeta {
@@ -170,6 +171,8 @@ func parsePaidCheckoutMeta(payload ShopifyOrderWebhook) paidCheckoutMeta {
 			meta.ShippingMethod = val
 		case "preorder_shipping_estimate":
 			meta.PreorderShippingEstimate = val
+		case "preorder_shipping_prepaid":
+			meta.PreorderShippingPrepaid = val
 		case "preorder_warehouse_origin":
 			meta.PreorderWarehouseOrigin = val
 		case "ship_together":
@@ -331,13 +334,24 @@ func (s *service) finalizePaidCheckoutOrder(ctx context.Context, o *order.Order,
 					slog.String("order_id", o.ID))
 			}
 
+			var prepaidShipping float64
+			if meta.PreorderShippingPrepaid != "" {
+				if v, err := strconv.ParseFloat(meta.PreorderShippingPrepaid, 64); err == nil {
+					prepaidShipping = v
+				} else {
+					slog.WarnContext(ctx, "invalid pre-order prepaid shipping from checkout",
+						slog.String("order_id", o.ID),
+						slog.String("value", meta.PreorderShippingPrepaid))
+				}
+			}
+
 			dims, dimErr := s.orderStore.GetVariantDimensions(ctx, variantIDs)
 			if dimErr != nil {
 				slog.ErrorContext(ctx, "failed to load variant dimensions for pre-order shipment",
 					slog.String("order_id", o.ID),
 					slog.Any("error", dimErr))
 			} else {
-				shipment, packing, buildErr := order.BuildCheckoutPreorderShipment(o.ID, preItems, dims, estimate, meta.PreorderWarehouseOrigin)
+				shipment, packing, buildErr := order.BuildCheckoutPreorderShipment(o.ID, preItems, dims, estimate, meta.PreorderWarehouseOrigin, prepaidShipping)
 				if buildErr != nil {
 					slog.ErrorContext(ctx, "failed to build pre-order shipment from checkout packing",
 						slog.String("order_id", o.ID),
@@ -504,6 +518,7 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 	var totalDepositPaid float64
 	var totalBalanceDue float64
 	var totalChargedNow float64
+	var preOrderShippingDepositPaid float64
 
 	var draftItems []shopify.DraftOrderLineItem
 	var settlementIDsPaid []string
@@ -552,6 +567,18 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 				}
 			}
 			settlementIDsPaid = append(settlementIDsPaid, settlementID)
+			continue
+		}
+
+		// Carries no variant and is not a product line: count it toward what was paid,
+		// but never as an order item. The matching half is billed at settlement.
+		if isPreorderShippingDepositLineItem(item) {
+			price, _ := strconv.ParseFloat(item.Price, 64)
+			discount, _ := strconv.ParseFloat(item.TotalDiscount, 64)
+			charged := price*float64(item.Quantity) - discount
+			total += charged
+			totalChargedNow += charged
+			preOrderShippingDepositPaid += charged
 			continue
 		}
 
@@ -699,6 +726,11 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 	}
 
 	slog.InfoContext(ctx, "Order successfully inserted into database", slog.String("order_id", newOrder.ID), slog.String("order_number", newOrder.OrderNumber), slog.String("shopify_order_id", shopifyOrderIDStr))
+
+	// What Shopify actually charged outranks the amount we declared on the draft.
+	if preOrderShippingDepositPaid > 0 {
+		meta.PreorderShippingPrepaid = fmt.Sprintf("%.2f", preOrderShippingDepositPaid)
+	}
 
 	return s.finalizePaidCheckoutOrder(ctx, newOrder, meta)
 }

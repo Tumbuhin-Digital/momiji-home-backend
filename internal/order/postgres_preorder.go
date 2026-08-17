@@ -163,6 +163,11 @@ func buildPreorderShipmentUpsertUpdates(shipment *PreorderShipment) map[string]i
 	if shipment.RateCalculatedAt != nil {
 		updates["rate_calculated_at"] = shipment.RateCalculatedAt
 	}
+	// Only the checkout webhook supplies this; admin re-packing upserts leave it zero
+	// and must not wipe what the customer already paid.
+	if shipment.PrepaidShipping > 0 {
+		updates["prepaid_shipping"] = shipment.PrepaidShipping
+	}
 	return updates
 }
 
@@ -287,6 +292,7 @@ func (s *PostgresStore) MarkPreorderShipmentInvoiceSent(
 	shipmentID string,
 	draftOrderID, invoiceURL string,
 	sentAt time.Time,
+	prepaidApplied float64,
 ) error {
 	return s.db.WithContext(ctx).Model(&PreorderShipment{}).
 		Where("id = ?", shipmentID).
@@ -294,7 +300,9 @@ func (s *PostgresStore) MarkPreorderShipmentInvoiceSent(
 			"invoice_sent_at":        sentAt,
 			"shopify_draft_order_id": draftOrderID,
 			"invoice_url":            invoiceURL,
-			"updated_at":             time.Now(),
+			// Recorded with the invoice so the shared prepayment pool is not offered twice.
+			"prepaid_applied": prepaidApplied,
+			"updated_at":      time.Now(),
 		}).Error
 }
 

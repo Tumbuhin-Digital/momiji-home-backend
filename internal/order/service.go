@@ -636,7 +636,14 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 			return nil, apierror.ErrInternal
 		}
 		if shipment != nil {
-			shipmentDTO := s.toPreorderShipmentDTO(shipment)
+			allShipments, err := s.store.GetPreorderShipments(ctx, orderID)
+			if err != nil {
+				return nil, apierror.ErrInternal
+			}
+			shipmentDTO := s.toPreorderShipmentDTOWithAllocation(
+				shipment,
+				AllocatePrepaidShipping(allShipments),
+			)
 			dto.PreorderShipment = &shipmentDTO
 		}
 	}
@@ -809,7 +816,14 @@ func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string
 			return nil, apierror.ErrInternal
 		}
 		if shipment != nil {
-			shipmentDTO := s.toPreorderShipmentDTO(shipment)
+			allShipments, err := s.store.GetPreorderShipments(ctx, o.ID)
+			if err != nil {
+				return nil, apierror.ErrInternal
+			}
+			shipmentDTO := s.toPreorderShipmentDTOWithAllocation(
+				shipment,
+				AllocatePrepaidShipping(allShipments),
+			)
 			dto.PreorderShipment = &shipmentDTO
 		}
 	}

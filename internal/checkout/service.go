@@ -372,6 +372,17 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 					draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
 						Key: "preorder_shipping_estimate", Value: matchedRate.Cost,
 					})
+					estimate, parseErr := strconv.ParseFloat(matchedRate.Cost, 64)
+					if parseErr != nil {
+						slog.WarnContext(ctx, "unparseable pre-order shipping estimate; skipping upfront half",
+							slog.String("checkout_reference", checkoutRef),
+							slog.String("value", matchedRate.Cost))
+					} else if upfront, _ := shipping.SplitHalf(estimate); upfront > 0 {
+						draftInput.LineItems = append(draftInput.LineItems, buildPreOrderShippingDepositLine(upfront))
+						draftInput.CustomAttributes = append(draftInput.CustomAttributes, shopify.AttributeInput{
+							Key: PreOrderShippingPrepaidAttribute, Value: fmt.Sprintf("%.2f", upfront),
+						})
+					}
 				}
 			}
 		}

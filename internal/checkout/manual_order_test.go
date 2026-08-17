@@ -469,3 +469,30 @@ func TestBuildDraftLinesFromSegments(t *testing.T) {
 		t.Fatalf("expected preorder deposit line, got %+v", lines[1])
 	}
 }
+
+func TestBuildPreOrderShippingDepositLine(t *testing.T) {
+	line := buildPreOrderShippingDepositLine(228.32)
+
+	if line.Title != PreOrderShippingDepositTitle {
+		t.Fatalf("expected title %q, got %q", PreOrderShippingDepositTitle, line.Title)
+	}
+	if line.OriginalUnitPrice != "228.32" {
+		t.Fatalf("expected price 228.32, got %q", line.OriginalUnitPrice)
+	}
+	if line.Quantity != 1 {
+		t.Fatalf("expected quantity 1, got %d", line.Quantity)
+	}
+	if line.RequiresShipping == nil || *line.RequiresShipping {
+		t.Fatal("shipping deposit must not itself require shipping")
+	}
+	// The paid-order webhook keys off this attribute to keep the charge out of order items.
+	var chargeType string
+	for _, attr := range line.CustomAttributes {
+		if attr.Key == "charge_type" {
+			chargeType = attr.Value
+		}
+	}
+	if chargeType != "pre_order_shipping_deposit" {
+		t.Fatalf("expected charge_type pre_order_shipping_deposit, got %q", chargeType)
+	}
+}

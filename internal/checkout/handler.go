@@ -13,6 +13,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/response"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/validator"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 )
 
 type Handler struct {
@@ -194,15 +195,18 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 	res.Shipping.Cost = fmt.Sprintf("%.2f", shippingCost)
 	res.Shipping.EstimatedArrival = estimatedArrival
 
-	dueNowTotal := totalShipReady + shippingCost + preorderDeposit
+	shippingPreorderDeposit, shippingPreorderBalance := shipping.SplitHalf(shippingPreorder)
+
+	dueNowTotal := totalShipReady + shippingCost + preorderDeposit + shippingPreorderDeposit
 	res.DueNow.ShipReadyTotal = cartRes.Summary.TotalShipReady
 	res.DueNow.Shipping = fmt.Sprintf("%.2f", shippingCost)
 	res.DueNow.PreorderDeposit = cartRes.Summary.TotalDeposit
+	res.DueNow.ShippingPreorderDeposit = fmt.Sprintf("%.2f", shippingPreorderDeposit)
 	res.DueNow.Total = fmt.Sprintf("%.2f", dueNowTotal)
 
-	dueAugustTotal := preorderBalance + shippingPreorder
+	dueAugustTotal := preorderBalance + shippingPreorderBalance
 	res.DueAugust.PreorderBalance = cartRes.Summary.TotalBalanceDue
-	res.DueAugust.ShippingPreorder = fmt.Sprintf("%.2f", shippingPreorder)
+	res.DueAugust.ShippingPreorder = fmt.Sprintf("%.2f", shippingPreorderBalance)
 	res.DueAugust.Total = fmt.Sprintf("%.2f", dueAugustTotal)
 
 	res.Currency = "USD"
@@ -391,14 +395,23 @@ func (h *Handler) GetCheckoutConfirm(c *fiber.Ctx) error {
 		}
 	}
 	fmt.Sscanf(orderRes.TotalChargedNow, "%f", &totalChargedNow)
-	shipReadyShipping := totalChargedNow - shipReadyProductPaid - preOrderDepositPaid
-	if shipReadyShipping < 0 {
-		shipReadyShipping = 0
-	}
 
 	preorderShippingEstimate := ""
-	if orderRes.PreorderShipment != nil && orderRes.PreorderShipment.EstimatedShipping != nil {
-		preorderShippingEstimate = *orderRes.PreorderShipment.EstimatedShipping
+	preorderShippingPrepaid := 0.0
+	if orderRes.PreorderShipment != nil {
+		if orderRes.PreorderShipment.EstimatedShipping != nil {
+			preorderShippingEstimate = *orderRes.PreorderShipment.EstimatedShipping
+		}
+		if orderRes.PreorderShipment.PrepaidShipping != nil {
+			fmt.Sscanf(*orderRes.PreorderShipment.PrepaidShipping, "%f", &preorderShippingPrepaid)
+		}
+	}
+
+	// Ship-ready shipping is whatever is left after products, deposits, and the
+	// pre-order shipping half that was also charged now.
+	shipReadyShipping := totalChargedNow - shipReadyProductPaid - preOrderDepositPaid - preorderShippingPrepaid
+	if shipReadyShipping < 0 {
+		shipReadyShipping = 0
 	}
 
 	hasLtl := false
@@ -429,6 +442,19 @@ func (h *Handler) GetCheckoutConfirm(c *fiber.Ctx) error {
 	// LTL-only orders never use auto carrier estimates — team calculates freight.
 	if allLtl {
 		preorderShippingEstimate = ""
+		preorderShippingPrepaid = 0
+	}
+
+	// The estimate covers both payments; only the uncollected part is still owed.
+	preorderShippingRemaining := ""
+	if preorderShippingEstimate != "" {
+		var estimate float64
+		fmt.Sscanf(preorderShippingEstimate, "%f", &estimate)
+		remaining := estimate - preorderShippingPrepaid
+		if remaining < 0 {
+			remaining = 0
+		}
+		preorderShippingRemaining = fmt.Sprintf("%.2f", remaining)
 	}
 
 	return response.Success(c, fiber.StatusOK, "Order confirmed", fiber.Map{
@@ -443,6 +469,8 @@ func (h *Handler) GetCheckoutConfirm(c *fiber.Ctx) error {
 		"financial_status":             orderRes.FinancialStatus,
 		"ship_ready_shipping":          fmt.Sprintf("%.2f", shipReadyShipping),
 		"preorder_shipping_estimate":   preorderShippingEstimate,
+		"preorder_shipping_prepaid":    fmt.Sprintf("%.2f", preorderShippingPrepaid),
+		"preorder_shipping_remaining":  preorderShippingRemaining,
 		"has_ltl":                      hasLtl,
 		"all_ltl":                      allLtl,
 		"items":                        items,

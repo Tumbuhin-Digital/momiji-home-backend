@@ -188,9 +188,15 @@ func PackingTotals(units []shipping.PackableUnit) (totalBoxes int, totalWeight f
 }
 
 // BuildCheckoutPreorderShipment creates the initial shipment record from checkout estimate and default packing.
-func BuildCheckoutPreorderShipment(orderID string, preItems []OrderItem, dims map[string]VariantDimensions, estimate *float64, warehouseOrigin string) (*PreorderShipment, []PreorderPackingItem, error) {
+// prepaidShipping is the shipping half already charged at checkout.
+func BuildCheckoutPreorderShipment(orderID string, preItems []OrderItem, dims map[string]VariantDimensions, estimate *float64, warehouseOrigin string, prepaidShipping float64) (*PreorderShipment, []PreorderPackingItem, error) {
 	packing := BuildDefaultPackingDTO(preItems)
-	return buildPreorderShipmentFromPacking(orderID, packing, preItems, dims, estimate, warehouseOrigin)
+	shipment, packingItems, err := buildPreorderShipmentFromPacking(orderID, packing, preItems, dims, estimate, warehouseOrigin)
+	if err != nil {
+		return nil, nil, err
+	}
+	shipment.PrepaidShipping = prepaidShipping
+	return shipment, packingItems, nil
 }
 
 func buildPreorderShipmentFromPacking(orderID string, packing []PackingItemDTO, preItems []OrderItem, dims map[string]VariantDimensions, estimate *float64, warehouseOrigin string) (*PreorderShipment, []PreorderPackingItem, error) {

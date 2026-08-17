@@ -484,7 +484,21 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 		}
 	}
 
-	if len(invoiceLines) == 0 && *shipment.FinalShippingPrice <= 0 {
+	// The checkout prepayment is collected once for the whole order but settlement runs per
+	// group, so ask the allocator how much of the pool this group may still use rather than
+	// reading the row's own PrepaidShipping (which is 0 on batch rows).
+	allShipments, err := s.store.GetPreorderShipments(ctx, orderID)
+	if err != nil {
+		return apierror.ErrInternal
+	}
+	prepaidApplied := AllocatePrepaidShipping(allShipments)[shipment.ID]
+
+	remainingShipping := math.Round((*shipment.FinalShippingPrice-prepaidApplied)*100) / 100
+	if remainingShipping < 0 {
+		remainingShipping = 0
+	}
+
+	if len(invoiceLines) == 0 && remainingShipping <= 0 {
 		return apierror.New(http.StatusBadRequest, "invalid_request", "Nothing to invoice for this group")
 	}
 
@@ -525,7 +539,8 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 		ItemCount:       itemCount,
 		Lines:           invoiceLines,
 		ShippingTitle:   shippingMethod,
-		ShippingPrice:   *shipment.FinalShippingPrice,
+		ShippingPrice:   remainingShipping,
+		ShippingPrepaid: prepaidApplied,
 		ShippingNotes:   notes,
 		ShippingAddress: orderAddressToShopify(o.ShippingAddress),
 		BillingAddress:  orderAddressToShopify(billingAddressOrShipping(o)),
@@ -535,7 +550,7 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 	}
 
 	now := time.Now()
-	if err := s.store.MarkPreorderShipmentInvoiceSent(ctx, shipment.ID, result.DraftOrderID, result.InvoiceURL, now); err != nil {
+	if err := s.store.MarkPreorderShipmentInvoiceSent(ctx, shipment.ID, result.DraftOrderID, result.InvoiceURL, now, prepaidApplied); err != nil {
 		return apierror.ErrInternal
 	}
 
@@ -598,6 +613,25 @@ func orderAddressToShopify(addr *customer.Address) *shopify.AddressInput {
 	}
 }
 
+// toPreorderShipmentDTOWithAllocation reports the share of the order's checkout
+// prepayment this group may actually deduct, not the raw pool value on the row — the
+// pool sits on the checkout-created row and is shared across batch groups.
+func (s *service) toPreorderShipmentDTOWithAllocation(
+	shipment *PreorderShipment,
+	allocation map[string]float64,
+) PreorderShipmentDTO {
+	dto := s.toPreorderShipmentDTO(shipment)
+	if shipment == nil {
+		return dto
+	}
+	// Always emit a figure, including "0.00". Omitting it would make "this group gets no
+	// credit" indistinguishable from "unknown", and clients that fall back on a missing
+	// value would show another group's share.
+	v := fmt.Sprintf("%.2f", allocation[shipment.ID])
+	dto.PrepaidShipping = &v
+	return dto
+}
+
 func (s *service) toPreorderShipmentDTO(shipment *PreorderShipment) PreorderShipmentDTO {
 	if shipment == nil {
 		return PreorderShipmentDTO{}
@@ -615,6 +649,10 @@ func (s *service) toPreorderShipmentDTO(shipment *PreorderShipment) PreorderShip
 	if shipment.FinalShippingPrice != nil {
 		v := fmt.Sprintf("%.2f", *shipment.FinalShippingPrice)
 		dto.FinalShippingPrice = &v
+	}
+	if shipment.PrepaidShipping > 0 {
+		v := fmt.Sprintf("%.2f", shipment.PrepaidShipping)
+		dto.PrepaidShipping = &v
 	}
 	if shipment.ShippingNotes != nil {
 		dto.ShippingNotes = shipment.ShippingNotes

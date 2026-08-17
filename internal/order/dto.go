@@ -99,6 +99,7 @@ type PreorderShipmentDTO struct {
 	BatchID             *string          `json:"batch_id,omitempty"`
 	EstimatedShipping   *string          `json:"estimated_shipping,omitempty"`
 	FinalShippingPrice  *string          `json:"final_shipping_price,omitempty"`
+	PrepaidShipping     *string          `json:"prepaid_shipping,omitempty"`
 	ShippingNotes       *string          `json:"shipping_notes,omitempty"`
 	CreditAmount        *string          `json:"credit_amount,omitempty"`
 	TotalBoxes          int              `json:"total_boxes"`
