@@ -28,9 +28,12 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	// Admin routes (must be defined before /:id)
 	adminGrp := group.Group("/", middleware.Auth(h.jwtSecret), middleware.RBAC("admin"))
 	adminGrp.Get("/export", h.ExportOrders)
+	adminGrp.Get("/drafts", h.ListWebsiteDraftOrders)
+	adminGrp.Get("/drafts/detail", h.GetWebsiteDraftOrder)
 	adminGrp.Post("/:id/preorder/calculate-shipping", h.CalculatePreorderShipping)
 	adminGrp.Put("/:id/preorder/shipping", h.UpdatePreorderShipping)
 	adminGrp.Post("/:id/preorder/request-second-payment", h.RequestSecondPayment)
+	adminGrp.Post("/:id/preorder/resend-second-payment", h.ResendSecondPaymentInvoice)
 	adminGrp.Post("/:id/fulfillments", h.CreateFulfillment)
 	adminGrp.Post("/:id/fulfillments/:fulfillmentId/delivered", h.MarkFulfillmentDelivered)
 
@@ -109,9 +112,13 @@ func (h *Handler) GetOrders(c *fiber.Ctx) error {
 	}
 
 	limit := query.Limit
-	if limit < 1 { limit = 20 }
+	if limit < 1 {
+		limit = 20
+	}
 	page := query.Page
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	totalPages := int((total + int64(limit) - 1) / int64(limit))
 
 	paginatedData := response.PaginatedData{
@@ -169,8 +176,12 @@ func (h *Handler) AcceptOrder(c *fiber.Ctx) error {
 	}
 
 	var req AcceptOrderRequest
-	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
-	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
 
 	if err := h.service.AcceptOrder(c.Context(), customerID, c.Params("id"), req.FulfillmentType); err != nil {
 		return response.Error(c, err)
@@ -197,8 +208,12 @@ func (h *Handler) CancelOrder(c *fiber.Ctx) error {
 	}
 
 	var req CancelOrderRequest
-	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
-	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
 
 	if err := h.service.CancelOrder(c.Context(), customerID, c.Params("id"), req.FulfillmentType, req.Reason); err != nil {
 		return response.Error(c, err)
@@ -226,8 +241,12 @@ func (h *Handler) UpdateFulfillmentStep(c *fiber.Ctx) error {
 	}
 
 	var req UpdateStepRequest
-	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
-	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
 
 	if err := h.service.UpdateFulfillmentStep(c.Context(), customerID, c.Params("id"), c.Params("itemId"), req.FulfillmentStep); err != nil {
 		return response.Error(c, err)
@@ -254,8 +273,12 @@ func (h *Handler) UpdateItemsReceived(c *fiber.Ctx) error {
 	}
 
 	var req UpdateReceivedRequest
-	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
-	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
 
 	if err := h.service.UpdateItemsReceived(c.Context(), customerID, c.Params("id"), req.Items); err != nil {
 		return response.Error(c, err)
@@ -279,8 +302,12 @@ func (h *Handler) AddTrackingNumber(c *fiber.Ctx) error {
 	}
 
 	var req AddTrackingRequest
-	if err := c.BodyParser(&req); err != nil { return response.Error(c, err) }
-	if err := validator.ValidateStruct(&req); err != nil { return response.Error(c, err) }
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, err)
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
 
 	if err := h.service.AddTrackingNumber(c.Context(), customerID, c.Params("id"), req.ItemIDs, req.TrackingNumber, req.TrackingURL); err != nil {
 		return response.Error(c, err)
@@ -305,6 +332,37 @@ func (h *Handler) GetTracking(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 	return response.Success(c, fiber.StatusOK, "Tracking retrieved", res)
+}
+
+// ListWebsiteDraftOrders godoc
+// @Summary List draft orders created by this website, including completed (Admin only)
+// @Tags Order
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} response.Envelope{data=[]WebsiteDraftOrderDTO}
+// @Router /orders/drafts [get]
+func (h *Handler) ListWebsiteDraftOrders(c *fiber.Ctx) error {
+	res, err := h.service.ListWebsiteDraftOrders(c.Context())
+	if err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Draft orders retrieved", res)
+}
+
+// GetWebsiteDraftOrder godoc
+// @Summary Get one website draft order (Admin only)
+// @Tags Order
+// @Produce json
+// @Security BearerAuth
+// @Param id query string true "Shopify draft order ID"
+// @Success 200 {object} response.Envelope{data=WebsiteDraftOrderDetailDTO}
+// @Router /orders/drafts/detail [get]
+func (h *Handler) GetWebsiteDraftOrder(c *fiber.Ctx) error {
+	res, err := h.service.GetWebsiteDraftOrder(c.Context(), c.Query("id"))
+	if err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Draft order retrieved", res)
 }
 
 // ExportOrders godoc
@@ -370,10 +428,22 @@ func (h *Handler) RequestSecondPayment(c *fiber.Ctx) error {
 		// Empty body is valid (unbatched group).
 		req = RequestSecondPaymentRequest{}
 	}
-	if err := h.service.RequestSecondPayment(c.Context(), "", c.Params("id"), req); err != nil {
+	res, err := h.service.RequestSecondPayment(c.Context(), "", c.Params("id"), req)
+	if err != nil {
 		return response.Error(c, err)
 	}
-	return response.Success(c, fiber.StatusOK, "Second payment invoice sent", nil)
+	return response.Success(c, fiber.StatusOK, "Payment link ready", res)
+}
+
+func (h *Handler) ResendSecondPaymentInvoice(c *fiber.Ctx) error {
+	var req RequestSecondPaymentRequest
+	if err := c.BodyParser(&req); err != nil {
+		req = RequestSecondPaymentRequest{}
+	}
+	if err := h.service.ResendSecondPaymentInvoice(c.Context(), "", c.Params("id"), req); err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Invoice email sent", nil)
 }
 
 func (h *Handler) CreateFulfillment(c *fiber.Ctx) error {

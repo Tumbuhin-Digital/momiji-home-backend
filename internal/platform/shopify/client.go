@@ -14,6 +14,9 @@ import (
 type Client interface {
 	QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error)
 	CreateDraftOrder(ctx context.Context, input DraftOrderInput) (*DraftOrderResponse, error)
+	ListOpenDraftOrders(ctx context.Context) ([]OpenDraftOrder, error)
+	GetDraftOrder(ctx context.Context, id string) (*DraftOrderDetail, error)
+	UpdateDraftOrder(ctx context.Context, id string, input DraftOrderInput, clearShippingLine bool) (*DraftOrderResponse, error)
 	DeleteDraftOrder(ctx context.Context, draftOrderID string) error
 	SendDraftOrderInvoice(ctx context.Context, draftOrderID string, email *DraftOrderInvoiceEmailInput) error
 	CreateStorefrontCart(ctx context.Context, input CartCreateInput) (*CartCreateResponse, error)
@@ -92,6 +95,7 @@ type DraftOrderInput struct {
 	ShippingLine     *ShippingLineInput   `json:"shippingLine,omitempty"`
 	CustomAttributes []AttributeInput     `json:"customAttributes,omitempty"`
 	Note             string               `json:"note,omitempty"`
+	TaxExempt        bool                 `json:"taxExempt"`
 }
 
 type MoneyInput struct {
@@ -151,6 +155,10 @@ type DraftOrderResponse struct {
 }
 
 func (c *clientImpl) CreateDraftOrder(ctx context.Context, input DraftOrderInput) (*DraftOrderResponse, error) {
+	// Website draft invoices are tax exempt. Store tax settings and the main
+	// online store checkout are unchanged.
+	input.TaxExempt = true
+
 	query := `
 		mutation draftOrderCreate($input: DraftOrderInput!) {
 		  draftOrderCreate(input: $input) {
@@ -194,6 +202,64 @@ func (c *clientImpl) CreateDraftOrder(ctx context.Context, input DraftOrderInput
 	}
 
 	return res.Data.DraftOrderCreate.DraftOrder, nil
+}
+
+func (c *clientImpl) UpdateDraftOrder(ctx context.Context, id string, input DraftOrderInput, clearShippingLine bool) (*DraftOrderResponse, error) {
+	input.TaxExempt = true
+
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
+	var inputMap map[string]interface{}
+	if err := json.Unmarshal(raw, &inputMap); err != nil {
+		return nil, err
+	}
+	if clearShippingLine {
+		inputMap["shippingLine"] = nil
+	}
+
+	query := `
+		mutation draftOrderUpdate($id: ID!, $input: DraftOrderInput!) {
+		  draftOrderUpdate(id: $id, input: $input) {
+			draftOrder {
+			  id
+			  invoiceUrl
+			}
+			userErrors {
+			  field
+			  message
+			}
+		  }
+		}
+	`
+	vars := map[string]interface{}{"id": id, "input": inputMap}
+
+	resBytes, err := c.QueryAdminGraphQL(ctx, query, vars)
+	if err != nil {
+		return nil, err
+	}
+
+	var res struct {
+		Data struct {
+			DraftOrderUpdate struct {
+				DraftOrder *DraftOrderResponse `json:"draftOrder"`
+				UserErrors []struct {
+					Message string `json:"message"`
+				} `json:"userErrors"`
+			} `json:"draftOrderUpdate"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resBytes, &res); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal shopify response (body: %s): %w", string(resBytes), err)
+	}
+	if len(res.Data.DraftOrderUpdate.UserErrors) > 0 {
+		return nil, fmt.Errorf("shopify draft order error: %s", res.Data.DraftOrderUpdate.UserErrors[0].Message)
+	}
+	if res.Data.DraftOrderUpdate.DraftOrder == nil {
+		return nil, fmt.Errorf("failed to update draft order, raw response: %s", string(resBytes))
+	}
+	return res.Data.DraftOrderUpdate.DraftOrder, nil
 }
 
 func (c *clientImpl) DeleteDraftOrder(ctx context.Context, draftOrderID string) error {
@@ -304,6 +370,380 @@ func (c *clientImpl) SendDraftOrderInvoice(ctx context.Context, draftOrderID str
 		return fmt.Errorf("shopify draft order invoice send error: %s", res.Data.DraftOrderInvoiceSend.UserErrors[0].Message)
 	}
 	return nil
+}
+
+type OpenDraftOrder struct {
+	ID               string
+	Name             string
+	Status           string
+	Email            string
+	InvoiceURL       string
+	CreatedAt        string
+	TotalAmount      string
+	CurrencyCode     string
+	CustomAttributes []AttributeInput
+}
+
+func (c *clientImpl) ListOpenDraftOrders(ctx context.Context) ([]OpenDraftOrder, error) {
+	var all []OpenDraftOrder
+	for _, search := range []string{"status:open", "status:invoice_sent", "status:completed"} {
+		batch, err := c.listDraftOrdersByQuery(ctx, search)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, batch...)
+	}
+	return all, nil
+}
+
+func (c *clientImpl) listDraftOrdersByQuery(ctx context.Context, search string) ([]OpenDraftOrder, error) {
+	const maxPages = 20
+	query := `
+		query ListDraftOrders($cursor: String, $query: String!) {
+		  draftOrders(first: 50, after: $cursor, query: $query, sortKey: UPDATED_AT, reverse: true) {
+		    pageInfo { hasNextPage endCursor }
+		    nodes {
+		      id
+		      name
+		      status
+		      email
+		      invoiceUrl
+		      createdAt
+		      totalPriceSet { shopMoney { amount currencyCode } }
+		      customAttributes { key value }
+		    }
+		  }
+		}
+	`
+
+	var all []OpenDraftOrder
+	var cursor string
+	for page := 0; page < maxPages; page++ {
+		vars := map[string]interface{}{"query": search}
+		if cursor != "" {
+			vars["cursor"] = cursor
+		}
+		resBytes, err := c.QueryAdminGraphQL(ctx, query, vars)
+		if err != nil {
+			return nil, err
+		}
+
+		var res struct {
+			Data struct {
+				DraftOrders struct {
+					PageInfo struct {
+						HasNextPage bool   `json:"hasNextPage"`
+						EndCursor   string `json:"endCursor"`
+					} `json:"pageInfo"`
+					Nodes []struct {
+						ID            string `json:"id"`
+						Name          string `json:"name"`
+						Status        string `json:"status"`
+						Email         string `json:"email"`
+						InvoiceURL    string `json:"invoiceUrl"`
+						CreatedAt     string `json:"createdAt"`
+						TotalPriceSet struct {
+							ShopMoney struct {
+								Amount       string `json:"amount"`
+								CurrencyCode string `json:"currencyCode"`
+							} `json:"shopMoney"`
+						} `json:"totalPriceSet"`
+						CustomAttributes []AttributeInput `json:"customAttributes"`
+					} `json:"nodes"`
+				} `json:"draftOrders"`
+			} `json:"data"`
+			Errors []struct {
+				Message string `json:"message"`
+			} `json:"errors"`
+		}
+		if err := json.Unmarshal(resBytes, &res); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal shopify draft orders (body: %s): %w", string(resBytes), err)
+		}
+		if len(res.Errors) > 0 {
+			return nil, fmt.Errorf("shopify draft orders error: %s", res.Errors[0].Message)
+		}
+
+		for _, node := range res.Data.DraftOrders.Nodes {
+			all = append(all, OpenDraftOrder{
+				ID:               node.ID,
+				Name:             node.Name,
+				Status:           node.Status,
+				Email:            node.Email,
+				InvoiceURL:       node.InvoiceURL,
+				CreatedAt:        node.CreatedAt,
+				TotalAmount:      node.TotalPriceSet.ShopMoney.Amount,
+				CurrencyCode:     node.TotalPriceSet.ShopMoney.CurrencyCode,
+				CustomAttributes: node.CustomAttributes,
+			})
+		}
+		if !res.Data.DraftOrders.PageInfo.HasNextPage {
+			break
+		}
+		cursor = res.Data.DraftOrders.PageInfo.EndCursor
+		if cursor == "" {
+			break
+		}
+	}
+	return all, nil
+}
+
+type DraftOrderAddress struct {
+	FirstName string
+	LastName  string
+	Company   string
+	Address1  string
+	Address2  string
+	City      string
+	Province  string
+	Country   string
+	Zip       string
+	Phone     string
+}
+
+type DraftOrderLine struct {
+	Title            string
+	SKU              string
+	Quantity         int
+	UnitPrice        string
+	LineTotal        string
+	VariantID        string
+	CustomAttributes []AttributeInput
+}
+
+type DraftOrderDetail struct {
+	ID               string
+	Name             string
+	Status           string
+	Email            string
+	InvoiceURL       string
+	CreatedAt        string
+	Note             string
+	CurrencyCode     string
+	Subtotal         string
+	TotalTax         string
+	Total            string
+	ShippingTitle    string
+	ShippingAmount   string
+	OrderName        string
+	CustomAttributes []AttributeInput
+	ShippingAddress  *DraftOrderAddress
+	BillingAddress   *DraftOrderAddress
+	LineItems        []DraftOrderLine
+}
+
+func (c *clientImpl) GetDraftOrder(ctx context.Context, id string) (*DraftOrderDetail, error) {
+	const maxPages = 5
+	query := `
+		query GetDraftOrder($id: ID!, $cursor: String) {
+		  draftOrder(id: $id) {
+		    id
+		    name
+		    status
+		    email
+		    invoiceUrl
+		    createdAt
+		    note2
+		    customAttributes { key value }
+		    shippingAddress {
+		      firstName lastName company address1 address2 city province country zip phone
+		    }
+		    billingAddress {
+		      firstName lastName company address1 address2 city province country zip phone
+		    }
+		    shippingLine {
+		      title
+		      originalPriceSet { shopMoney { amount currencyCode } }
+		    }
+		    subtotalPriceSet { shopMoney { amount currencyCode } }
+		    totalTaxSet { shopMoney { amount currencyCode } }
+		    totalPriceSet { shopMoney { amount currencyCode } }
+		    lineItems(first: 50, after: $cursor) {
+		      pageInfo { hasNextPage endCursor }
+		      nodes {
+		        title
+		        sku
+		        quantity
+		        variant { id }
+		        customAttributes { key value }
+		        originalUnitPriceSet { shopMoney { amount currencyCode } }
+		        discountedTotalSet { shopMoney { amount currencyCode } }
+		      }
+		    }
+		    order { name }
+		  }
+		}
+	`
+
+	var detail *DraftOrderDetail
+	var cursor string
+	for page := 0; page < maxPages; page++ {
+		vars := map[string]interface{}{"id": id}
+		if cursor != "" {
+			vars["cursor"] = cursor
+		}
+		resBytes, err := c.QueryAdminGraphQL(ctx, query, vars)
+		if err != nil {
+			return nil, err
+		}
+
+		var res draftOrderQueryResponse
+		if err := json.Unmarshal(resBytes, &res); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal shopify draft order (body: %s): %w", string(resBytes), err)
+		}
+		if len(res.Errors) > 0 {
+			return nil, fmt.Errorf("shopify draft order error: %s", res.Errors[0].Message)
+		}
+		node := res.Data.DraftOrder
+		if node == nil {
+			return nil, nil
+		}
+		if detail == nil {
+			detail = mapDraftOrderNode(node)
+		}
+		for _, line := range node.LineItems.Nodes {
+			detail.LineItems = append(detail.LineItems, DraftOrderLine{
+				Title:            line.Title,
+				SKU:              line.SKU,
+				Quantity:         line.Quantity,
+				UnitPrice:        line.OriginalUnitPriceSet.ShopMoney.Amount,
+				LineTotal:        line.DiscountedTotalSet.ShopMoney.Amount,
+				VariantID:        line.Variant.ID,
+				CustomAttributes: line.CustomAttributes,
+			})
+		}
+		if !node.LineItems.PageInfo.HasNextPage {
+			break
+		}
+		cursor = node.LineItems.PageInfo.EndCursor
+		if cursor == "" {
+			break
+		}
+	}
+	return detail, nil
+}
+
+type shopMoney struct {
+	Amount       string `json:"amount"`
+	CurrencyCode string `json:"currencyCode"`
+}
+
+type draftOrderAddressNode struct {
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	Company   string `json:"company"`
+	Address1  string `json:"address1"`
+	Address2  string `json:"address2"`
+	City      string `json:"city"`
+	Province  string `json:"province"`
+	Country   string `json:"country"`
+	Zip       string `json:"zip"`
+	Phone     string `json:"phone"`
+}
+
+type draftOrderNode struct {
+	ID               string                 `json:"id"`
+	Name             string                 `json:"name"`
+	Status           string                 `json:"status"`
+	Email            string                 `json:"email"`
+	InvoiceURL       string                 `json:"invoiceUrl"`
+	CreatedAt        string                 `json:"createdAt"`
+	Note             string                 `json:"note2"`
+	CustomAttributes []AttributeInput       `json:"customAttributes"`
+	ShippingAddress  *draftOrderAddressNode `json:"shippingAddress"`
+	BillingAddress   *draftOrderAddressNode `json:"billingAddress"`
+	ShippingLine     *struct {
+		Title            string `json:"title"`
+		OriginalPriceSet struct {
+			ShopMoney shopMoney `json:"shopMoney"`
+		} `json:"originalPriceSet"`
+	} `json:"shippingLine"`
+	SubtotalPriceSet struct {
+		ShopMoney shopMoney `json:"shopMoney"`
+	} `json:"subtotalPriceSet"`
+	TotalTaxSet struct {
+		ShopMoney shopMoney `json:"shopMoney"`
+	} `json:"totalTaxSet"`
+	TotalPriceSet struct {
+		ShopMoney shopMoney `json:"shopMoney"`
+	} `json:"totalPriceSet"`
+	LineItems struct {
+		PageInfo struct {
+			HasNextPage bool   `json:"hasNextPage"`
+			EndCursor   string `json:"endCursor"`
+		} `json:"pageInfo"`
+		Nodes []struct {
+			Title    string `json:"title"`
+			SKU      string `json:"sku"`
+			Quantity int    `json:"quantity"`
+			Variant  struct {
+				ID string `json:"id"`
+			} `json:"variant"`
+			CustomAttributes     []AttributeInput `json:"customAttributes"`
+			OriginalUnitPriceSet struct {
+				ShopMoney shopMoney `json:"shopMoney"`
+			} `json:"originalUnitPriceSet"`
+			DiscountedTotalSet struct {
+				ShopMoney shopMoney `json:"shopMoney"`
+			} `json:"discountedTotalSet"`
+		} `json:"nodes"`
+	} `json:"lineItems"`
+	Order *struct {
+		Name string `json:"name"`
+	} `json:"order"`
+}
+
+type draftOrderQueryResponse struct {
+	Data struct {
+		DraftOrder *draftOrderNode `json:"draftOrder"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+func mapDraftOrderNode(node *draftOrderNode) *DraftOrderDetail {
+	detail := &DraftOrderDetail{
+		ID:               node.ID,
+		Name:             node.Name,
+		Status:           node.Status,
+		Email:            node.Email,
+		InvoiceURL:       node.InvoiceURL,
+		CreatedAt:        node.CreatedAt,
+		Note:             node.Note,
+		CurrencyCode:     node.TotalPriceSet.ShopMoney.CurrencyCode,
+		Subtotal:         node.SubtotalPriceSet.ShopMoney.Amount,
+		TotalTax:         node.TotalTaxSet.ShopMoney.Amount,
+		Total:            node.TotalPriceSet.ShopMoney.Amount,
+		CustomAttributes: node.CustomAttributes,
+		ShippingAddress:  mapDraftAddress(node.ShippingAddress),
+		BillingAddress:   mapDraftAddress(node.BillingAddress),
+	}
+	if node.ShippingLine != nil {
+		detail.ShippingTitle = node.ShippingLine.Title
+		detail.ShippingAmount = node.ShippingLine.OriginalPriceSet.ShopMoney.Amount
+	}
+	if node.Order != nil {
+		detail.OrderName = node.Order.Name
+	}
+	return detail
+}
+
+func mapDraftAddress(node *draftOrderAddressNode) *DraftOrderAddress {
+	if node == nil {
+		return nil
+	}
+	return &DraftOrderAddress{
+		FirstName: node.FirstName,
+		LastName:  node.LastName,
+		Company:   node.Company,
+		Address1:  node.Address1,
+		Address2:  node.Address2,
+		City:      node.City,
+		Province:  node.Province,
+		Country:   node.Country,
+		Zip:       node.Zip,
+		Phone:     node.Phone,
+	}
 }
 
 type RefundTransaction struct {

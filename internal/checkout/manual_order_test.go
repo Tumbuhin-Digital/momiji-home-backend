@@ -105,15 +105,54 @@ func (s *stubCartService) ReconcileShipReadyAgainstInventory(context.Context, *s
 }
 
 type recordingManualShopClient struct {
-	lastDraft      shopify.DraftOrderInput
-	sentInvoiceID  string
-	sentEmailTo    string
-	sendInvoiceErr error
-	createErr      error
+	lastDraft       shopify.DraftOrderInput
+	lastUpdatedID   string
+	clearedShipping bool
+	draftDetail     *shopify.DraftOrderDetail
+	draftDetailErr  error
+	sentInvoiceID   string
+	sentEmailTo     string
+	sendInvoiceErr  error
+	createErr       error
+	updateErr       error
 }
 
 func (c *recordingManualShopClient) QueryAdminGraphQL(context.Context, string, map[string]interface{}) ([]byte, error) {
 	return nil, nil
+}
+func (c *recordingManualShopClient) ListOpenDraftOrders(context.Context) ([]shopify.OpenDraftOrder, error) {
+	return nil, nil
+}
+func (c *recordingManualShopClient) GetDraftOrder(context.Context, string) (*shopify.DraftOrderDetail, error) {
+	if c.draftDetail != nil {
+		return c.draftDetail, c.draftDetailErr
+	}
+	return &shopify.DraftOrderDetail{
+		ID:     "gid://shopify/DraftOrder/99",
+		Status: "OPEN",
+		Email:  "jane@example.com",
+		CustomAttributes: []shopify.AttributeInput{
+			shopify.WholesaleSourceAttribute,
+		},
+		ShippingAddress: &shopify.DraftOrderAddress{
+			FirstName: "Jane",
+			LastName:  "Doe",
+			Address1:  "1 Main St",
+			City:      "Passaic",
+			Province:  "NJ",
+			Zip:       "07055",
+			Country:   "US",
+		},
+	}, nil
+}
+func (c *recordingManualShopClient) UpdateDraftOrder(_ context.Context, id string, input shopify.DraftOrderInput, clearShippingLine bool) (*shopify.DraftOrderResponse, error) {
+	c.lastUpdatedID = id
+	c.lastDraft = input
+	c.clearedShipping = clearShippingLine
+	if c.updateErr != nil {
+		return nil, c.updateErr
+	}
+	return &shopify.DraftOrderResponse{ID: id, InvoiceUrl: "https://example.com/invoice/99"}, nil
 }
 func (c *recordingManualShopClient) CreateDraftOrder(_ context.Context, input shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error) {
 	if c.createErr != nil {
@@ -236,7 +275,7 @@ func TestResolveExplicitLineItems(t *testing.T) {
 	}
 }
 
-func TestCreateManualOrder_SendsInvoice(t *testing.T) {
+func TestCreateManualOrder_DoesNotSendInvoice(t *testing.T) {
 	products := &stubProductService{variants: map[string]*product.VariantDTO{
 		"gid://v/1": {
 			ID:                "gid://v/1",
@@ -281,14 +320,11 @@ func TestCreateManualOrder_SendsInvoice(t *testing.T) {
 	if res.InvoiceURL != "https://example.com/invoice/99" {
 		t.Fatalf("unexpected invoice url: %s", res.InvoiceURL)
 	}
-	if !res.InvoiceEmailSent {
-		t.Fatal("expected invoice email sent")
+	if res.InvoiceEmailSent {
+		t.Fatal("expected invoice email not sent on create")
 	}
-	if shop.sentInvoiceID != "gid://shopify/DraftOrder/99" {
-		t.Fatalf("expected send on draft id, got %s", shop.sentInvoiceID)
-	}
-	if shop.sentEmailTo != "jane@example.com" {
-		t.Fatalf("expected email to jane, got %s", shop.sentEmailTo)
+	if shop.sentInvoiceID != "" || shop.sentEmailTo != "" {
+		t.Fatalf("expected no invoice email on create, got id=%q to=%q", shop.sentInvoiceID, shop.sentEmailTo)
 	}
 	if shop.lastDraft.Email != "jane@example.com" {
 		t.Fatalf("expected draft email set, got %s", shop.lastDraft.Email)
@@ -371,40 +407,111 @@ func TestCreateManualOrder_ShipTogetherTreatsAllAsPreorder(t *testing.T) {
 	}
 }
 
-func TestCreateManualOrder_SendFailureStillReturnsURL(t *testing.T) {
+func TestSendManualOrderInvoice_SendsToRequestedEmail(t *testing.T) {
+	shop := &recordingManualShopClient{}
+	svc := newManualOrderService(&stubProductService{}, shop)
+
+	res, err := svc.SendManualOrderInvoice(context.Background(), SendManualOrderInvoiceRequest{
+		DraftOrderID: "gid://shopify/DraftOrder/99",
+		Email:        "jane@example.com",
+	})
+	if err != nil {
+		t.Fatalf("SendManualOrderInvoice error: %v", err)
+	}
+	if !res.InvoiceEmailSent {
+		t.Fatal("expected invoice_email_sent true")
+	}
+	if shop.sentInvoiceID != "gid://shopify/DraftOrder/99" {
+		t.Fatalf("expected send on draft id, got %s", shop.sentInvoiceID)
+	}
+	if shop.sentEmailTo != "jane@example.com" {
+		t.Fatalf("expected email to jane, got %s", shop.sentEmailTo)
+	}
+}
+
+func TestSendManualOrderInvoice_SendFailure(t *testing.T) {
+	shop := &recordingManualShopClient{sendInvoiceErr: errors.New("smtp down")}
+	svc := newManualOrderService(&stubProductService{}, shop)
+
+	res, err := svc.SendManualOrderInvoice(context.Background(), SendManualOrderInvoiceRequest{
+		DraftOrderID: "gid://shopify/DraftOrder/99",
+		Email:        "jane@example.com",
+	})
+	if err == nil {
+		t.Fatal("expected send failure")
+	}
+	if res != nil {
+		t.Fatalf("expected nil response, got %+v", res)
+	}
+	if shop.sentInvoiceID != "gid://shopify/DraftOrder/99" {
+		t.Fatalf("expected send attempted, got %s", shop.sentInvoiceID)
+	}
+}
+
+func TestSendManualOrderInvoice_MissingFields(t *testing.T) {
+	svc := newManualOrderService(&stubProductService{}, &recordingManualShopClient{})
+	_, err := svc.SendManualOrderInvoice(context.Background(), SendManualOrderInvoiceRequest{
+		DraftOrderID: "  ",
+		Email:        "jane@example.com",
+	})
+	if err == nil {
+		t.Fatal("expected error for blank draft order id")
+	}
+}
+
+func TestSendManualOrderInvoice_RejectsCompleted(t *testing.T) {
+	shop := &recordingManualShopClient{
+		draftDetail: &shopify.DraftOrderDetail{
+			ID:     "gid://shopify/DraftOrder/99",
+			Status: "COMPLETED",
+			CustomAttributes: []shopify.AttributeInput{
+				shopify.WholesaleSourceAttribute,
+			},
+		},
+	}
+	svc := newManualOrderService(&stubProductService{}, shop)
+	_, err := svc.SendManualOrderInvoice(context.Background(), SendManualOrderInvoiceRequest{
+		DraftOrderID: "gid://shopify/DraftOrder/99",
+		Email:        "jane@example.com",
+	})
+	if err == nil {
+		t.Fatal("expected completed draft to be rejected")
+	}
+}
+
+func TestUpdateDraftOrderItems_ReplacesProductLines(t *testing.T) {
 	products := &stubProductService{variants: map[string]*product.VariantDTO{
 		"gid://v/1": {
 			ID:                "gid://v/1",
 			Title:             "Shelf",
-			WSPrice:           "180.00",
-			RetailPrice:       "300.00",
+			WSPrice:           "40.00",
+			RetailPrice:       "80.00",
 			FulfillmentType:   product.FulfillmentTypeShipReady,
 			InventoryQuantity: 5,
+			WeightKg:          2,
 		},
 	}}
-	shop := &recordingManualShopClient{sendInvoiceErr: errors.New("smtp down")}
+	shop := &recordingManualShopClient{}
 	svc := newManualOrderService(products, shop)
 
-	res, err := svc.CreateManualOrder(context.Background(), ManualOrderRequest{
-		Email:     "jane@example.com",
-		FirstName: "Jane",
-		LastName:  "Doe",
-		Phone:     "+15551234567",
-		Address1:  "1 Main St",
-		City:      "New York",
-		State:     "NY",
-		Zip:       "10001",
-		Country:   "US",
-		LineItems: []ManualOrderLineItem{{VariantID: "gid://v/1", Quantity: 1}},
+	res, err := svc.UpdateDraftOrderItems(context.Background(), UpdateDraftOrderItemsRequest{
+		DraftOrderID:   "gid://shopify/DraftOrder/99",
+		ShippingMethod: "ups_ground",
+		LineItems: []ManualOrderLineItem{
+			{VariantID: "gid://v/1", Quantity: 2},
+		},
 	})
 	if err != nil {
-		t.Fatalf("expected success with email failure, got %v", err)
+		t.Fatalf("UpdateDraftOrderItems error: %v", err)
 	}
-	if res.InvoiceEmailSent {
-		t.Fatal("expected invoice_email_sent false")
+	if res.DraftOrderID != "gid://shopify/DraftOrder/99" {
+		t.Fatalf("unexpected draft id %s", res.DraftOrderID)
 	}
-	if res.InvoiceURL == "" {
-		t.Fatal("expected invoice url even when email fails")
+	if len(shop.lastDraft.LineItems) != 1 || shop.lastDraft.LineItems[0].Quantity != 2 {
+		t.Fatalf("expected one rebuilt line, got %+v", shop.lastDraft.LineItems)
+	}
+	if shop.lastDraft.Email != "jane@example.com" {
+		t.Fatalf("expected draft email to be kept, got %s", shop.lastDraft.Email)
 	}
 }
 

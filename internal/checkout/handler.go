@@ -52,6 +52,8 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	// Admin manual order (registered here to avoid order↔checkout import cycle)
 	adminOrders := router.Group("/orders", middleware.Auth(h.jwtSecret), middleware.RBAC("admin"))
 	adminOrders.Post("/manual", h.CreateManualOrder)
+	adminOrders.Post("/manual/invoice/send", h.SendManualOrderInvoice)
+	adminOrders.Put("/drafts/items", h.UpdateDraftOrderItems)
 }
 
 func (h *Handler) extractIdentity(c *fiber.Ctx) (userID *string, sessionID *string) {
@@ -284,11 +286,57 @@ func (h *Handler) CreateManualOrder(c *fiber.Ctx) error {
 		return response.Error(c, err)
 	}
 
-	msg := "Manual order invoice created successfully"
-	if !res.InvoiceEmailSent {
-		msg = "Manual order invoice created, but Shopify email failed to send"
+	return response.Success(c, fiber.StatusCreated, "Manual order invoice created successfully", res)
+}
+
+// SendManualOrderInvoice godoc
+// @Summary Send a manual order invoice email (admin)
+// @Tags Order
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body SendManualOrderInvoiceRequest true "Send Invoice Request"
+// @Success 200 {object} response.Envelope{data=SendManualOrderInvoiceResponse}
+// @Router /orders/manual/invoice/send [post]
+func (h *Handler) SendManualOrderInvoice(c *fiber.Ctx) error {
+	var req SendManualOrderInvoiceRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, apierror.New(400, "invalid_request", "invalid request body"))
 	}
-	return response.Success(c, fiber.StatusCreated, msg, res)
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	res, err := h.checkoutService.SendManualOrderInvoice(c.Context(), req)
+	if err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Shopify invoice email sent", res)
+}
+
+// UpdateDraftOrderItems godoc
+// @Summary Replace the products on a website draft order and recalculate shipping (admin)
+// @Tags Order
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body UpdateDraftOrderItemsRequest true "Draft items"
+// @Success 200 {object} response.Envelope{data=UpdateDraftOrderItemsResponse}
+// @Router /orders/drafts/items [put]
+func (h *Handler) UpdateDraftOrderItems(c *fiber.Ctx) error {
+	var req UpdateDraftOrderItemsRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, apierror.New(400, "invalid_request", "invalid request body"))
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return response.Error(c, err)
+	}
+
+	res, err := h.checkoutService.UpdateDraftOrderItems(c.Context(), req)
+	if err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, fiber.StatusOK, "Draft order updated", res)
 }
 
 // ReleaseCheckout godoc
@@ -458,22 +506,22 @@ func (h *Handler) GetCheckoutConfirm(c *fiber.Ctx) error {
 	}
 
 	return response.Success(c, fiber.StatusOK, "Order confirmed", fiber.Map{
-		"order_id":                     orderRes.ID,
-		"order_number":                 orderRes.OrderNumber,
-		"order_date":                   orderRes.OrderDate,
-		"customer_email":               customerEmail,
-		"total_price":                  orderRes.TotalPrice,
-		"total_charged_now":            orderRes.TotalChargedNow,
-		"total_balance_due":            orderRes.TotalBalanceDue,
-		"currency":                     orderRes.Currency,
-		"financial_status":             orderRes.FinancialStatus,
-		"ship_ready_shipping":          fmt.Sprintf("%.2f", shipReadyShipping),
-		"preorder_shipping_estimate":   preorderShippingEstimate,
-		"preorder_shipping_prepaid":    fmt.Sprintf("%.2f", preorderShippingPrepaid),
-		"preorder_shipping_remaining":  preorderShippingRemaining,
-		"has_ltl":                      hasLtl,
-		"all_ltl":                      allLtl,
-		"items":                        items,
+		"order_id":                    orderRes.ID,
+		"order_number":                orderRes.OrderNumber,
+		"order_date":                  orderRes.OrderDate,
+		"customer_email":              customerEmail,
+		"total_price":                 orderRes.TotalPrice,
+		"total_charged_now":           orderRes.TotalChargedNow,
+		"total_balance_due":           orderRes.TotalBalanceDue,
+		"currency":                    orderRes.Currency,
+		"financial_status":            orderRes.FinancialStatus,
+		"ship_ready_shipping":         fmt.Sprintf("%.2f", shipReadyShipping),
+		"preorder_shipping_estimate":  preorderShippingEstimate,
+		"preorder_shipping_prepaid":   fmt.Sprintf("%.2f", preorderShippingPrepaid),
+		"preorder_shipping_remaining": preorderShippingRemaining,
+		"has_ltl":                     hasLtl,
+		"all_ltl":                     allLtl,
+		"items":                       items,
 	})
 }
 

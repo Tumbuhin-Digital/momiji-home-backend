@@ -18,6 +18,10 @@ func (c *capturingInvoicer) CreateGroupSecondPaymentInvoice(_ context.Context, o
 	return &preorder.GroupInvoiceResult{DraftOrderID: "draft-1", InvoiceURL: "https://invoice.example/1"}, nil
 }
 
+func (c *capturingInvoicer) SendGroupSecondPaymentInvoiceEmail(context.Context, preorder.GroupInvoiceOptions, string) error {
+	return nil
+}
+
 func (c *capturingInvoicer) ListSettlements(context.Context, preorder.SettlementFilter) ([]preorder.PreorderGroupResponse, int64, error) {
 	return nil, 0, nil
 }
@@ -72,7 +76,7 @@ func secondPaymentFixture(finalShipping, prepaidShipping float64) (*updateShippi
 func TestRequestSecondPayment_BillsOnlyTheUnpaidShippingHalf(t *testing.T) {
 	store, invoicer, svc := secondPaymentFixture(456.64, 228.32)
 
-	if err := svc.RequestSecondPayment(context.Background(), "", "order-1", RequestSecondPaymentRequest{}); err != nil {
+	if _, err := svc.RequestSecondPayment(context.Background(), "", "order-1", RequestSecondPaymentRequest{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -92,7 +96,7 @@ func TestRequestSecondPayment_BillsOnlyTheUnpaidShippingHalf(t *testing.T) {
 func TestRequestSecondPayment_LegacyOrderWithoutPrepaidBillsFullShipping(t *testing.T) {
 	_, invoicer, svc := secondPaymentFixture(456.64, 0)
 
-	if err := svc.RequestSecondPayment(context.Background(), "", "order-1", RequestSecondPaymentRequest{}); err != nil {
+	if _, err := svc.RequestSecondPayment(context.Background(), "", "order-1", RequestSecondPaymentRequest{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -108,7 +112,7 @@ func TestRequestSecondPayment_LegacyOrderWithoutPrepaidBillsFullShipping(t *test
 func TestRequestSecondPayment_FinalBelowPrepaidClampsToZero(t *testing.T) {
 	_, invoicer, svc := secondPaymentFixture(100, 228.32)
 
-	if err := svc.RequestSecondPayment(context.Background(), "", "order-1", RequestSecondPaymentRequest{}); err != nil {
+	if _, err := svc.RequestSecondPayment(context.Background(), "", "order-1", RequestSecondPaymentRequest{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

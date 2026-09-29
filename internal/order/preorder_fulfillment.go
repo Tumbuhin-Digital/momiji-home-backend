@@ -12,8 +12,8 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/customer"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
-	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/warehouse"
 )
 
@@ -396,37 +396,113 @@ func (s *service) allPreorderGroupsHaveFinalShipping(ctx context.Context, o *Ord
 	return true, nil
 }
 
-func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID string, req RequestSecondPaymentRequest) error {
+type groupSecondPaymentPlan struct {
+	shipment       *PreorderShipment
+	groupItems     []OrderItem
+	opts           preorder.GroupInvoiceOptions
+	existingURL    string
+	existingDraft  string
+	prepaidApplied float64
+}
+
+func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID string, req RequestSecondPaymentRequest) (*RequestSecondPaymentResponse, error) {
+	plan, err := s.prepareGroupSecondPayment(ctx, userID, orderID, req)
+	if err != nil {
+		return nil, err
+	}
+	if plan.existingURL != "" {
+		return &RequestSecondPaymentResponse{
+			InvoiceURL:   plan.existingURL,
+			DraftOrderID: plan.existingDraft,
+		}, nil
+	}
+
+	result, err := s.preorderService.CreateGroupSecondPaymentInvoice(ctx, plan.opts)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	if err := s.store.MarkPreorderShipmentInvoiceSent(ctx, plan.shipment.ID, result.DraftOrderID, result.InvoiceURL, now, plan.prepaidApplied); err != nil {
+		return nil, apierror.ErrInternal
+	}
+
+	o, err := s.store.GetOrder(ctx, orderID, userID)
+	if err != nil || o == nil {
+		return nil, apierror.ErrInternal
+	}
+	if err := s.store.UpdateOrderStatus(ctx, orderID, "on_progress", o.FinancialStatus, "waiting"); err != nil {
+		return nil, apierror.ErrInternal
+	}
+	for _, it := range plan.groupItems {
+		if err := s.store.UpdateItemStatusByID(ctx, it.ID, "waiting_payment"); err != nil {
+			return nil, apierror.ErrInternal
+		}
+		if it.FulfillmentStep < preOrderStepSecondPayment {
+			if err := s.store.UpdateOrderItemStep(ctx, it.ID, preOrderStepSecondPayment); err != nil {
+				return nil, apierror.ErrInternal
+			}
+		}
+	}
+
+	return &RequestSecondPaymentResponse{
+		InvoiceURL:   result.InvoiceURL,
+		DraftOrderID: result.DraftOrderID,
+	}, nil
+}
+
+func (s *service) ResendSecondPaymentInvoice(ctx context.Context, userID, orderID string, req RequestSecondPaymentRequest) error {
+	resp, err := s.RequestSecondPayment(ctx, userID, orderID, req)
+	if err != nil {
+		return err
+	}
+	plan, err := s.prepareGroupSecondPayment(ctx, userID, orderID, req)
+	if err != nil {
+		return err
+	}
+	return s.preorderService.SendGroupSecondPaymentInvoiceEmail(ctx, plan.opts, resp.InvoiceURL)
+}
+
+func (s *service) prepareGroupSecondPayment(ctx context.Context, userID, orderID string, req RequestSecondPaymentRequest) (*groupSecondPaymentPlan, error) {
 	o, err := s.store.GetOrder(ctx, orderID, userID)
 	if err != nil {
-		return apierror.ErrInternal
+		return nil, apierror.ErrInternal
 	}
 	if o == nil {
-		return apierror.ErrNotFound
+		return nil, apierror.ErrNotFound
 	}
 
 	batchID := normalizeBatchIDPtr(req.BatchID)
 	groupItems, err := s.resolveGroupSlices(ctx, o, batchID)
 	if err != nil {
-		return apierror.ErrInternal
+		return nil, apierror.ErrInternal
 	}
 	if len(groupItems) == 0 {
-		return apierror.New(http.StatusBadRequest, "invalid_request", "No pre-order items for this fulfillment group")
+		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "No pre-order items for this fulfillment group")
 	}
 
 	shipment, err := s.store.GetPreorderShipmentByBatch(ctx, orderID, batchID)
 	if err != nil {
-		return apierror.ErrInternal
+		return nil, apierror.ErrInternal
 	}
 	if shipment == nil || shipment.FinalShippingPrice == nil {
-		return apierror.New(http.StatusBadRequest, "invalid_request", "Final shipping price must be set for this group before requesting payment")
+		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Final shipping price must be set for this group before requesting payment")
 	}
-	if shipment.InvoiceSentAt != nil {
-		return apierror.New(http.StatusConflict, "invalid_transition", "Second payment invoice already sent for this group")
+
+	existingURL := ""
+	existingDraft := ""
+	if shipment.InvoiceURL != nil {
+		existingURL = strings.TrimSpace(*shipment.InvoiceURL)
+	}
+	if shipment.ShopifyDraftOrderID != nil {
+		existingDraft = strings.TrimSpace(*shipment.ShopifyDraftOrderID)
+	}
+	if existingURL == "" && shipment.InvoiceSentAt != nil {
+		return nil, apierror.New(http.StatusConflict, "invalid_transition", "Second payment invoice already sent for this group")
 	}
 
 	if o.ShippingAddress == nil {
-		return apierror.New(http.StatusBadRequest, "invalid_request", "Order has no shipping address")
+		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Order has no shipping address")
 	}
 
 	customerEmail := ""
@@ -489,7 +565,7 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 	// reading the row's own PrepaidShipping (which is 0 on batch rows).
 	allShipments, err := s.store.GetPreorderShipments(ctx, orderID)
 	if err != nil {
-		return apierror.ErrInternal
+		return nil, apierror.ErrInternal
 	}
 	prepaidApplied := AllocatePrepaidShipping(allShipments)[shipment.ID]
 
@@ -499,7 +575,7 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 	}
 
 	if len(invoiceLines) == 0 && remainingShipping <= 0 {
-		return apierror.New(http.StatusBadRequest, "invalid_request", "Nothing to invoice for this group")
+		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Nothing to invoice for this group")
 	}
 
 	shippingMethod := ""
@@ -530,45 +606,28 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 		}
 	}
 
-	result, err := s.preorderService.CreateGroupSecondPaymentInvoice(ctx, preorder.GroupInvoiceOptions{
-		CustomerEmail:   customerEmail,
-		CustomerName:    customerName,
-		OrderID:         orderID,
-		ShipmentID:      shipment.ID,
-		BatchName:       batchName,
-		ItemCount:       itemCount,
-		Lines:           invoiceLines,
-		ShippingTitle:   shippingMethod,
-		ShippingPrice:   remainingShipping,
-		ShippingPrepaid: prepaidApplied,
-		ShippingNotes:   notes,
-		ShippingAddress: orderAddressToShopify(o.ShippingAddress),
-		BillingAddress:  orderAddressToShopify(billingAddressOrShipping(o)),
-	})
-	if err != nil {
-		return err
-	}
-
-	now := time.Now()
-	if err := s.store.MarkPreorderShipmentInvoiceSent(ctx, shipment.ID, result.DraftOrderID, result.InvoiceURL, now, prepaidApplied); err != nil {
-		return apierror.ErrInternal
-	}
-
-	if err := s.store.UpdateOrderStatus(ctx, orderID, "on_progress", o.FinancialStatus, "waiting"); err != nil {
-		return apierror.ErrInternal
-	}
-	for _, it := range groupItems {
-		if err := s.store.UpdateItemStatusByID(ctx, it.ID, "waiting_payment"); err != nil {
-			return apierror.ErrInternal
-		}
-		if it.FulfillmentStep < preOrderStepSecondPayment {
-			if err := s.store.UpdateOrderItemStep(ctx, it.ID, preOrderStepSecondPayment); err != nil {
-				return apierror.ErrInternal
-			}
-		}
-	}
-
-	return nil
+	return &groupSecondPaymentPlan{
+		shipment:   shipment,
+		groupItems: groupItems,
+		opts: preorder.GroupInvoiceOptions{
+			CustomerEmail:   customerEmail,
+			CustomerName:    customerName,
+			OrderID:         orderID,
+			ShipmentID:      shipment.ID,
+			BatchName:       batchName,
+			ItemCount:       itemCount,
+			Lines:           invoiceLines,
+			ShippingTitle:   shippingMethod,
+			ShippingPrice:   remainingShipping,
+			ShippingPrepaid: prepaidApplied,
+			ShippingNotes:   notes,
+			ShippingAddress: orderAddressToShopify(o.ShippingAddress),
+			BillingAddress:  orderAddressToShopify(billingAddressOrShipping(o)),
+		},
+		existingURL:    existingURL,
+		existingDraft:  existingDraft,
+		prepaidApplied: prepaidApplied,
+	}, nil
 }
 
 func billingAddressOrShipping(o *Order) *customer.Address {

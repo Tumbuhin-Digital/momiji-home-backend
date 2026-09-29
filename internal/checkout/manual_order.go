@@ -223,23 +223,239 @@ func (s *service) CreateManualOrder(ctx context.Context, req ManualOrderRequest)
 		return nil, fmt.Errorf("failed to create shopify draft order: %w", err)
 	}
 
-	invoiceSent := true
-	if sendErr := s.shopifyCli.SendDraftOrderInvoice(ctx, res.ID, &shopify.DraftOrderInvoiceEmailInput{
-		To: req.Email,
-	}); sendErr != nil {
-		invoiceSent = false
-		slog.ErrorContext(ctx, "Failed to send shopify draft order invoice email",
-			slog.Any("error", sendErr),
-			slog.String("checkout_reference", checkoutRef),
-			slog.String("draft_order_id", res.ID))
-	}
-
 	return &ManualOrderResponse{
 		InvoiceURL:        res.InvoiceUrl,
 		CheckoutReference: checkoutRef,
 		DraftOrderID:      res.ID,
-		InvoiceEmailSent:  invoiceSent,
+		InvoiceEmailSent:  false,
 	}, nil
+}
+
+func (s *service) SendManualOrderInvoice(ctx context.Context, req SendManualOrderInvoiceRequest) (*SendManualOrderInvoiceResponse, error) {
+	draftID := strings.TrimSpace(req.DraftOrderID)
+	to := strings.TrimSpace(req.Email)
+	if draftID == "" || to == "" {
+		return nil, apierror.New(400, "bad_request", "draft_order_id and email are required")
+	}
+
+	if _, err := s.loadEditableWebsiteDraft(ctx, draftID); err != nil {
+		return nil, err
+	}
+
+	if err := s.shopifyCli.SendDraftOrderInvoice(ctx, draftID, &shopify.DraftOrderInvoiceEmailInput{
+		To: to,
+	}); err != nil {
+		slog.ErrorContext(ctx, "Failed to send shopify draft order invoice email",
+			slog.Any("error", err),
+			slog.String("draft_order_id", draftID))
+		return nil, apierror.New(502, "invoice_send_failed", "Failed to send Shopify invoice email")
+	}
+
+	return &SendManualOrderInvoiceResponse{InvoiceEmailSent: true}, nil
+}
+
+func (s *service) UpdateDraftOrderItems(ctx context.Context, req UpdateDraftOrderItemsRequest) (*UpdateDraftOrderItemsResponse, error) {
+	draftID := strings.TrimSpace(req.DraftOrderID)
+	if draftID == "" {
+		return nil, apierror.New(400, "bad_request", "draft_order_id is required")
+	}
+	if len(req.LineItems) == 0 {
+		return nil, apierror.New(400, "bad_request", "at least one line item is required")
+	}
+
+	draft, err := s.loadEditableWebsiteDraft(ctx, draftID)
+	if err != nil {
+		return nil, err
+	}
+	if draft.ShippingAddress == nil || strings.TrimSpace(draft.ShippingAddress.Zip) == "" {
+		return nil, apierror.New(400, "bad_request", "draft is missing a shipping address")
+	}
+
+	shipReady, preOrder, err := s.splitManualLineItems(ctx, req.LineItems)
+	if err != nil {
+		return nil, err
+	}
+	if len(shipReady) == 0 && len(preOrder) == 0 {
+		return nil, apierror.New(400, "bad_request", "no valid line items")
+	}
+
+	shipTogether := draftAttr(draft.CustomAttributes, "ship_together") == "true" &&
+		len(shipReady) > 0 && len(preOrder) > 0
+	shipReady, preOrder = applyShipTogetherSegments(shipReady, preOrder, shipTogether)
+
+	shippingMethod := strings.TrimSpace(req.ShippingMethod)
+	if len(preOrder) > 0 && shippingMethod == "" {
+		return nil, apierror.New(400, "bad_request", "shipping_method is required when pre-order items are present")
+	}
+
+	for _, item := range append(shipReady, preOrder...) {
+		if err := s.productService.ValidateVariantActive(ctx, item.VariantID); err != nil {
+			return nil, err
+		}
+	}
+
+	draftInput := shopify.DraftOrderInput{
+		LineItems:        buildDraftLinesFromSegments(shipReady, preOrder),
+		Email:            draft.Email,
+		ShippingAddress:  draftAddressInput(draft.ShippingAddress),
+		BillingAddress:   draftAddressInput(draft.BillingAddress),
+		CustomAttributes: append([]shopify.AttributeInput{}, draft.CustomAttributes...),
+		Note:             draft.Note,
+	}
+
+	origin := draftAttr(draft.CustomAttributes, "preorder_warehouse_origin")
+	country := draft.ShippingAddress.Country
+	if country == "" {
+		country = "US"
+	}
+	ratesBase := ShippingRatesRequest{
+		Name:     strings.TrimSpace(draft.ShippingAddress.FirstName + " " + draft.ShippingAddress.LastName),
+		Phone:    draft.ShippingAddress.Phone,
+		Address1: draft.ShippingAddress.Address1,
+		City:     draft.ShippingAddress.City,
+		State:    draft.ShippingAddress.Province,
+		Zip:      draft.ShippingAddress.Zip,
+		Country:  country,
+	}
+
+	if len(shipReady) > 0 {
+		ratesReq := ratesBase
+		ratesReq.Segment = "ship_ready"
+		ratesReq.LineItems = toShippingRateLineItems(shipReady)
+		rates, rateErr := s.GetShippingRates(ctx, nil, nil, ratesReq)
+		if rateErr != nil {
+			slog.WarnContext(ctx, "draft edit ship ready shipping rate lookup failed",
+				slog.String("draft_order_id", draftID),
+				slog.Any("error", rateErr))
+		} else if matched := s.matchShippingRate(rates, shippingMethod, warehouse.CodeEast); matched != nil {
+			draftInput.ShippingLine = shopify.NewShippingLineInput(matched.Label, matched.Cost, "USD")
+		}
+	}
+
+	if len(preOrder) > 0 {
+		ratesReq := ratesBase
+		ratesReq.Segment = "pre_order"
+		ratesReq.Origin = origin
+		ratesReq.LineItems = toShippingRateLineItems(preOrder)
+		rates, rateErr := s.GetShippingRates(ctx, nil, nil, ratesReq)
+		if rateErr != nil {
+			slog.WarnContext(ctx, "draft edit pre-order shipping rate lookup failed",
+				slog.String("draft_order_id", draftID),
+				slog.Any("error", rateErr))
+		} else {
+			preOrderOrigin := warehouse.CodeEast
+			if s.warehouseResolver != nil {
+				preOrderOrigin = s.warehouseResolver.ResolveOrigin("pre_order", origin)
+			}
+			if matched := s.matchShippingRate(rates, shippingMethod, preOrderOrigin); matched != nil {
+				draftInput.CustomAttributes = upsertDraftAttr(draftInput.CustomAttributes, "preorder_shipping_estimate", matched.Cost)
+				estimate, parseErr := strconv.ParseFloat(matched.Cost, 64)
+				if parseErr != nil {
+					slog.WarnContext(ctx, "unparseable draft edit pre-order shipping estimate; skipping upfront half",
+						slog.String("draft_order_id", draftID),
+						slog.String("value", matched.Cost))
+					draftInput.CustomAttributes = removeDraftAttr(draftInput.CustomAttributes, PreOrderShippingPrepaidAttribute)
+				} else if upfront, _ := shipping.SplitHalf(estimate); upfront > 0 {
+					draftInput.LineItems = append(draftInput.LineItems, buildPreOrderShippingDepositLine(upfront))
+					draftInput.CustomAttributes = upsertDraftAttr(draftInput.CustomAttributes, PreOrderShippingPrepaidAttribute, fmt.Sprintf("%.2f", upfront))
+				} else {
+					draftInput.CustomAttributes = removeDraftAttr(draftInput.CustomAttributes, PreOrderShippingPrepaidAttribute)
+				}
+			}
+		}
+	} else {
+		draftInput.CustomAttributes = removeDraftAttr(draftInput.CustomAttributes, "preorder_shipping_estimate")
+		draftInput.CustomAttributes = removeDraftAttr(draftInput.CustomAttributes, PreOrderShippingPrepaidAttribute)
+	}
+	if shippingMethod != "" {
+		draftInput.CustomAttributes = upsertDraftAttr(draftInput.CustomAttributes, "preorder_shipping_method", shippingMethod)
+	}
+
+	res, err := s.shopifyCli.UpdateDraftOrder(ctx, draftID, draftInput, draftInput.ShippingLine == nil)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to update shopify draft order",
+			slog.Any("error", err),
+			slog.String("draft_order_id", draftID))
+		return nil, apierror.New(502, "draft_update_failed", "Failed to update the Shopify draft order")
+	}
+
+	return &UpdateDraftOrderItemsResponse{
+		DraftOrderID: res.ID,
+		InvoiceURL:   res.InvoiceUrl,
+	}, nil
+}
+
+func (s *service) loadEditableWebsiteDraft(ctx context.Context, draftID string) (*shopify.DraftOrderDetail, error) {
+	draft, err := s.shopifyCli.GetDraftOrder(ctx, draftID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to load shopify draft order",
+			slog.String("draft_order_id", draftID),
+			slog.Any("error", err))
+		return nil, apierror.ErrInternal
+	}
+	if draft == nil || !draftHasWholesaleSource(draft) {
+		return nil, apierror.ErrNotFound
+	}
+	if strings.EqualFold(draft.Status, "COMPLETED") {
+		return nil, apierror.New(409, "draft_completed", "Completed draft orders cannot be changed")
+	}
+	return draft, nil
+}
+
+func draftHasWholesaleSource(draft *shopify.DraftOrderDetail) bool {
+	for _, attr := range draft.CustomAttributes {
+		if attr.Key == shopify.WholesaleSourceAttribute.Key && attr.Value == shopify.WholesaleSourceAttribute.Value {
+			return true
+		}
+	}
+	return false
+}
+
+func draftAttr(attrs []shopify.AttributeInput, key string) string {
+	for _, attr := range attrs {
+		if attr.Key == key {
+			return attr.Value
+		}
+	}
+	return ""
+}
+
+func upsertDraftAttr(attrs []shopify.AttributeInput, key, value string) []shopify.AttributeInput {
+	for i := range attrs {
+		if attrs[i].Key == key {
+			attrs[i].Value = value
+			return attrs
+		}
+	}
+	return append(attrs, shopify.AttributeInput{Key: key, Value: value})
+}
+
+func removeDraftAttr(attrs []shopify.AttributeInput, key string) []shopify.AttributeInput {
+	out := make([]shopify.AttributeInput, 0, len(attrs))
+	for _, attr := range attrs {
+		if attr.Key == key {
+			continue
+		}
+		out = append(out, attr)
+	}
+	return out
+}
+
+func draftAddressInput(addr *shopify.DraftOrderAddress) *shopify.AddressInput {
+	if addr == nil {
+		return nil
+	}
+	return &shopify.AddressInput{
+		FirstName: addr.FirstName,
+		LastName:  addr.LastName,
+		Company:   addr.Company,
+		Address1:  addr.Address1,
+		City:      addr.City,
+		Province:  addr.Province,
+		Zip:       addr.Zip,
+		Country:   addr.Country,
+		Phone:     addr.Phone,
+	}
 }
 
 func toShippingRateLineItems(items []cart.CartItem) []ShippingRateLineItem {

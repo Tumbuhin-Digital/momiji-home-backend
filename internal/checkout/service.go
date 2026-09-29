@@ -26,6 +26,8 @@ import (
 type CheckoutService interface {
 	InitiateCheckout(ctx context.Context, userID, sessionID *string, req InitiateCheckoutRequest) (*InitiateCheckoutResponse, error)
 	CreateManualOrder(ctx context.Context, req ManualOrderRequest) (*ManualOrderResponse, error)
+	SendManualOrderInvoice(ctx context.Context, req SendManualOrderInvoiceRequest) (*SendManualOrderInvoiceResponse, error)
+	UpdateDraftOrderItems(ctx context.Context, req UpdateDraftOrderItemsRequest) (*UpdateDraftOrderItemsResponse, error)
 	ReleaseCheckout(ctx context.Context, userID, sessionID *string, checkoutReference *string) error
 	ValidateAddress(ctx context.Context, req ValidateAddressRequest) map[string]string
 	GetShippingRates(ctx context.Context, userID, sessionID *string, req ShippingRatesRequest) ([]ShippingRateDTO, error)

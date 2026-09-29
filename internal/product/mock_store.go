@@ -517,6 +517,18 @@ func (m *MockShopifyClient) QueryAdminGraphQL(ctx context.Context, query string,
 	return m.AdminGraphQLResponse, m.AdminGraphQLErr
 }
 
+func (m *MockShopifyClient) ListOpenDraftOrders(ctx context.Context) ([]shopify.OpenDraftOrder, error) {
+	return nil, nil
+}
+
+func (m *MockShopifyClient) GetDraftOrder(ctx context.Context, id string) (*shopify.DraftOrderDetail, error) {
+	return nil, nil
+}
+
+func (m *MockShopifyClient) UpdateDraftOrder(ctx context.Context, id string, input shopify.DraftOrderInput, clearShippingLine bool) (*shopify.DraftOrderResponse, error) {
+	return nil, nil
+}
+
 func (m *MockShopifyClient) CreateDraftOrder(ctx context.Context, input shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error) {
 	return m.DraftOrderResponse, m.DraftOrderErr
 }
@@ -656,6 +668,18 @@ type MockShopifyClientFunc struct {
 
 func (m *MockShopifyClientFunc) QueryAdminGraphQL(ctx context.Context, query string, variables map[string]interface{}) ([]byte, error) {
 	return m.QueryAdminGraphQLFn(ctx, query, variables)
+}
+
+func (m *MockShopifyClientFunc) ListOpenDraftOrders(ctx context.Context) ([]shopify.OpenDraftOrder, error) {
+	return nil, nil
+}
+
+func (m *MockShopifyClientFunc) GetDraftOrder(ctx context.Context, id string) (*shopify.DraftOrderDetail, error) {
+	return nil, nil
+}
+
+func (m *MockShopifyClientFunc) UpdateDraftOrder(ctx context.Context, id string, input shopify.DraftOrderInput, clearShippingLine bool) (*shopify.DraftOrderResponse, error) {
+	return nil, nil
 }
 
 func (m *MockShopifyClientFunc) CreateDraftOrder(ctx context.Context, input shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error) {

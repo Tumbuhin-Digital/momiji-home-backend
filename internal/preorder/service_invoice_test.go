@@ -19,6 +19,17 @@ func (c *recordingShopClient) QueryAdminGraphQL(context.Context, string, map[str
 	return nil, nil
 }
 
+func (c *recordingShopClient) ListOpenDraftOrders(context.Context) ([]shopify.OpenDraftOrder, error) {
+	return nil, nil
+}
+
+func (c *recordingShopClient) GetDraftOrder(context.Context, string) (*shopify.DraftOrderDetail, error) {
+	return nil, nil
+}
+
+func (c *recordingShopClient) UpdateDraftOrder(context.Context, string, shopify.DraftOrderInput, bool) (*shopify.DraftOrderResponse, error) {
+	return nil, nil
+}
 func (c *recordingShopClient) CreateDraftOrder(_ context.Context, input shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error) {
 	c.lastDraftInput = input
 	return &shopify.DraftOrderResponse{
@@ -41,6 +52,17 @@ func (c *failingShopClient) QueryAdminGraphQL(context.Context, string, map[strin
 	return nil, nil
 }
 
+func (c *failingShopClient) ListOpenDraftOrders(context.Context) ([]shopify.OpenDraftOrder, error) {
+	return nil, nil
+}
+
+func (c *failingShopClient) GetDraftOrder(context.Context, string) (*shopify.DraftOrderDetail, error) {
+	return nil, nil
+}
+
+func (c *failingShopClient) UpdateDraftOrder(context.Context, string, shopify.DraftOrderInput, bool) (*shopify.DraftOrderResponse, error) {
+	return nil, nil
+}
 func (c *failingShopClient) CreateDraftOrder(context.Context, shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error) {
 	return nil, errors.New("shopify unavailable")
 }
@@ -115,7 +137,9 @@ func (c *recordingShopClient) CreateFulfillmentV2(context.Context, shopify.Creat
 	return nil, nil
 }
 
-func (c *recordingShopClient) CreateFulfillmentEvent(context.Context, string, string) error { return nil }
+func (c *recordingShopClient) CreateFulfillmentEvent(context.Context, string, string) error {
+	return nil
+}
 func (c *recordingShopClient) CreateUnlistedProduct(context.Context, shopify.CreateUnlistedProductInput) (*shopify.CreatedProduct, error) {
 	return nil, nil
 }
@@ -189,7 +213,9 @@ func (s *invoiceTestStore) MarkSettlementsInvoiced(_ context.Context, ids []stri
 	return nil
 }
 
-func (s *invoiceTestStore) AllSettlementsPaid(context.Context, string) (bool, error) { return false, nil }
+func (s *invoiceTestStore) AllSettlementsPaid(context.Context, string) (bool, error) {
+	return false, nil
+}
 
 func (s *invoiceTestStore) GetSettlementsForReminder(_ context.Context, daysSinceInvoiced int) ([]PreorderRow, error) {
 	if s.reminderRows == nil {
@@ -203,23 +229,29 @@ type noopEmailService struct{}
 func (noopEmailService) SendOrderConfirmation(context.Context, string, email.OrderEmailData) error {
 	return nil
 }
-func (noopEmailService) SendInvoice(context.Context, string, email.SettlementEmailData) error { return nil }
+func (noopEmailService) SendInvoice(context.Context, string, email.SettlementEmailData) error {
+	return nil
+}
 func (noopEmailService) SendSettlementPaid(context.Context, string, email.SettlementEmailData) error {
 	return nil
 }
-func (noopEmailService) SendReminder(context.Context, string, email.SettlementEmailData) error { return nil }
-func (noopEmailService) SendExpired(context.Context, string, email.SettlementEmailData) error { return nil }
+func (noopEmailService) SendReminder(context.Context, string, email.SettlementEmailData) error {
+	return nil
+}
+func (noopEmailService) SendExpired(context.Context, string, email.SettlementEmailData) error {
+	return nil
+}
 func (noopEmailService) SendShipmentDispatched(context.Context, string, email.ShipmentEmailData) error {
 	return nil
 }
 
 type trackingEmailService struct {
 	noopEmailService
-	mu              sync.Mutex
-	invoiceSent     bool
-	invoiceLink     string
-	invoiceHeading  string
-	reminderLinks   []string
+	mu             sync.Mutex
+	invoiceSent    bool
+	invoiceLink    string
+	invoiceHeading string
+	reminderLinks  []string
 }
 
 func (s *trackingEmailService) SendInvoice(_ context.Context, _ string, data email.SettlementEmailData) error {
@@ -509,7 +541,7 @@ func TestCreateGroupSecondPaymentInvoice_IncludesBatchHeadingInEmail(t *testing.
 		emailService: emailSvc,
 	}
 
-	_, err := svc.CreateGroupSecondPaymentInvoice(context.Background(), GroupInvoiceOptions{
+	opts := GroupInvoiceOptions{
 		CustomerEmail: "buyer@example.com",
 		CustomerName:  "Gilang",
 		OrderID:       "order-1",
@@ -524,29 +556,20 @@ func TestCreateGroupSecondPaymentInvoice_IncludesBatchHeadingInEmail(t *testing.
 		}},
 		ShippingTitle: "UPS Ground",
 		ShippingPrice: 50,
-	})
+	}
+	result, err := svc.CreateGroupSecondPaymentInvoice(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("CreateGroupSecondPaymentInvoice returned error: %v", err)
 	}
-
-	// Email is sent in a goroutine.
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		emailSvc.mu.Lock()
-		sent := emailSvc.invoiceSent
-		heading := emailSvc.invoiceHeading
-		emailSvc.mu.Unlock()
-		if sent {
-			want := "Pre-Order Batch - September 2026 (4 items)"
-			if heading != want {
-				t.Fatalf("invoice heading = %q, want %q", heading, want)
-			}
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("timed out waiting for invoice email")
-		}
-		time.Sleep(20 * time.Millisecond)
+	if emailSvc.invoiceSent {
+		t.Fatal("creating the payment link must not send the invoice email")
+	}
+	if err := svc.SendGroupSecondPaymentInvoiceEmail(context.Background(), opts, result.InvoiceURL); err != nil {
+		t.Fatalf("SendGroupSecondPaymentInvoiceEmail returned error: %v", err)
+	}
+	want := "Pre-Order Batch - September 2026 (4 items)"
+	if emailSvc.invoiceHeading != want {
+		t.Fatalf("invoice heading = %q, want %q", emailSvc.invoiceHeading, want)
 	}
 }
 
@@ -611,4 +634,3 @@ func TestCreateGroupSecondPaymentInvoice_UsesDistinctBillingAddress(t *testing.T
 		t.Fatalf("unexpected billing company: %s", shop.lastDraftInput.BillingAddress.Company)
 	}
 }
-

@@ -176,6 +176,15 @@ func (m *mockShopifyInventoryClient) QueryAdminGraphQL(context.Context, string, 
 	return nil, nil
 }
 
+func (m *mockShopifyInventoryClient) ListOpenDraftOrders(context.Context) ([]shopify.OpenDraftOrder, error) {
+	return nil, nil
+}
+func (m *mockShopifyInventoryClient) GetDraftOrder(context.Context, string) (*shopify.DraftOrderDetail, error) {
+	return nil, nil
+}
+func (m *mockShopifyInventoryClient) UpdateDraftOrder(context.Context, string, shopify.DraftOrderInput, bool) (*shopify.DraftOrderResponse, error) {
+	return nil, nil
+}
 func (m *mockShopifyInventoryClient) CreateDraftOrder(context.Context, shopify.DraftOrderInput) (*shopify.DraftOrderResponse, error) {
 	return nil, nil
 }

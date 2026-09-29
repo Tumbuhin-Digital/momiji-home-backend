@@ -39,24 +39,68 @@ type AddressDTO struct {
 	Phone     string `json:"phone,omitempty"`
 }
 
+type WebsiteDraftOrderDTO struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Email      string `json:"email"`
+	InvoiceURL string `json:"invoice_url"`
+	CreatedAt  string `json:"created_at"`
+	Total      string `json:"total"`
+	Currency   string `json:"currency"`
+}
+
+type WebsiteDraftLineItemDTO struct {
+	Title     string `json:"title"`
+	SKU       string `json:"sku,omitempty"`
+	Quantity  int    `json:"quantity"`
+	UnitPrice string `json:"unit_price"`
+	LineTotal string `json:"line_total"`
+	VariantID string `json:"variant_id,omitempty"`
+	Kind      string `json:"kind"`
+}
+
+type WebsiteDraftOrderDetailDTO struct {
+	ID              string                    `json:"id"`
+	Name            string                    `json:"name"`
+	Status          string                    `json:"status"`
+	Email           string                    `json:"email"`
+	InvoiceURL      string                    `json:"invoice_url"`
+	CreatedAt       string                    `json:"created_at"`
+	Note            string                    `json:"note,omitempty"`
+	Currency        string                    `json:"currency"`
+	Subtotal        string                    `json:"subtotal"`
+	TotalTax        string                    `json:"total_tax"`
+	Total           string                    `json:"total"`
+	ShippingTitle   string                    `json:"shipping_title,omitempty"`
+	ShippingAmount  string                    `json:"shipping_amount,omitempty"`
+	ShippingMethod  string                    `json:"shipping_method,omitempty"`
+	Origin          string                    `json:"origin,omitempty"`
+	ShipTogether    bool                      `json:"ship_together"`
+	OrderName       string                    `json:"order_name,omitempty"`
+	ShippingAddress *AddressDTO               `json:"shipping_address,omitempty"`
+	BillingAddress  *AddressDTO               `json:"billing_address,omitempty"`
+	LineItems       []WebsiteDraftLineItemDTO `json:"line_items"`
+}
+
 type OrderResponse struct {
-	ID                  string         `json:"id"`
-	OrderNumber         string         `json:"order_number"`
-	OrderDate           string         `json:"order_date"`
-	Customer            *CustomerDTO   `json:"customer"`
-	ShippingAddress     *AddressDTO    `json:"shipping_address"`
-	BillingAddress      *AddressDTO    `json:"billing_address"`
-	ShopifyCheckoutURL  string         `json:"shopify_checkout_url,omitempty"`
-	ShopifyDraftInvoice string         `json:"shopify_draft_invoice_url,omitempty"`
-	TotalPrice          string         `json:"total_price"`
-	AggregateStatus     string         `json:"aggregate_status"` // deprecated
-	FinancialStatus     string         `json:"financial_status"`
-	FulfillmentStatus   string         `json:"fulfillment_status"`
-	TotalShipReady      string         `json:"total_ship_ready"`
-	TotalDepositPaid    string         `json:"total_deposit_paid"`
-	TotalBalanceDue     string         `json:"total_balance_due"`
-	TotalChargedNow     string         `json:"total_charged_now"`
-	Currency            string         `json:"currency"`
+	ID                  string                `json:"id"`
+	OrderNumber         string                `json:"order_number"`
+	OrderDate           string                `json:"order_date"`
+	Customer            *CustomerDTO          `json:"customer"`
+	ShippingAddress     *AddressDTO           `json:"shipping_address"`
+	BillingAddress      *AddressDTO           `json:"billing_address"`
+	ShopifyCheckoutURL  string                `json:"shopify_checkout_url,omitempty"`
+	ShopifyDraftInvoice string                `json:"shopify_draft_invoice_url,omitempty"`
+	TotalPrice          string                `json:"total_price"`
+	AggregateStatus     string                `json:"aggregate_status"` // deprecated
+	FinancialStatus     string                `json:"financial_status"`
+	FulfillmentStatus   string                `json:"fulfillment_status"`
+	TotalShipReady      string                `json:"total_ship_ready"`
+	TotalDepositPaid    string                `json:"total_deposit_paid"`
+	TotalBalanceDue     string                `json:"total_balance_due"`
+	TotalChargedNow     string                `json:"total_charged_now"`
+	Currency            string                `json:"currency"`
 	LineItems           LineItemsGroup        `json:"line_items"`
 	PreorderShipment    *PreorderShipmentDTO  `json:"preorder_shipment,omitempty"`
 	FulfillmentGroups   []FulfillmentGroupDTO `json:"fulfillment_groups,omitempty"`
@@ -68,20 +112,20 @@ type OrderResponse struct {
 }
 
 type OrderItemDetail struct {
-	ID              string  `json:"id"`
-	VariantID       string  `json:"variant_id"`
-	Type            string  `json:"type"`
-	Quantity        int     `json:"quantity"`
-	ItemStatus      string  `json:"item_status"`
-	DpAmount        *string `json:"dp_amount,omitempty"`
-	FinalAmount     *string `json:"final_amount,omitempty"`
-	Title           string  `json:"title"`
-	UnitPrice       *string `json:"unit_price,omitempty"`
-	AmountCharged   *string `json:"amount_charged,omitempty"`
-	BalanceDue      *string `json:"balance_due,omitempty"`
-	FulfillmentStep int     `json:"fulfillment_step"`
-	ItemsReceived   int     `json:"items_received"`
-	ImageSrc        string  `json:"image_src"`
+	ID                string  `json:"id"`
+	VariantID         string  `json:"variant_id"`
+	Type              string  `json:"type"`
+	Quantity          int     `json:"quantity"`
+	ItemStatus        string  `json:"item_status"`
+	DpAmount          *string `json:"dp_amount,omitempty"`
+	FinalAmount       *string `json:"final_amount,omitempty"`
+	Title             string  `json:"title"`
+	UnitPrice         *string `json:"unit_price,omitempty"`
+	AmountCharged     *string `json:"amount_charged,omitempty"`
+	BalanceDue        *string `json:"balance_due,omitempty"`
+	FulfillmentStep   int     `json:"fulfillment_step"`
+	ItemsReceived     int     `json:"items_received"`
+	ImageSrc          string  `json:"image_src"`
 	TrackingNumber    *string `json:"tracking_number,omitempty"`
 	TrackingURL       *string `json:"tracking_url,omitempty"`
 	TrackingCompany   *string `json:"tracking_company,omitempty"`
@@ -149,6 +193,11 @@ type RequestSecondPaymentRequest struct {
 	BatchID *string `json:"batch_id"`
 }
 
+type RequestSecondPaymentResponse struct {
+	InvoiceURL   string `json:"invoice_url"`
+	DraftOrderID string `json:"draft_order_id"`
+}
+
 type FulfillmentGroupKind string
 
 const (
@@ -184,19 +233,19 @@ type OrderLineSliceDTO struct {
 }
 
 type FulfillmentGroupDTO struct {
-	Key                      string               `json:"key"`
-	Kind                     FulfillmentGroupKind `json:"kind"`
-	Title                    string               `json:"title"`
-	BatchID                  *string              `json:"batch_id,omitempty"`
-	BatchName                string               `json:"batch_name,omitempty"`
-	LineSlices               []OrderLineSliceDTO  `json:"line_slices"`
-	Shipment                 *PreorderShipmentDTO `json:"shipment,omitempty"`
-	Fulfillments             []FulfillmentDTO     `json:"fulfillments,omitempty"`
-	CanRequestSecondPayment  bool                 `json:"can_request_second_payment"`
-	SecondPaymentStatus      string               `json:"second_payment_status,omitempty"` // pending | ready | invoiced | paid
-	GroupBalanceDue          *string              `json:"group_balance_due,omitempty"`
-	GroupShipping            *string              `json:"group_shipping,omitempty"`
-	IncludesShipReady        bool                 `json:"includes_ship_ready,omitempty"`
+	Key                     string               `json:"key"`
+	Kind                    FulfillmentGroupKind `json:"kind"`
+	Title                   string               `json:"title"`
+	BatchID                 *string              `json:"batch_id,omitempty"`
+	BatchName               string               `json:"batch_name,omitempty"`
+	LineSlices              []OrderLineSliceDTO  `json:"line_slices"`
+	Shipment                *PreorderShipmentDTO `json:"shipment,omitempty"`
+	Fulfillments            []FulfillmentDTO     `json:"fulfillments,omitempty"`
+	CanRequestSecondPayment bool                 `json:"can_request_second_payment"`
+	SecondPaymentStatus     string               `json:"second_payment_status,omitempty"` // pending | ready | invoiced | paid
+	GroupBalanceDue         *string              `json:"group_balance_due,omitempty"`
+	GroupShipping           *string              `json:"group_shipping,omitempty"`
+	IncludesShipReady       bool                 `json:"includes_ship_ready,omitempty"`
 }
 
 type SecondPaymentDTO struct {

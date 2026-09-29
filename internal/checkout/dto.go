@@ -139,6 +139,26 @@ type ManualOrderResponse struct {
 	InvoiceEmailSent  bool   `json:"invoice_email_sent"`
 }
 
+type SendManualOrderInvoiceRequest struct {
+	DraftOrderID string `json:"draft_order_id" validate:"required"`
+	Email        string `json:"email" validate:"required,email"`
+}
+
+type SendManualOrderInvoiceResponse struct {
+	InvoiceEmailSent bool `json:"invoice_email_sent"`
+}
+
+type UpdateDraftOrderItemsRequest struct {
+	DraftOrderID   string                `json:"draft_order_id" validate:"required"`
+	ShippingMethod string                `json:"shipping_method,omitempty"`
+	LineItems      []ManualOrderLineItem `json:"line_items" validate:"required,min=1,dive"`
+}
+
+type UpdateDraftOrderItemsResponse struct {
+	DraftOrderID string `json:"draft_order_id"`
+	InvoiceURL   string `json:"invoice_url"`
+}
+
 type ValidateAddressRequest struct {
 	Country string `json:"country" validate:"required"`
 	State   string `json:"state" validate:"required"`

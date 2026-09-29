@@ -43,7 +43,10 @@ type OrderService interface {
 	ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]byte, error)
 	CalculatePreorderShipping(ctx context.Context, userID, orderID string, req CalculatePreorderShippingRequest) (*CalculatePreorderShippingResponse, error)
 	UpdatePreorderShipping(ctx context.Context, userID, orderID string, req UpdatePreorderShippingRequest) (*PreorderShipmentDTO, error)
-	RequestSecondPayment(ctx context.Context, userID, orderID string, req RequestSecondPaymentRequest) error
+	RequestSecondPayment(ctx context.Context, userID, orderID string, req RequestSecondPaymentRequest) (*RequestSecondPaymentResponse, error)
+	ResendSecondPaymentInvoice(ctx context.Context, userID, orderID string, req RequestSecondPaymentRequest) error
+	ListWebsiteDraftOrders(ctx context.Context) ([]WebsiteDraftOrderDTO, error)
+	GetWebsiteDraftOrder(ctx context.Context, id string) (*WebsiteDraftOrderDetailDTO, error)
 }
 
 type service struct {
