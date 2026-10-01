@@ -56,7 +56,21 @@ type ZipLookup func(ctx context.Context, zip string) (stateAbbr string, ok bool)
 // Nested items should have BoxCount=0 and are skipped entirely.
 // Assumption: nested items physically fit inside another item's box and do not
 // add a separate package entry to the rate request.
-func BuildPackages(ctx context.Context, packableUnits []PackableUnit) []shipstation.Package {
+// A shippable box with no weight returns package_data instead of substituting 1 lb.
+func BuildPackages(ctx context.Context, packableUnits []PackableUnit) ([]shipstation.Package, error) {
+	var missingWeight []string
+	for _, unit := range packableUnits {
+		if unit.BoxCount <= 0 {
+			continue
+		}
+		if units.KgToLb(unit.WeightKg) == 0 {
+			missingWeight = append(missingWeight, unitLabel(unit))
+		}
+	}
+	if len(missingWeight) > 0 {
+		return nil, PackageData(missingWeight)
+	}
+
 	var packages []shipstation.Package
 
 	for _, unit := range packableUnits {
@@ -65,15 +79,6 @@ func BuildPackages(ctx context.Context, packableUnits []PackableUnit) []shipstat
 		}
 
 		wt := units.KgToLb(unit.WeightKg)
-		if wt == 0 {
-			slog.WarnContext(ctx, "shipping package weight missing, using default 1 lb",
-				"line_item_id", unit.LineItemID,
-				"sku", unit.SKU,
-				"shopify_variant_id", unit.ShopifyVariantID,
-				"weight_kg", unit.WeightKg,
-			)
-			wt = units.DefaultLb
-		}
 
 		pkg := shipstation.Package{
 			Weight: shipstation.Weight{
@@ -104,7 +109,35 @@ func BuildPackages(ctx context.Context, packableUnits []PackableUnit) []shipstat
 		}
 	}
 
-	return packages
+	return packages, nil
+}
+
+func unitLabel(unit PackableUnit) string {
+	switch {
+	case strings.TrimSpace(unit.SKU) != "":
+		return strings.TrimSpace(unit.SKU)
+	case strings.TrimSpace(unit.LineItemID) != "":
+		return strings.TrimSpace(unit.LineItemID)
+	case strings.TrimSpace(unit.ShopifyVariantID) != "":
+		return strings.TrimSpace(unit.ShopifyVariantID)
+	default:
+		return "unknown item"
+	}
+}
+
+// MissingDimensionLabels lists shippable units that will be rated without dimensions.
+func MissingDimensionLabels(packableUnits []PackableUnit) []string {
+	var labels []string
+	for _, unit := range packableUnits {
+		if unit.BoxCount <= 0 {
+			continue
+		}
+		if unit.DepthCm > 0 || unit.WidthCm > 0 || unit.HeightCm > 0 {
+			continue
+		}
+		labels = append(labels, unitLabel(unit))
+	}
+	return labels
 }
 
 // TotalWeightLb sums weight across all boxes (nested items excluded).
@@ -146,7 +179,7 @@ func CalculateGroundRate(
 	zipLookup ZipLookup,
 ) (amount float64, currency string, err error) {
 	if len(packages) == 0 {
-		return 0, "", fmt.Errorf("no packages to rate")
+		return 0, "", PackageEmpty()
 	}
 
 	groundCode := groundServiceCode
@@ -154,23 +187,20 @@ func CalculateGroundRate(
 		groundCode = "ups_ground"
 	}
 
-	if shipTo.Name == "" {
-		shipTo.Name = "Recipient"
+	if missing := missingShipToFields(shipTo); len(missing) > 0 {
+		return 0, "", AddressIncomplete(missing)
 	}
-	if shipTo.Phone == "" {
-		shipTo.Phone = "555-555-5555"
-	}
-	if shipTo.Address1 == "" {
-		shipTo.Address1 = "123 Unknown St"
-	}
-	country := shipTo.Country
-	if country == "" {
-		country = "US"
+	if err := validateShipFrom(shipFrom); err != nil {
+		return 0, "", err
 	}
 
-	fromCountry := shipFrom.Country
-	if fromCountry == "" {
-		fromCountry = "US"
+	toState, err := resolveDestinationState(ctx, shipTo.Country, shipTo.Zip, shipTo.State, zipLookup)
+	if err != nil {
+		return 0, "", err
+	}
+	fromState, err := resolveOriginState(ctx, shipFrom.Country, shipFrom.Zip, shipFrom.State, zipLookup)
+	if err != nil {
+		return 0, "", err
 	}
 
 	req := shipstation.RateRequest{
@@ -187,9 +217,9 @@ func CalculateGroundRate(
 				Phone:                       shipFrom.Phone,
 				AddressLine1:                shipFrom.Address1,
 				CityLocality:                shipFrom.City,
-				StateProvince:               resolveState(ctx, fromCountry, shipFrom.Zip, shipFrom.State, zipLookup),
+				StateProvince:               fromState,
 				PostalCode:                  shipFrom.Zip,
-				CountryCode:                 fromCountry,
+				CountryCode:                 shipFrom.Country,
 				AddressResidentialIndicator: "unknown",
 			},
 			ShipTo: shipstation.Address{
@@ -197,9 +227,9 @@ func CalculateGroundRate(
 				Phone:                       shipTo.Phone,
 				AddressLine1:                shipTo.Address1,
 				CityLocality:                shipTo.City,
-				StateProvince:               resolveState(ctx, country, shipTo.Zip, shipTo.State, zipLookup),
+				StateProvince:               toState,
 				PostalCode:                  shipTo.Zip,
-				CountryCode:                 country,
+				CountryCode:                 shipTo.Country,
 				AddressResidentialIndicator: "unknown",
 			},
 			Packages: packages,
@@ -209,7 +239,7 @@ func CalculateGroundRate(
 	rates, err := client.GetRates(ctx, req)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to get shipping rates from shipstation", "error", err)
-		return 0, "", err
+		return 0, "", ClassifyCarrierFailure(err, nil)
 	}
 
 	for _, r := range rates {
@@ -223,24 +253,104 @@ func CalculateGroundRate(
 		}
 	}
 
-	return 0, "", fmt.Errorf("no ground rate returned for service %s", groundCode)
+	return 0, "", CarrierNoRate(groundCode, shipTo.Zip)
 }
 
-func resolveState(ctx context.Context, country, zip, defaultState string, zipLookup ZipLookup) string {
-	if zipLookup == nil {
-		return defaultState
+func missingShipToFields(addr ShipToAddress) []string {
+	var missing []string
+	if strings.TrimSpace(addr.Name) == "" {
+		missing = append(missing, "name")
 	}
-	if !strings.EqualFold(country, "US") && !strings.EqualFold(country, "United States") {
-		return defaultState
+	if strings.TrimSpace(addr.Phone) == "" {
+		missing = append(missing, "phone")
+	}
+	if strings.TrimSpace(addr.Address1) == "" {
+		missing = append(missing, "address")
+	}
+	if strings.TrimSpace(addr.City) == "" {
+		missing = append(missing, "city")
+	}
+	if strings.TrimSpace(addr.State) == "" {
+		missing = append(missing, "state")
+	}
+	if strings.TrimSpace(addr.Zip) == "" {
+		missing = append(missing, "zip")
+	}
+	if strings.TrimSpace(addr.Country) == "" {
+		missing = append(missing, "country")
+	}
+	return missing
+}
+
+func validateShipFrom(addr ShipFromAddress) error {
+	var missing []string
+	if strings.TrimSpace(addr.Address1) == "" {
+		missing = append(missing, "street")
+	}
+	if strings.TrimSpace(addr.City) == "" {
+		missing = append(missing, "city")
+	}
+	if strings.TrimSpace(addr.State) == "" {
+		missing = append(missing, "state")
+	}
+	if strings.TrimSpace(addr.Zip) == "" {
+		missing = append(missing, "ZIP")
+	}
+	if strings.TrimSpace(addr.Country) == "" {
+		missing = append(missing, "country")
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return WarehouseOrigin("Warehouse origin address is incomplete. Missing: " + strings.Join(missing, ", ") + ".")
+}
+
+func isUSCountry(country string) bool {
+	switch strings.ToLower(strings.TrimSpace(country)) {
+	case "us", "usa", "united states":
+		return true
+	default:
+		return false
+	}
+}
+
+func resolveDestinationState(ctx context.Context, country, zip, provided string, zipLookup ZipLookup) (string, error) {
+	provided = strings.TrimSpace(provided)
+	if !isUSCountry(country) {
+		return provided, nil
 	}
 	normalized, ok := uszip.NormalizeUSZip(zip)
 	if !ok {
-		return defaultState
+		return "", ZipInvalid(zip)
 	}
-	if abbr, ok := zipLookup(ctx, normalized); ok && abbr != "" {
-		return abbr
+	if zipLookup == nil {
+		return provided, nil
 	}
-	return defaultState
+	abbr, ok := zipLookup(ctx, normalized)
+	if !ok || strings.TrimSpace(abbr) == "" {
+		return "", ZipInvalid(normalized)
+	}
+	abbr = strings.TrimSpace(abbr)
+	if provided != "" && len(provided) <= 3 && !strings.EqualFold(provided, abbr) {
+		return "", StateMismatch(normalized, provided, abbr)
+	}
+	return abbr, nil
+}
+
+func resolveOriginState(ctx context.Context, country, zip, provided string, zipLookup ZipLookup) (string, error) {
+	provided = strings.TrimSpace(provided)
+	if !isUSCountry(country) || zipLookup == nil {
+		return provided, nil
+	}
+	normalized, ok := uszip.NormalizeUSZip(zip)
+	if !ok {
+		return "", WarehouseOrigin(fmt.Sprintf("Warehouse origin ZIP %s is not a valid US ZIP.", strings.TrimSpace(zip)))
+	}
+	abbr, ok := zipLookup(ctx, normalized)
+	if !ok || strings.TrimSpace(abbr) == "" {
+		return "", WarehouseOrigin(fmt.Sprintf("Warehouse origin ZIP %s is not a valid US ZIP.", normalized))
+	}
+	return strings.TrimSpace(abbr), nil
 }
 
 // PackableUnitFromCartItem converts cart item fields to a single-unit packable (BoxCount set separately).

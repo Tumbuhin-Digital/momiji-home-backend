@@ -104,13 +104,16 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 	if err != nil {
 		return nil, err
 	}
-	packages := shipping.BuildPackages(ctx, units)
+	packages, pkgErr := shipping.BuildPackages(ctx, units)
+	if pkgErr != nil {
+		return nil, shipping.ToAPIError(pkgErr)
+	}
 	if len(packages) == 0 {
-		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "No shippable boxes in packing plan")
+		return nil, shipping.ToAPIError(shipping.PackageEmpty())
 	}
 
 	if o.ShippingAddress == nil {
-		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Order has no shipping address")
+		return nil, shipping.ToAPIError(shipping.AddressIncomplete([]string{"address", "city", "state", "zip", "country", "name", "phone"}))
 	}
 
 	addr := o.ShippingAddress
@@ -138,7 +141,7 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 	}
 	origin, err := s.warehouseResolver.GetOrigin(ctx, originCode)
 	if err != nil {
-		return nil, apierror.New(http.StatusInternalServerError, "shipping_rate_error", "Failed to resolve warehouse origin")
+		return nil, shipping.ToAPIError(shipping.WarehouseOrigin("Failed to resolve warehouse origin"))
 	}
 
 	amount, currency, err := shipping.CalculateGroundRate(
@@ -174,7 +177,7 @@ func (s *service) CalculatePreorderShipping(ctx context.Context, userID, orderID
 			"package_count", len(packages),
 			"error", err,
 		)
-		return nil, apierror.New(http.StatusInternalServerError, "shipping_rate_error", fmt.Sprintf("Failed to fetch shipping rates from carriers: %v", err))
+		return nil, shipping.ToAPIError(shipping.ClassifyCarrierFailure(err, shipping.MissingDimensionLabels(units)))
 	}
 
 	totalBoxes, totalWeight := PackingTotals(units)
@@ -283,8 +286,12 @@ func (s *service) UpdatePreorderShipping(ctx context.Context, userID, orderID st
 		if packErr != nil {
 			return nil, packErr
 		}
-		if len(shipping.BuildPackages(ctx, units)) == 0 {
-			return nil, apierror.New(http.StatusBadRequest, "invalid_request", "No shippable boxes in packing plan")
+		built, buildErr := shipping.BuildPackages(ctx, units)
+		if buildErr != nil {
+			return nil, shipping.ToAPIError(buildErr)
+		}
+		if len(built) == 0 {
+			return nil, shipping.ToAPIError(shipping.PackageEmpty())
 		}
 
 		totalBoxes, totalWeight := PackingTotals(units)
@@ -502,7 +509,7 @@ func (s *service) prepareGroupSecondPayment(ctx context.Context, userID, orderID
 	}
 
 	if o.ShippingAddress == nil {
-		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Order has no shipping address")
+		return nil, shipping.ToAPIError(shipping.AddressIncomplete([]string{"address", "city", "state", "zip", "country", "name", "phone"}))
 	}
 
 	customerEmail := ""

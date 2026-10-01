@@ -176,6 +176,7 @@ func (s *service) CreateManualOrder(ctx context.Context, req ManualOrderRequest)
 			slog.WarnContext(ctx, "manual order ship ready shipping rate lookup failed",
 				slog.String("checkout_reference", checkoutRef),
 				slog.Any("error", rateErr))
+			return nil, rateErr
 		} else if matched := s.matchShippingRate(rates, req.ShippingMethod, warehouse.CodeEast); matched != nil {
 			draftInput.ShippingLine = shopify.NewShippingLineInput(matched.Label, matched.Cost, "USD")
 		}
@@ -191,6 +192,7 @@ func (s *service) CreateManualOrder(ctx context.Context, req ManualOrderRequest)
 			slog.WarnContext(ctx, "manual order pre-order shipping rate lookup failed",
 				slog.String("checkout_reference", checkoutRef),
 				slog.Any("error", rateErr))
+			return nil, rateErr
 		} else {
 			preOrderOrigin := warehouse.CodeEast
 			if s.warehouseResolver != nil {
@@ -327,6 +329,7 @@ func (s *service) UpdateDraftOrderItems(ctx context.Context, req UpdateDraftOrde
 			slog.WarnContext(ctx, "draft edit ship ready shipping rate lookup failed",
 				slog.String("draft_order_id", draftID),
 				slog.Any("error", rateErr))
+			return nil, rateErr
 		} else if matched := s.matchShippingRate(rates, shippingMethod, warehouse.CodeEast); matched != nil {
 			draftInput.ShippingLine = shopify.NewShippingLineInput(matched.Label, matched.Cost, "USD")
 		}
@@ -342,6 +345,7 @@ func (s *service) UpdateDraftOrderItems(ctx context.Context, req UpdateDraftOrde
 			slog.WarnContext(ctx, "draft edit pre-order shipping rate lookup failed",
 				slog.String("draft_order_id", draftID),
 				slog.Any("error", rateErr))
+			return nil, rateErr
 		} else {
 			preOrderOrigin := warehouse.CodeEast
 			if s.warehouseResolver != nil {

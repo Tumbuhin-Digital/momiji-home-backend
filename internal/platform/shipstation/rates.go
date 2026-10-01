@@ -2,7 +2,6 @@ package shipstation
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 )
 
@@ -11,12 +10,35 @@ func (c *client) GetRates(ctx context.Context, req RateRequest) ([]Rate, error) 
 	if err := c.do(ctx, http.MethodPost, "/v2/rates", req, &res); err != nil {
 		return nil, err
 	}
-	
+
 	if len(res.RateResponse.Errors) > 0 {
-		return nil, fmt.Errorf("shipstation returned errors: %v", res.RateResponse.Errors)
+		return nil, &RateResponseError{Messages: res.RateResponse.Errors}
+	}
+	if len(res.RateResponse.Rates) == 0 && len(res.RateResponse.InvalidRates) > 0 {
+		return nil, &RateResponseError{Messages: messagesFromInvalidRates(res.RateResponse.InvalidRates)}
 	}
 
 	return res.RateResponse.Rates, nil
+}
+
+func messagesFromInvalidRates(invalid []InvalidRate) []CarrierMessage {
+	var messages []CarrierMessage
+	for _, rate := range invalid {
+		if len(rate.ErrorMessages) > 0 {
+			messages = append(messages, rate.ErrorMessages...)
+			continue
+		}
+		if rate.Message != "" || rate.ServiceCode != "" {
+			messages = append(messages, CarrierMessage{
+				ErrorCode: rate.ServiceCode,
+				Message:   rate.Message,
+			})
+		}
+	}
+	if len(messages) == 0 {
+		messages = append(messages, CarrierMessage{Message: "no valid rates returned"})
+	}
+	return messages
 }
 
 func (c *client) ListCarriers(ctx context.Context) ([]Carrier, error) {

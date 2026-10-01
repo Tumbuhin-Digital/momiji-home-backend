@@ -34,9 +34,12 @@ func (m *mockShipStationClient) TrackShipment(context.Context, string, string) (
 
 func TestBuildPackages_ConvertsKgToLbOnce(t *testing.T) {
 	ctx := context.Background()
-	pkgs := shipping.BuildPackages(ctx, []shipping.PackableUnit{
+	pkgs, err := shipping.BuildPackages(ctx, []shipping.PackableUnit{
 		{WeightKg: 1.0, BoxCount: 1},
 	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(pkgs) != 1 {
 		t.Fatalf("expected 1 package, got %d", len(pkgs))
 	}
@@ -51,7 +54,7 @@ func TestBuildPackages_ConvertsKgToLbOnce(t *testing.T) {
 
 func TestBuildPackages_ConvertsDimensionsToInches(t *testing.T) {
 	ctx := context.Background()
-	pkgs := shipping.BuildPackages(ctx, []shipping.PackableUnit{
+	pkgs, err := shipping.BuildPackages(ctx, []shipping.PackableUnit{
 		{
 			WeightKg: 2,
 			DepthCm:  100,
@@ -60,6 +63,9 @@ func TestBuildPackages_ConvertsDimensionsToInches(t *testing.T) {
 			BoxCount: 1,
 		},
 	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(pkgs) != 1 {
 		t.Fatalf("expected 1 package, got %d", len(pkgs))
 	}
@@ -83,9 +89,12 @@ func TestBuildPackages_ConvertsDimensionsToInches(t *testing.T) {
 
 func TestBuildPackages_MultiBox(t *testing.T) {
 	ctx := context.Background()
-	pkgs := shipping.BuildPackages(ctx, []shipping.PackableUnit{
+	pkgs, err := shipping.BuildPackages(ctx, []shipping.PackableUnit{
 		{WeightKg: 5, BoxCount: 3},
 	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(pkgs) != 3 {
 		t.Fatalf("expected 3 packages, got %d", len(pkgs))
 	}
@@ -171,10 +180,16 @@ func TestCalculateGroundRate_IncludesConfirmationAmount(t *testing.T) {
 	amount, _, err := shipping.CalculateGroundRate(
 		context.Background(),
 		client,
-		shipping.ShipFromAddress{Zip: "07055", State: "NJ", Country: "US"},
+		shipping.ShipFromAddress{
+			Name: "Momiji Home", Phone: "555-123-4567", Address1: "100 Momiji Way",
+			City: "Passaic", State: "NJ", Zip: "07055", Country: "US",
+		},
 		[]string{"se-1730633"},
 		"ups_ground",
-		shipping.ShipToAddress{Zip: "90001", State: "CA", Country: "US"},
+		shipping.ShipToAddress{
+			Name: "Customer", Phone: "555-555-5555", Address1: "123 Main St",
+			City: "Los Angeles", State: "CA", Zip: "90001", Country: "US",
+		},
 		[]shipstation.Package{{Weight: shipstation.Weight{Value: 102, Unit: "pound"}}},
 		nil,
 	)

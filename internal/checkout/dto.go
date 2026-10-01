@@ -8,9 +8,21 @@ import (
 type CheckoutSummaryRequest struct {
 	ShippingMethod string `json:"shipping_method,omitempty"`
 	AddressID      int    `json:"address_id,omitempty"`
+	Name           string `json:"name,omitempty"`
+	Phone          string `json:"phone,omitempty"`
+	Address1       string `json:"address1,omitempty"`
+	City           string `json:"city,omitempty"`
+	State          string `json:"state,omitempty"`
 	Zip            string `json:"zip,omitempty"`
 	Country        string `json:"country,omitempty"`
 	Origin         string `json:"origin,omitempty"` // pre_order warehouse: east | west
+}
+
+// ShippingLookupError is a classified rate failure for one checkout segment.
+type ShippingLookupError struct {
+	Code    string            `json:"code"`
+	Message string            `json:"message"`
+	Details map[string]string `json:"details,omitempty"`
 }
 
 type CheckoutSummaryResponse struct {
@@ -24,9 +36,11 @@ type CheckoutSummaryResponse struct {
 		BalanceSubtotal string          `json:"balance_subtotal"`
 	} `json:"pre_order"`
 	Shipping struct {
-		Method           string `json:"method"`
-		Cost             string `json:"cost"`
-		EstimatedArrival string `json:"estimated_arrival"`
+		Method           string               `json:"method"`
+		Cost             string               `json:"cost"`
+		EstimatedArrival string               `json:"estimated_arrival"`
+		ShipReadyError   *ShippingLookupError `json:"ship_ready_error,omitempty"`
+		PreOrderError    *ShippingLookupError `json:"preorder_error,omitempty"`
 	} `json:"shipping"`
 	DueNow struct {
 		ShipReadyTotal          string `json:"ship_ready_total"`

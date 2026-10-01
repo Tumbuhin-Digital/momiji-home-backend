@@ -55,9 +55,17 @@ type RateResponseWrapper struct {
 }
 
 type RateResponse struct {
-	Rates        []Rate        `json:"rates"`
-	InvalidRates []interface{} `json:"invalid_rates,omitempty"`
-	Errors       []interface{} `json:"errors,omitempty"`
+	Rates        []Rate           `json:"rates"`
+	InvalidRates []InvalidRate    `json:"invalid_rates,omitempty"`
+	Errors       []CarrierMessage `json:"errors,omitempty"`
+}
+
+// InvalidRate is a carrier quote ShipStation could not price.
+type InvalidRate struct {
+	CarrierID     string           `json:"carrier_id,omitempty"`
+	ServiceCode   string           `json:"service_code,omitempty"`
+	Message       string           `json:"message,omitempty"`
+	ErrorMessages []CarrierMessage `json:"error_messages,omitempty"`
 }
 
 type Rate struct {

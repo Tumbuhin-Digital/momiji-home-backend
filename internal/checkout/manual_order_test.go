@@ -6,9 +6,12 @@ import (
 	"testing"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shipstation"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/warehouse"
 )
 
 type stubProductService struct {
@@ -142,6 +145,7 @@ func (c *recordingManualShopClient) GetDraftOrder(context.Context, string) (*sho
 			Province:  "NJ",
 			Zip:       "07055",
 			Country:   "US",
+			Phone:     "+15551234567",
 		},
 	}, nil
 }
@@ -212,12 +216,66 @@ func (c *recordingManualShopClient) LinkVariantSKU(context.Context, string, stri
 	return nil
 }
 
+type stubWarehouseResolver struct{}
+
+func (stubWarehouseResolver) ResolveOrigin(_, requested string) string {
+	if requested != "" {
+		return requested
+	}
+	return warehouse.CodeEast
+}
+
+func (stubWarehouseResolver) GetOrigin(context.Context, string) (warehouse.Origin, error) {
+	return warehouse.Origin{
+		Code:              warehouse.CodeEast,
+		Name:              "Momiji Home",
+		Phone:             "555-0100",
+		Address1:          "100 Momiji Way",
+		City:              "Passaic",
+		State:             "NJ",
+		Zip:               "07055",
+		Country:           "US",
+		GroundServiceCode: "ups_ground",
+	}, nil
+}
+
+type stubRateClient struct {
+	err error
+}
+
+func (s *stubRateClient) GetRates(context.Context, shipstation.RateRequest) ([]shipstation.Rate, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return []shipstation.Rate{{
+		ServiceCode:    "ups_ground",
+		ShippingAmount: shipstation.Money{Currency: "USD", Amount: 12},
+	}}, nil
+}
+
+func (s *stubRateClient) ListCarriers(context.Context) ([]shipstation.Carrier, error) {
+	return nil, nil
+}
+
+func (s *stubRateClient) TrackShipment(context.Context, string, string) (*shipstation.TrackingResponse, error) {
+	return nil, nil
+}
+
+func testZipStore() *zipLookupStore {
+	return &zipLookupStore{byZip: map[string]*UsZipCode{
+		"10001": {ZipCode: "10001", City: "New York", StateAbbr: "NY", StateName: "New York"},
+		"07055": {ZipCode: "07055", City: "Passaic", StateAbbr: "NJ", StateName: "New Jersey"},
+	}}
+}
+
 func newManualOrderService(products *stubProductService, shop *recordingManualShopClient) *service {
 	return &service{
-		cartService:    &stubCartService{},
-		productService: products,
-		shopifyCli:     shop,
-		store:          &zipLookupStore{},
+		cartService:       &stubCartService{},
+		productService:    products,
+		shopifyCli:        shop,
+		store:             testZipStore(),
+		warehouseResolver: stubWarehouseResolver{},
+		shipstationCli:    &stubRateClient{},
 	}
 }
 
@@ -284,6 +342,7 @@ func TestCreateManualOrder_DoesNotSendInvoice(t *testing.T) {
 			RetailPrice:       "300.00",
 			FulfillmentType:   product.FulfillmentTypeShipReady,
 			InventoryQuantity: 10,
+			WeightKg:          4,
 		},
 		"gid://v/2": {
 			ID:                "gid://v/2",
@@ -292,6 +351,7 @@ func TestCreateManualOrder_DoesNotSendInvoice(t *testing.T) {
 			RetailPrice:       "400.00",
 			FulfillmentType:   product.FulfillmentTypePreOrder,
 			InventoryQuantity: 0,
+			WeightKg:          3,
 		},
 	}}
 	shop := &recordingManualShopClient{}
@@ -329,8 +389,8 @@ func TestCreateManualOrder_DoesNotSendInvoice(t *testing.T) {
 	if shop.lastDraft.Email != "jane@example.com" {
 		t.Fatalf("expected draft email set, got %s", shop.lastDraft.Email)
 	}
-	if len(shop.lastDraft.LineItems) != 2 {
-		t.Fatalf("expected 2 draft lines, got %d", len(shop.lastDraft.LineItems))
+	if len(shop.lastDraft.LineItems) != 3 {
+		t.Fatalf("expected 2 product lines plus shipping deposit, got %d", len(shop.lastDraft.LineItems))
 	}
 }
 
@@ -343,6 +403,7 @@ func TestCreateManualOrder_ShipTogetherTreatsAllAsPreorder(t *testing.T) {
 			RetailPrice:       "300.00",
 			FulfillmentType:   product.FulfillmentTypeShipReady,
 			InventoryQuantity: 10,
+			WeightKg:          4,
 		},
 		"gid://v/2": {
 			ID:                "gid://v/2",
@@ -351,6 +412,7 @@ func TestCreateManualOrder_ShipTogetherTreatsAllAsPreorder(t *testing.T) {
 			RetailPrice:       "400.00",
 			FulfillmentType:   product.FulfillmentTypePreOrder,
 			InventoryQuantity: 0,
+			WeightKg:          3,
 		},
 	}}
 	shop := &recordingManualShopClient{}
@@ -376,22 +438,26 @@ func TestCreateManualOrder_ShipTogetherTreatsAllAsPreorder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateManualOrder error: %v", err)
 	}
-	if len(shop.lastDraft.LineItems) != 2 {
-		t.Fatalf("expected 2 draft lines, got %d", len(shop.lastDraft.LineItems))
+	if len(shop.lastDraft.LineItems) != 3 {
+		t.Fatalf("expected 2 product lines plus shipping deposit, got %d", len(shop.lastDraft.LineItems))
 	}
+	productLines := 0
+	hasDeposit := false
 	for i, line := range shop.lastDraft.LineItems {
 		if line.VariantID != "" {
 			t.Fatalf("line %d should not use Shopify variant (no stock touch), got %q", i, line.VariantID)
 		}
-		hasType := false
 		for _, attr := range line.CustomAttributes {
 			if attr.Key == "type" && attr.Value == "preorder_dp" {
-				hasType = true
+				productLines++
+			}
+			if attr.Key == "charge_type" && attr.Value == "pre_order_shipping_deposit" {
+				hasDeposit = true
 			}
 		}
-		if !hasType {
-			t.Fatalf("line %d missing preorder_dp: %+v", i, line)
-		}
+	}
+	if productLines != 2 || !hasDeposit {
+		t.Fatalf("expected 2 preorder lines and a shipping deposit, products=%d deposit=%v", productLines, hasDeposit)
 	}
 	if shop.lastDraft.ShippingLine != nil {
 		t.Fatal("expected no ship-ready shipping line when ship_together")
@@ -512,6 +578,49 @@ func TestUpdateDraftOrderItems_ReplacesProductLines(t *testing.T) {
 	}
 	if shop.lastDraft.Email != "jane@example.com" {
 		t.Fatalf("expected draft email to be kept, got %s", shop.lastDraft.Email)
+	}
+}
+
+func TestCreateManualOrder_RateFailureDoesNotCreateDraft(t *testing.T) {
+	products := &stubProductService{variants: map[string]*product.VariantDTO{
+		"gid://v/1": {
+			ID:                "gid://v/1",
+			Title:             "Shelf",
+			WSPrice:           "180.00",
+			RetailPrice:       "300.00",
+			FulfillmentType:   product.FulfillmentTypeShipReady,
+			InventoryQuantity: 10,
+			WeightKg:          4,
+		},
+	}}
+	shop := &recordingManualShopClient{}
+	svc := newManualOrderService(products, shop)
+	svc.shipstationCli = &stubRateClient{err: &shipstation.APIError{
+		StatusCode: 400,
+		Message:    "Invalid postal code for the shipping address",
+	}}
+
+	_, err := svc.CreateManualOrder(context.Background(), ManualOrderRequest{
+		Email:          "jane@example.com",
+		FirstName:      "Jane",
+		LastName:       "Doe",
+		Phone:          "+15551234567",
+		Address1:       "1 Main St",
+		City:           "New York",
+		State:          "NY",
+		Zip:            "10001",
+		Country:        "US",
+		ShippingMethod: "ups_ground",
+		LineItems: []ManualOrderLineItem{
+			{VariantID: "gid://v/1", Quantity: 1},
+		},
+	})
+	var appErr *apierror.AppError
+	if !errors.As(err, &appErr) || appErr.Code != shipping.CodeAddressRejected {
+		t.Fatalf("expected address_rejected, got %v", err)
+	}
+	if shop.lastDraft.Email != "" {
+		t.Fatalf("draft was created despite rate failure: %+v", shop.lastDraft)
 	}
 }
 

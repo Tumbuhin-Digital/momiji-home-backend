@@ -83,14 +83,27 @@ func TestValidateAddress_SanFrancisco94104(t *testing.T) {
 
 	unknownZip := validReq
 	unknownZip.Zip = "00000"
-	if errs := svc.ValidateAddress(context.Background(), unknownZip); errs["zip"] != "Invalid US ZIP code" {
+	if errs := svc.ValidateAddress(context.Background(), unknownZip); errs["zip"] != "ZIP 00000 is not a valid US ZIP." {
 		t.Fatalf("expected invalid zip error, got: %#v", errs)
 	}
 
 	cityMismatch := validReq
 	cityMismatch.City = "Los Angeles"
-	if errs := svc.ValidateAddress(context.Background(), cityMismatch); errs["city"] != "City does not match ZIP" {
+	if errs := svc.ValidateAddress(context.Background(), cityMismatch); errs["city"] != "City does not match ZIP 94104. Expected San Francisco." {
 		t.Fatalf("expected city mismatch, got: %#v", errs)
+	}
+	if errs := svc.ValidateAddress(context.Background(), cityMismatch); errs["expected_city"] != "San Francisco" {
+		t.Fatalf("expected city hint, got: %#v", errs)
+	}
+
+	stateMismatch := validReq
+	stateMismatch.State = "NY"
+	stateErrs := svc.ValidateAddress(context.Background(), stateMismatch)
+	if stateErrs["state"] != "State does not match ZIP 94104. Expected CA." {
+		t.Fatalf("expected state mismatch, got: %#v", stateErrs)
+	}
+	if stateErrs["expected_state"] != "CA" {
+		t.Fatalf("expected state hint, got: %#v", stateErrs)
 	}
 
 	nonUS := validReq

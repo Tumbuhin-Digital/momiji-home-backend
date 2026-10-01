@@ -21,11 +21,11 @@ type Client interface {
 }
 
 type TrackingResponse struct {
-	TrackingNumber string `json:"trackingNumber"`
-	StatusCode     string `json:"statusCode"`
-	StatusDescription string `json:"statusDescription"`
-	CarrierCode    string `json:"carrierCode"`
-	ShipDate       string `json:"shipDate"`
+	TrackingNumber        string `json:"trackingNumber"`
+	StatusCode            string `json:"statusCode"`
+	StatusDescription     string `json:"statusDescription"`
+	CarrierCode           string `json:"carrierCode"`
+	ShipDate              string `json:"shipDate"`
 	EstimatedDeliveryDate string `json:"estimatedDeliveryDate"`
 }
 
@@ -40,8 +40,8 @@ func NewClient(apiKey string, sandbox bool) Client {
 	// Sandbox keys automatically route to test environments.
 	base := "https://api.shipstation.com"
 	return &client{
-		baseURL: base,
-		apiKey:  apiKey,
+		baseURL:    base,
+		apiKey:     apiKey,
 		httpClient: &http.Client{Timeout: 15 * time.Second},
 	}
 }
@@ -77,12 +77,12 @@ func (c *client) do(ctx context.Context, method, path string, body interface{}, 
 		_, _ = buf.ReadFrom(res.Body)
 		bodyStr := buf.String()
 		_ = json.Unmarshal([]byte(bodyStr), &errRes)
-		
+
 		msg := errRes.Message
 		if msg == "" {
 			msg = bodyStr
 		}
-		return fmt.Errorf("shipstation: api error status %d: %s", res.StatusCode, msg)
+		return &APIError{StatusCode: res.StatusCode, Message: msg}
 	}
 
 	return json.NewDecoder(res.Body).Decode(out)

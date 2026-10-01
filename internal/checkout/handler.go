@@ -1,9 +1,11 @@
 package checkout
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/cart"
@@ -132,16 +134,16 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 		country = "US"
 	}
 
+	var shipReadyLookupErr *ShippingLookupError
+	var preOrderLookupErr *ShippingLookupError
+
 	if req.Zip != "" {
 		if len(cartRes.ShipReady) > 0 {
-			ratesReq := ShippingRatesRequest{
-				Zip:     req.Zip,
-				Country: country,
-				Segment: "ship_ready",
-			}
+			ratesReq := summaryRatesRequest(req, country, "ship_ready")
 			rates, rateErr := h.checkoutService.GetShippingRates(c.Context(), uid, sid, ratesReq)
 			if rateErr != nil {
 				slog.WarnContext(c.Context(), "checkout summary: ship ready rate lookup failed", slog.Any("error", rateErr))
+				shipReadyLookupErr = shippingLookupError(rateErr)
 			} else if len(rates) > 0 {
 				matched := h.matchSummaryRate(rates, req.ShippingMethod)
 				if matched != nil {
@@ -158,15 +160,11 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 		}
 
 		if len(cartRes.PreOrder) > 0 {
-			ratesReq := ShippingRatesRequest{
-				Zip:     req.Zip,
-				Country: country,
-				Segment: "pre_order",
-				Origin:  req.Origin,
-			}
+			ratesReq := summaryRatesRequest(req, country, "pre_order")
 			rates, rateErr := h.checkoutService.GetShippingRates(c.Context(), uid, sid, ratesReq)
 			if rateErr != nil {
 				slog.WarnContext(c.Context(), "checkout summary: pre-order rate lookup failed", slog.Any("error", rateErr))
+				preOrderLookupErr = shippingLookupError(rateErr)
 			} else if len(rates) > 0 {
 				matched := h.matchSummaryRate(rates, req.ShippingMethod)
 				if matched != nil {
@@ -196,6 +194,8 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 	res.Shipping.Method = req.ShippingMethod
 	res.Shipping.Cost = fmt.Sprintf("%.2f", shippingCost)
 	res.Shipping.EstimatedArrival = estimatedArrival
+	res.Shipping.ShipReadyError = shipReadyLookupErr
+	res.Shipping.PreOrderError = preOrderLookupErr
 
 	shippingPreorderDeposit, shippingPreorderBalance := shipping.SplitHalf(shippingPreorder)
 
@@ -214,6 +214,63 @@ func (h *Handler) GetCheckoutSummary(c *fiber.Ctx) error {
 	res.Currency = "USD"
 
 	return response.Success(c, fiber.StatusOK, "Checkout summary retrieved", res)
+}
+
+func summaryRatesRequest(req CheckoutSummaryRequest, country, segment string) ShippingRatesRequest {
+	return ShippingRatesRequest{
+		Name:     req.Name,
+		Phone:    req.Phone,
+		Address1: req.Address1,
+		City:     req.City,
+		State:    req.State,
+		Zip:      req.Zip,
+		Country:  country,
+		Segment:  segment,
+		Origin:   req.Origin,
+	}
+}
+
+func shippingLookupError(err error) *ShippingLookupError {
+	var appErr *apierror.AppError
+	if errors.As(err, &appErr) && appErr != nil {
+		details, _ := appErr.Details.(map[string]string)
+		return &ShippingLookupError{
+			Code:    appErr.Code,
+			Message: appErr.Message,
+			Details: details,
+		}
+	}
+	return &ShippingLookupError{
+		Code:    shipping.CodeCarrierUnavailable,
+		Message: "ShipStation is unavailable. Try again.",
+	}
+}
+
+func addressValidationEnvelope(errs map[string]string) (code, message string) {
+	type fieldCode struct {
+		key  string
+		code string
+	}
+	order := []fieldCode{
+		{key: "zip", code: shipping.CodeAddressZipInvalid},
+		{key: "city", code: shipping.CodeAddressCityMismatch},
+		{key: "state", code: shipping.CodeAddressStateMismatch},
+	}
+	var codes []string
+	var messages []string
+	for _, item := range order {
+		if msg := strings.TrimSpace(errs[item.key]); msg != "" {
+			codes = append(codes, item.code)
+			messages = append(messages, msg)
+		}
+	}
+	if len(messages) == 0 {
+		return "validation_error", "Address validation failed"
+	}
+	if len(codes) == 1 {
+		return codes[0], messages[0]
+	}
+	return "validation_error", strings.Join(messages, " ")
 }
 
 func (h *Handler) matchSummaryRate(rates []ShippingRateDTO, shippingMethod string) *ShippingRateDTO {
@@ -547,11 +604,12 @@ func (h *Handler) ValidateAddress(c *fiber.Ctx) error {
 
 	errs := h.checkoutService.ValidateAddress(c.Context(), req)
 	if len(errs) > 0 {
+		code, message := addressValidationEnvelope(errs)
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(response.Envelope{
 			Status:  "error",
-			Message: "Address validation failed",
+			Message: message,
 			Error: &response.ErrorBlock{
-				Code:    "validation_error",
+				Code:    code,
 				Details: errs,
 			},
 		})

@@ -19,6 +19,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/product"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/settings"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/uszip"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/warehouse"
 )
@@ -482,19 +483,27 @@ func (s *service) ValidateAddress(ctx context.Context, req ValidateAddressReques
 		return nil
 	}
 
+	normalizedZip, zipOK := uszip.NormalizeUSZip(req.Zip)
 	zipDetails, err := s.store.GetUSZipCodeDetails(ctx, req.Zip)
-	if err != nil || zipDetails == nil {
-		return map[string]string{"zip": "Invalid US ZIP code"}
+	if err != nil || zipDetails == nil || !zipOK {
+		displayZip := strings.TrimSpace(req.Zip)
+		msg := fmt.Sprintf("ZIP %s is not a valid US ZIP.", displayZip)
+		return map[string]string{"zip": msg}
+	}
+	if normalizedZip == "" {
+		normalizedZip = zipDetails.ZipCode
 	}
 
 	errors := make(map[string]string)
 
 	if !strings.EqualFold(req.City, zipDetails.City) {
-		errors["city"] = "City does not match ZIP"
+		errors["city"] = fmt.Sprintf("City does not match ZIP %s. Expected %s.", normalizedZip, zipDetails.City)
+		errors["expected_city"] = zipDetails.City
 	}
 
 	if !strings.EqualFold(req.State, zipDetails.StateAbbr) && !strings.EqualFold(req.State, zipDetails.StateName) {
-		errors["state"] = "State does not match ZIP"
+		errors["state"] = fmt.Sprintf("State does not match ZIP %s. Expected %s.", normalizedZip, zipDetails.StateAbbr)
+		errors["expected_state"] = zipDetails.StateAbbr
 	}
 
 	if len(errors) > 0 {
@@ -645,14 +654,30 @@ func (s *service) calculateRatesForItems(ctx context.Context, items []cart.CartI
 		if qty < 1 {
 			qty = 1
 		}
-		units = append(units, shipping.PackableUnitFromCartItem(
+		unit := shipping.PackableUnitFromCartItem(
 			item.Weight, item.WeightUnit, item.Length, item.Width, item.Height, qty,
-		))
+		)
+		unit.SKU = item.Title
+		unit.ShopifyVariantID = item.VariantID
+		units = append(units, unit)
 	}
 
-	packages := shipping.BuildPackages(ctx, units)
+	nonLTL := 0
+	for _, item := range items {
+		if !item.IsLtl {
+			nonLTL++
+		}
+	}
+
+	packages, pkgErr := shipping.BuildPackages(ctx, units)
+	if pkgErr != nil {
+		return nil, shipping.ToAPIError(pkgErr)
+	}
 	if len(packages) == 0 {
-		return []ShippingRateDTO{}, nil
+		if nonLTL == 0 {
+			return []ShippingRateDTO{}, nil
+		}
+		return nil, shipping.ToAPIError(shipping.PackageEmpty())
 	}
 
 	originCode := warehouse.CodeEast
@@ -661,12 +686,12 @@ func (s *service) calculateRatesForItems(ctx context.Context, items []cart.CartI
 	}
 
 	if s.warehouseResolver == nil {
-		return nil, apierror.New(500, "shipping_rate_error", "Warehouse resolver not configured")
+		return nil, shipping.ToAPIError(shipping.WarehouseOrigin("Warehouse resolver not configured"))
 	}
 
 	origin, err := s.warehouseResolver.GetOrigin(ctx, originCode)
 	if err != nil {
-		return nil, apierror.New(500, "shipping_rate_error", "Failed to resolve warehouse origin")
+		return nil, shipping.ToAPIError(shipping.WarehouseOrigin("Failed to resolve warehouse origin"))
 	}
 
 	amount, currency, err := shipping.CalculateGroundRate(
@@ -696,7 +721,7 @@ func (s *service) calculateRatesForItems(ctx context.Context, items []cart.CartI
 		s.zipLookup,
 	)
 	if err != nil {
-		return nil, apierror.New(500, "shipping_rate_error", "Failed to fetch shipping rates from carriers")
+		return nil, shipping.ToAPIError(shipping.ClassifyCarrierFailure(err, shipping.MissingDimensionLabels(units)))
 	}
 
 	groundCode := s.groundServiceCode(originCode)
