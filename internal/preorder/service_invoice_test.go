@@ -573,6 +573,109 @@ func TestCreateGroupSecondPaymentInvoice_IncludesBatchHeadingInEmail(t *testing.
 	}
 }
 
+// draftEditingShopClient serves one existing draft and records draftOrderUpdate calls.
+type draftEditingShopClient struct {
+	recordingShopClient
+	draft        *shopify.DraftOrderDetail
+	updatedID    string
+	updatedInput shopify.DraftOrderInput
+	updateCalls  int
+}
+
+func (c *draftEditingShopClient) GetDraftOrder(context.Context, string) (*shopify.DraftOrderDetail, error) {
+	return c.draft, nil
+}
+
+func (c *draftEditingShopClient) UpdateDraftOrder(_ context.Context, id string, input shopify.DraftOrderInput, _ bool) (*shopify.DraftOrderResponse, error) {
+	c.updatedID = id
+	c.updatedInput = input
+	c.updateCalls++
+	return &shopify.DraftOrderResponse{ID: id, InvoiceUrl: c.draft.InvoiceURL}, nil
+}
+
+func groupDraft(status, shipmentID string) *shopify.DraftOrderDetail {
+	return &shopify.DraftOrderDetail{
+		ID:         "gid://shopify/DraftOrder/1",
+		Status:     status,
+		InvoiceURL: "https://example.com/invoice",
+		CustomAttributes: []shopify.AttributeInput{
+			{Key: "charge_type", Value: "pre_order_group_invoice"},
+			{Key: "shipment_id", Value: shipmentID},
+		},
+	}
+}
+
+func repricedGroupOptions() GroupInvoiceOptions {
+	return GroupInvoiceOptions{
+		CustomerEmail: "buyer@example.com",
+		OrderID:       "order-1",
+		ShipmentID:    "ship-1",
+		Lines: []GroupInvoiceLine{{
+			Title:           "Item",
+			Amount:          100,
+			OrderLineItemID: "line-1",
+			Quantity:        1,
+		}},
+		ShippingTitle:   "UPS Ground",
+		ShippingPrice:   71.68,
+		ShippingPrepaid: 228.32,
+	}
+}
+
+func TestUpdateGroupSecondPaymentInvoice_RewritesSameDraftAndKeepsLink(t *testing.T) {
+	shop := &draftEditingShopClient{draft: groupDraft("OPEN", "ship-1")}
+	emailSvc := &trackingEmailService{}
+	svc := &service{shopClient: shop, emailService: emailSvc}
+
+	res, err := svc.UpdateGroupSecondPaymentInvoice(context.Background(), "gid://shopify/DraftOrder/1", repricedGroupOptions())
+	if err != nil {
+		t.Fatalf("UpdateGroupSecondPaymentInvoice returned error: %v", err)
+	}
+
+	if shop.updateCalls != 1 || shop.updatedID != "gid://shopify/DraftOrder/1" {
+		t.Fatalf("expected one update of the existing draft, got %d on %q", shop.updateCalls, shop.updatedID)
+	}
+	if res.InvoiceURL != "https://example.com/invoice" {
+		t.Fatalf("payment link must stay the same, got %q", res.InvoiceURL)
+	}
+	var shippingLine *shopify.DraftOrderLineItem
+	for i := range shop.updatedInput.LineItems {
+		if shop.updatedInput.LineItems[i].OriginalUnitPrice == "71.68" {
+			shippingLine = &shop.updatedInput.LineItems[i]
+		}
+	}
+	if shippingLine == nil {
+		t.Fatalf("expected the re-priced shipping line, got %+v", shop.updatedInput.LineItems)
+	}
+	if emailSvc.invoiceSent {
+		t.Fatal("re-pricing must not email the customer")
+	}
+}
+
+func TestUpdateGroupSecondPaymentInvoice_CompletedDraftIsRefused(t *testing.T) {
+	shop := &draftEditingShopClient{draft: groupDraft("COMPLETED", "ship-1")}
+	svc := &service{shopClient: shop, emailService: noopEmailService{}}
+
+	if _, err := svc.UpdateGroupSecondPaymentInvoice(context.Background(), "gid://shopify/DraftOrder/1", repricedGroupOptions()); err == nil {
+		t.Fatal("expected a paid (completed) draft to be refused")
+	}
+	if shop.updateCalls != 0 {
+		t.Fatal("a completed draft must not be updated")
+	}
+}
+
+func TestUpdateGroupSecondPaymentInvoice_DraftOfAnotherGroupIsRefused(t *testing.T) {
+	shop := &draftEditingShopClient{draft: groupDraft("OPEN", "ship-other")}
+	svc := &service{shopClient: shop, emailService: noopEmailService{}}
+
+	if _, err := svc.UpdateGroupSecondPaymentInvoice(context.Background(), "gid://shopify/DraftOrder/1", repricedGroupOptions()); err == nil {
+		t.Fatal("expected a draft belonging to another group to be refused")
+	}
+	if shop.updateCalls != 0 {
+		t.Fatal("another group's draft must not be updated")
+	}
+}
+
 func TestCreateGroupSecondPaymentInvoice_UsesDistinctBillingAddress(t *testing.T) {
 	shop := &recordingShopClient{}
 	svc := &service{

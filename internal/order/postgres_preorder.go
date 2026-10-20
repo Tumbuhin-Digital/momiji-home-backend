@@ -278,6 +278,29 @@ func (s *PostgresStore) UpdatePreorderShippingByShipmentID(ctx context.Context, 
 		}).Error
 }
 
+// UpdateInvoicedPreorderShipping re-prices a group whose second payment invoice exists but
+// is unpaid. The prepayment share is rewritten with the price because the invoice was
+// rebuilt against it. The paid guard keeps a webhook that landed in the meantime from
+// being overwritten.
+func (s *PostgresStore) UpdateInvoicedPreorderShipping(ctx context.Context, shipmentID string, finalPrice float64, notes string, prepaidApplied float64) error {
+	res := s.db.WithContext(ctx).Model(&PreorderShipment{}).
+		Where("id = ? AND invoice_paid_at IS NULL", shipmentID).
+		Updates(map[string]interface{}{
+			"final_shipping_price": finalPrice,
+			"shipping_notes":       notes,
+			"credit_amount":        0,
+			"prepaid_applied":      prepaidApplied,
+			"updated_at":           time.Now(),
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrPreorderShipmentPaid
+	}
+	return nil
+}
+
 func (s *PostgresStore) MarkPreorderInvoiceSent(ctx context.Context, orderID string, sentAt time.Time) error {
 	return s.db.WithContext(ctx).Model(&PreorderShipment{}).
 		Where("order_id = ?", orderID).

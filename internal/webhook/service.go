@@ -672,7 +672,11 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 
 	if len(orderItems) == 0 {
 		if len(settlementIDsPaid) > 0 && settlementOrderID != "" {
-			return s.handleSettlementOnlyPayment(ctx, settlementOrderID)
+			if err := s.handleSettlementOnlyPayment(ctx, settlementOrderID); err != nil {
+				return err
+			}
+			s.fulfillBalanceOrder(ctx, shopifyOrderIDStr)
+			return nil
 		}
 		slog.InfoContext(ctx, "Webhook: No new valid items to create an order for", slog.String("shopify_order_id", shopifyOrderIDStr))
 		return nil
@@ -740,8 +744,16 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 
 	shopOrderID := fmt.Sprintf("%d", payload.OrderID)
 	o, err := s.orderStore.GetOrderByShopifyID(ctx, shopOrderID)
-	if err != nil || o == nil {
-		slog.ErrorContext(ctx, "Order not found for fulfillment", slog.String("shopify_order_id", shopOrderID))
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to look up order for fulfillment",
+			slog.String("shopify_order_id", shopOrderID),
+			slog.Any("error", err))
+		return nil
+	}
+	if o == nil {
+		// Expected for pre-order balance orders, which the app fulfills itself and does
+		// not track as orders of their own.
+		slog.InfoContext(ctx, "Fulfillment for an order the app does not track; skipping", slog.String("shopify_order_id", shopOrderID))
 		return nil
 	}
 
@@ -994,6 +1006,21 @@ func (s *service) HandleProductDelete(ctx context.Context, payload ShopifyProduc
 	slog.InfoContext(ctx, "product marked deleted from Shopify webhook",
 		slog.String("shopify_product_id", shopifyProductID))
 	return nil
+}
+
+// fulfillBalanceOrder closes out the Shopify order that collected a pre-order balance. Its
+// lines only take money: the goods ship and are tracked on the deposit order, so this ships
+// nothing and does not notify the customer. Failure is logged, not returned, because the
+// payment is already recorded and an admin can still mark the order fulfilled by hand.
+func (s *service) fulfillBalanceOrder(ctx context.Context, shopifyOrderID string) {
+	if s.shopClient == nil {
+		return
+	}
+	if err := s.shopClient.CreateFulfillment(ctx, shopifyOrderID); err != nil {
+		slog.WarnContext(ctx, "Webhook: could not mark pre-order balance order fulfilled",
+			slog.String("shopify_order_id", shopifyOrderID),
+			slog.Any("error", err))
+	}
 }
 
 func (s *service) handleSettlementOnlyPayment(ctx context.Context, orderID string) error {

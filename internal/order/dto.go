@@ -139,22 +139,25 @@ type OrderItemDetail struct {
 }
 
 type PreorderShipmentDTO struct {
-	ID                  string           `json:"id,omitempty"`
-	BatchID             *string          `json:"batch_id,omitempty"`
-	EstimatedShipping   *string          `json:"estimated_shipping,omitempty"`
-	FinalShippingPrice  *string          `json:"final_shipping_price,omitempty"`
-	PrepaidShipping     *string          `json:"prepaid_shipping,omitempty"`
-	ShippingNotes       *string          `json:"shipping_notes,omitempty"`
-	CreditAmount        *string          `json:"credit_amount,omitempty"`
-	TotalBoxes          int              `json:"total_boxes"`
-	TotalWeightLb       *string          `json:"total_weight_lb,omitempty"`
-	RateCalculatedAt    *string          `json:"rate_calculated_at,omitempty"`
-	InvoiceSentAt       *string          `json:"invoice_sent_at,omitempty"`
-	InvoiceURL          *string          `json:"invoice_url,omitempty"`
-	InvoicePaidAt       *string          `json:"invoice_paid_at,omitempty"`
-	ShopifyDraftOrderID *string          `json:"shopify_draft_order_id,omitempty"`
-	WarehouseOrigin     string           `json:"warehouse_origin,omitempty"`
-	Packing             []PackingItemDTO `json:"packing,omitempty"`
+	ID                 string  `json:"id,omitempty"`
+	BatchID            *string `json:"batch_id,omitempty"`
+	EstimatedShipping  *string `json:"estimated_shipping,omitempty"`
+	FinalShippingPrice *string `json:"final_shipping_price,omitempty"`
+	PrepaidShipping    *string `json:"prepaid_shipping,omitempty"`
+	// PrepaidShippingLimit is the most of the checkout prepayment this group could deduct
+	// at a higher final price; the shipping editor previews the invoice with it.
+	PrepaidShippingLimit *string          `json:"prepaid_shipping_limit,omitempty"`
+	ShippingNotes        *string          `json:"shipping_notes,omitempty"`
+	CreditAmount         *string          `json:"credit_amount,omitempty"`
+	TotalBoxes           int              `json:"total_boxes"`
+	TotalWeightLb        *string          `json:"total_weight_lb,omitempty"`
+	RateCalculatedAt     *string          `json:"rate_calculated_at,omitempty"`
+	InvoiceSentAt        *string          `json:"invoice_sent_at,omitempty"`
+	InvoiceURL           *string          `json:"invoice_url,omitempty"`
+	InvoicePaidAt        *string          `json:"invoice_paid_at,omitempty"`
+	ShopifyDraftOrderID  *string          `json:"shopify_draft_order_id,omitempty"`
+	WarehouseOrigin      string           `json:"warehouse_origin,omitempty"`
+	Packing              []PackingItemDTO `json:"packing,omitempty"`
 }
 
 type PackingItemDTO struct {

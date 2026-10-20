@@ -257,7 +257,7 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 			pageInfo { hasNextPage endCursor }
 			edges {
 			  node {
-				id title descriptionHtml status
+				id title handle vendor productType tags descriptionHtml status
 				images(first: 10) {
 				  edges {
 					node { id url altText }
@@ -295,10 +295,14 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 					} `json:"pageInfo"`
 					Edges []struct {
 						Node struct {
-							ID              string `json:"id"`
-							Title           string `json:"title"`
-							DescriptionHtml string `json:"descriptionHtml"`
-							Status          string `json:"status"`
+							ID              string   `json:"id"`
+							Title           string   `json:"title"`
+							Handle          string   `json:"handle"`
+							Vendor          string   `json:"vendor"`
+							ProductType     string   `json:"productType"`
+							Tags            []string `json:"tags"`
+							DescriptionHtml string   `json:"descriptionHtml"`
+							Status          string   `json:"status"`
 							Images          struct {
 								Edges []struct {
 									Node struct {
@@ -349,10 +353,17 @@ func (s *service) SyncFromShopify(ctx context.Context) error {
 		for _, pEdge := range res.Data.Products.Edges {
 			pNode := pEdge.Node
 			shopifyProductIDs[pNode.ID] = struct{}{}
+			// Every column in UpsertProduct's DoUpdates must be populated here,
+			// otherwise each sync overwrites it with an empty string.
 			product := &Product{
 				ShopifyID:   pNode.ID,
 				Title:       pNode.Title,
+				Handle:      pNode.Handle,
+				Vendor:      pNode.Vendor,
+				ProductType: pNode.ProductType,
+				Tags:        strings.Join(pNode.Tags, ", "),
 				Description: pNode.DescriptionHtml,
+				BodyHTML:    pNode.DescriptionHtml,
 				Status:      strings.ToLower(pNode.Status),
 			}
 			if err := s.store.UpsertProduct(ctx, product); err != nil {

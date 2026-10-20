@@ -89,3 +89,69 @@ func AllocatePrepaidShipping(shipments []PreorderShipment) map[string]float64 {
 
 	return out
 }
+
+// PrepaidShippingLimits is the most of the checkout prepayment each group could deduct if
+// its final shipping price were high enough — AllocatePrepaidShipping's figure before the
+// cap at the group's own price. The shipping editor previews the invoice with it: a price
+// change moves the deduction anywhere between 0 and this limit, so previewing with the
+// capped allocation would show the wrong amount whenever the price goes up.
+//
+// A paid group is fixed at what it consumed. A group invoiced but not yet paid can still be
+// re-priced, so it may reclaim its own share plus whatever no other group has consumed.
+func PrepaidShippingLimits(shipments []PreorderShipment) map[string]float64 {
+	out := make(map[string]float64, len(shipments))
+
+	pool := PrepaidShippingPool(shipments)
+	consumed := prepaidShippingConsumed(shipments)
+	available := round2(pool - consumed)
+	if available < 0 {
+		available = 0
+	}
+
+	for i := range shipments {
+		sh := &shipments[i]
+
+		if sh.InvoicePaidAt != nil {
+			out[sh.ID] = round2(sh.PrepaidApplied)
+			continue
+		}
+
+		if sh.PrepaidApplied > 0 || sh.InvoiceSentAt != nil {
+			limit := round2(pool - (consumed - sh.PrepaidApplied))
+			if limit < 0 {
+				limit = 0
+			}
+			out[sh.ID] = limit
+			continue
+		}
+
+		// Mirrors AllocatePrepaidShipping so later groups see the same remaining pool.
+		out[sh.ID] = available
+		if sh.FinalShippingPrice != nil {
+			deduct := available
+			if final := round2(*sh.FinalShippingPrice); final < deduct {
+				deduct = final
+			}
+			if deduct > 0 {
+				available = round2(available - deduct)
+			}
+		}
+	}
+
+	return out
+}
+
+// RepricedPrepaidApplied is how much of the prepayment an invoiced but unpaid group
+// consumes once its final shipping price changes to finalPrice. The group gives up its old
+// share and takes again from what the other groups left, so the total handed out still
+// never exceeds what the customer paid.
+func RepricedPrepaidApplied(shipments []PreorderShipment, shipmentID string, finalPrice float64) float64 {
+	applied := PrepaidShippingLimits(shipments)[shipmentID]
+	if final := round2(finalPrice); final < applied {
+		applied = final
+	}
+	if applied < 0 {
+		return 0
+	}
+	return applied
+}

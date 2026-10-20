@@ -313,6 +313,8 @@ func (s *service) CreatePreorderFulfillment(ctx context.Context, userID, orderID
 		_ = s.store.UpdateOrderItemTracking(ctx, ri.LineItemID, trackingNum, trackingURLPtr, carrierPtr, "Package shipped", "shipped", fulfillmentStep, &now)
 	}
 
+	s.fulfillPreorderShippingDeposit(ctx, orderID, *o.ShopifyOrderID)
+
 	if req.NotifyCustomer {
 		go func() {
 			bgCtx := context.Background()
@@ -330,6 +332,73 @@ func (s *service) CreatePreorderFulfillment(ctx context.Context, userID, orderID
 	}
 
 	return s.fulfillmentToDTO(ctx, o, f, flis, itemMap)
+}
+
+// preorderShippingDepositChargeType marks the checkout line that collects the upfront 50%
+// of pre-order shipping (checkout.buildPreOrderShippingDepositLine).
+const preorderShippingDepositChargeType = "pre_order_shipping_deposit"
+
+// fulfillPreorderShippingDeposit closes the deposit order's upfront-shipping line once
+// pre-order goods ship. The line is money, not goods, but Shopify still counts it as
+// unfulfilled, so without this the order would stay "Partially fulfilled" for good. It
+// carries no tracking and emails no one. Failures are only logged: the shipment itself is
+// already recorded, and an admin can still mark the line fulfilled by hand.
+func (s *service) fulfillPreorderShippingDeposit(ctx context.Context, orderID, shopifyOrderID string) {
+	if s.shopClient == nil {
+		return
+	}
+	fos, err := s.shopClient.FetchFulfillmentOrders(ctx, shopifyOrderID)
+	if err != nil {
+		slog.WarnContext(ctx, "could not load fulfillment orders to close the pre-order shipping deposit line",
+			slog.String("order_id", orderID),
+			slog.Any("error", err))
+		return
+	}
+	// One call per fulfillment order: a single fulfillment cannot span locations.
+	for _, lines := range openShippingDepositLines(fos) {
+		if _, err := s.shopClient.CreateFulfillmentV2(ctx, shopify.CreateFulfillmentV2Input{
+			LineItemsByFulfillmentOrder: []shopify.FulfillmentV2LineItemInput{lines},
+		}); err != nil {
+			slog.WarnContext(ctx, "could not fulfill the pre-order shipping deposit line",
+				slog.String("order_id", orderID),
+				slog.String("fulfillment_order_id", lines.FulfillmentOrderID),
+				slog.Any("error", err))
+		}
+	}
+}
+
+// openShippingDepositLines returns, per fulfillable fulfillment order, the upfront
+// pre-order shipping lines that still have quantity left to fulfill.
+func openShippingDepositLines(fos []shopify.FulfillmentOrderData) []shopify.FulfillmentV2LineItemInput {
+	var out []shopify.FulfillmentV2LineItemInput
+	for _, fo := range fos {
+		if fo.Status != "OPEN" && fo.Status != "IN_PROGRESS" {
+			continue
+		}
+		in := shopify.FulfillmentV2LineItemInput{FulfillmentOrderID: fo.ID}
+		for _, li := range fo.LineItems {
+			if li.RemainingQuantity <= 0 || !hasChargeType(li.CustomAttributes, preorderShippingDepositChargeType) {
+				continue
+			}
+			in.FulfillmentOrderLineItems = append(in.FulfillmentOrderLineItems, struct {
+				ID       string
+				Quantity int
+			}{ID: li.ID, Quantity: li.RemainingQuantity})
+		}
+		if len(in.FulfillmentOrderLineItems) > 0 {
+			out = append(out, in)
+		}
+	}
+	return out
+}
+
+func hasChargeType(attrs []shopify.AttributeInput, chargeType string) bool {
+	for _, attr := range attrs {
+		if attr.Key == "charge_type" && attr.Value == chargeType {
+			return true
+		}
+	}
+	return false
 }
 
 // pickBestFOLIByLineItem keeps the FOLI with the highest remaining quantity per line.

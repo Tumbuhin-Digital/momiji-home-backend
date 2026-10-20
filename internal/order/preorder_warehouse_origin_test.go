@@ -79,7 +79,7 @@ func (s *updateShippingWarehouseStore) GetPreorderShipmentByBatch(_ context.Cont
 
 func (s *updateShippingWarehouseStore) GetVariantDimensions(context.Context, []string) (map[string]VariantDimensions, error) {
 	return map[string]VariantDimensions{
-		"var-1": {ShopifyVariantID: "var-1", WeightKg: 5, WidthCm: 40, HeightCm: 20, DepthCm: 30},
+		"var-1": {ShopifyVariantID: "var-1", SKU: "MU-RATTAN-01", WeightKg: 5, WidthCm: 40, HeightCm: 20, DepthCm: 30},
 	}, nil
 }
 
@@ -102,6 +102,20 @@ func (s *updateShippingWarehouseStore) UpdatePreorderShippingByShipmentID(_ cont
 		s.shipment.FinalShippingPrice = &finalPrice
 		s.shipment.ShippingNotes = &notes
 		s.shipment.CreditAmount = creditAmount
+	}
+	return nil
+}
+
+func (s *updateShippingWarehouseStore) UpdateInvoicedPreorderShipping(_ context.Context, shipmentID string, finalPrice float64, notes string, prepaidApplied float64) error {
+	if s.shipment != nil {
+		if s.shipment.InvoicePaidAt != nil {
+			return ErrPreorderShipmentPaid
+		}
+		s.shipment.ID = shipmentID
+		s.shipment.FinalShippingPrice = &finalPrice
+		s.shipment.ShippingNotes = &notes
+		s.shipment.CreditAmount = 0
+		s.shipment.PrepaidApplied = prepaidApplied
 	}
 	return nil
 }

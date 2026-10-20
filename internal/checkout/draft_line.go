@@ -31,8 +31,12 @@ func buildPreOrderDraftLine(item cart.CartItem) shopify.DraftOrderLineItem {
 	deposit := unitPrice * 0.5
 	requiresShipping := false
 
+	// The "(Deposit 50%)" suffix is stripped back off by the settlement invoice and the
+	// order-confirmed page, so keep that exact wording. The line is identified as a
+	// pre-order by its "type" attribute, never by its title.
 	draftLine := shopify.DraftOrderLineItem{
-		Title:             fmt.Sprintf("[PREORDER] %s (Deposit 50%%)", item.Title),
+		Title:             fmt.Sprintf("%s (Deposit 50%%)", item.Title),
+		SKU:               item.SKU,
 		Quantity:          item.Quantity,
 		OriginalUnitPrice: fmt.Sprintf("%.2f", deposit),
 		RequiresShipping:  &requiresShipping,
@@ -70,6 +74,15 @@ func buildPreOrderShippingDepositLine(amount float64) shopify.DraftOrderLineItem
 			{Key: "charge_type", Value: "pre_order_shipping_deposit"},
 		},
 	}
+}
+
+// preorderDepositTags tags a checkout draft that collects a pre-order deposit, so the
+// resulting Shopify order can be told apart from the later order for the balance.
+func preorderDepositTags(preOrder []cart.CartItem) []string {
+	if len(preOrder) == 0 {
+		return nil
+	}
+	return []string{shopify.TagPreorderDeposit}
 }
 
 func buildDraftLinesFromSegments(shipReady, preOrder []cart.CartItem) []shopify.DraftOrderLineItem {

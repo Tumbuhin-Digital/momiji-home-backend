@@ -1,6 +1,13 @@
 package order
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+// ErrPreorderShipmentPaid reports that a group's second payment was settled before a
+// change to its invoice could be saved.
+var ErrPreorderShipmentPaid = errors.New("preorder shipment invoice already paid")
 
 // PreorderShipment stores pre-order fulfillment shipping state per order group.
 // BatchID nil means the unbatched (regular) pre-order group.

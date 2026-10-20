@@ -112,6 +112,9 @@ func (s *fulfillmentTestStore) UpdatePreorderShipping(context.Context, string, f
 func (s *fulfillmentTestStore) UpdatePreorderShippingByShipmentID(context.Context, string, float64, string, float64) error {
 	return nil
 }
+func (s *fulfillmentTestStore) UpdateInvoicedPreorderShipping(context.Context, string, float64, string, float64) error {
+	return nil
+}
 func (s *fulfillmentTestStore) MarkPreorderInvoiceSent(context.Context, string, time.Time) error {
 	return nil
 }

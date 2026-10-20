@@ -27,6 +27,19 @@ func TestBuildPackages_MissingWeight(t *testing.T) {
 	}
 }
 
+func TestBuildPackages_MissingWeightNamesProduct(t *testing.T) {
+	_, err := shipping.BuildPackages(context.Background(), []shipping.PackableUnit{
+		{ProductName: "Oak Bookshelf", SKU: "SHELF-1", LineItemID: "line-1", WeightKg: 0, BoxCount: 1},
+	})
+	var rateErr *shipping.RateError
+	if !errors.As(err, &rateErr) {
+		t.Fatalf("expected rate error, got %v", err)
+	}
+	if rateErr.Message != "Package weight is missing for Oak Bookshelf." {
+		t.Fatalf("message = %q", rateErr.Message)
+	}
+}
+
 func TestCalculateGroundRate_IncompleteAddress(t *testing.T) {
 	client := &mockShipStationClient{}
 	_, _, err := shipping.CalculateGroundRate(

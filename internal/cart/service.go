@@ -135,6 +135,9 @@ func (s *service) GetCartResponse(ctx context.Context, userID, sessionID *string
 			Height:            variant.HeightCm,
 			IsLtl:             variant.IsLtl,
 		}
+		if variant.SKU != nil {
+			cItem.SKU = strings.TrimSpace(*variant.SKU)
+		}
 		if variant.PreorderBatchLabel != nil {
 			cItem.PreorderBatchLabel = strings.TrimSpace(*variant.PreorderBatchLabel)
 		}

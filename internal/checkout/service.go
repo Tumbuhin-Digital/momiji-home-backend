@@ -187,6 +187,7 @@ func (s *service) InitiateCheckout(ctx context.Context, userID, sessionID *strin
 
 	draftInput := shopify.DraftOrderInput{
 		LineItems: draftLines,
+		Tags:      preorderDepositTags(preOrderItems),
 	}
 
 	if req.Email != "" {

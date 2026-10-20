@@ -21,6 +21,8 @@ type FulfillmentOrderLineItemData struct {
 	LineItemTitle     string
 	TotalQuantity     int
 	RemainingQuantity int
+	// CustomAttributes are the order line's attributes, e.g. charge_type on custom lines.
+	CustomAttributes []AttributeInput
 }
 
 // FulfillmentV2LineItemInput maps a FOLI to a quantity for fulfillmentCreateV2.
@@ -75,6 +77,10 @@ func (c *clientImpl) FetchFulfillmentOrders(ctx context.Context, shopifyOrderID 
 						  variant {
 							id
 						  }
+						  customAttributes {
+							key
+							value
+						  }
 						}
 					  }
 					}
@@ -114,6 +120,7 @@ func (c *clientImpl) FetchFulfillmentOrders(ctx context.Context, shopifyOrderID 
 											Variant struct {
 												ID string `json:"id"`
 											} `json:"variant"`
+											CustomAttributes []AttributeInput `json:"customAttributes"`
 										} `json:"lineItem"`
 									} `json:"node"`
 								} `json:"edges"`
@@ -145,6 +152,7 @@ func (c *clientImpl) FetchFulfillmentOrders(ctx context.Context, shopifyOrderID 
 				LineItemTitle:     liEdge.Node.LineItem.Title,
 				TotalQuantity:     liEdge.Node.TotalQuantity,
 				RemainingQuantity: liEdge.Node.RemainingQuantity,
+				CustomAttributes:  liEdge.Node.LineItem.CustomAttributes,
 			})
 		}
 		result = append(result, fo)

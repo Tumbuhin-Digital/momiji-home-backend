@@ -1,10 +1,12 @@
 package order_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/order"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 )
 
 func dims(weight float64) map[string]order.VariantDimensions {
@@ -99,6 +101,26 @@ func TestBuildPackableUnits_NestedOnlyNoBoxes(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "line-1") {
 		t.Fatalf("expected nested line_item_id in error, got: %v", err)
+	}
+}
+
+func TestBuildPackableUnits_MissingWeightErrorNamesProduct(t *testing.T) {
+	title := "Oak Bookshelf"
+	itemMap := map[string]order.OrderItem{
+		"line-1": {ID: "line-1", ShopifyVariantID: "var-missing", Quantity: 1, Title: &title},
+	}
+	packing := []order.PackingItemDTO{{LineItemID: "line-1", BoxCount: 1, IsNested: false}}
+
+	units, err := order.BuildPackableUnits("order-1", packing, itemMap, dims(5))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = shipping.BuildPackages(context.Background(), units)
+	if err == nil {
+		t.Fatal("expected missing weight error")
+	}
+	if !strings.Contains(err.Error(), "Oak Bookshelf") || strings.Contains(err.Error(), "line-1") {
+		t.Fatalf("expected product name instead of line item id, got: %v", err)
 	}
 }
 

@@ -160,6 +160,7 @@ func BuildPackableUnits(orderID string, packing []PackingItemDTO, itemMap map[st
 			HeightCm:         d.HeightCm * float64(perBox),
 			DepthCm:          d.DepthCm,
 			BoxCount:         p.BoxCount,
+			ProductName:      derefStr(it.Title),
 			LineItemID:       p.LineItemID,
 			SKU:              d.SKU,
 			ShopifyVariantID: d.ShopifyVariantID,

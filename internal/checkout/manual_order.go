@@ -54,6 +54,7 @@ func (s *service) CreateManualOrder(ctx context.Context, req ManualOrderRequest)
 	draftInput := shopify.DraftOrderInput{
 		LineItems: draftLines,
 		Email:     req.Email,
+		Tags:      preorderDepositTags(preOrder),
 	}
 
 	slog.InfoContext(ctx, "Creating manual order draft",
@@ -303,6 +304,9 @@ func (s *service) UpdateDraftOrderItems(ctx context.Context, req UpdateDraftOrde
 		BillingAddress:   draftAddressInput(draft.BillingAddress),
 		CustomAttributes: append([]shopify.AttributeInput{}, draft.CustomAttributes...),
 		Note:             draft.Note,
+		// The edit may add or remove every pre-order line, so recompute the deposit tag
+		// while keeping tags an admin added to the draft.
+		Tags: shopify.ReplaceManagedTags(draft.Tags, preorderDepositTags(preOrder)...),
 	}
 
 	origin := draftAttr(draft.CustomAttributes, "preorder_warehouse_origin")
@@ -501,6 +505,9 @@ func (s *service) splitManualLineItems(ctx context.Context, lineItems []ManualOr
 			Length:            variant.LengthCm,
 			Width:             variant.WidthCm,
 			Height:            variant.HeightCm,
+		}
+		if variant.SKU != nil {
+			base.SKU = strings.TrimSpace(*variant.SKU)
 		}
 
 		var shipQty, preQty int

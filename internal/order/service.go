@@ -1,7 +1,6 @@
 package order
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -22,7 +21,6 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorderbatch"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/warehouse"
-	"github.com/xuri/excelize/v2"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -643,10 +641,7 @@ func (s *service) GetOrder(ctx context.Context, userID, orderID string) (*OrderR
 			if err != nil {
 				return nil, apierror.ErrInternal
 			}
-			shipmentDTO := s.toPreorderShipmentDTOWithAllocation(
-				shipment,
-				AllocatePrepaidShipping(allShipments),
-			)
+			shipmentDTO := s.toPreorderShipmentDTOWithAllocation(shipment, allShipments)
 			dto.PreorderShipment = &shipmentDTO
 		}
 	}
@@ -823,10 +818,7 @@ func (s *service) GetOrderByShopifyID(ctx context.Context, shopifyOrderID string
 			if err != nil {
 				return nil, apierror.ErrInternal
 			}
-			shipmentDTO := s.toPreorderShipmentDTOWithAllocation(
-				shipment,
-				AllocatePrepaidShipping(allShipments),
-			)
+			shipmentDTO := s.toPreorderShipmentDTOWithAllocation(shipment, allShipments)
 			dto.PreorderShipment = &shipmentDTO
 		}
 	}
@@ -1043,54 +1035,7 @@ func (s *service) ExportOrdersToExcel(ctx context.Context, query OrderQuery) ([]
 	if err != nil {
 		return nil, err
 	}
-
-	f := excelize.NewFile()
-	sheetName := "Sales Report"
-	f.SetSheetName("Sheet1", sheetName)
-
-	headers := []string{"Order ID", "Date", "Customer Name", "Customer Email", "Ship Ready Items", "Pre-Order Items", "Total Price", "Financial Status", "Fulfillment Status"}
-	for i, h := range headers {
-		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
-		f.SetCellValue(sheetName, cell, h)
-	}
-
-	for rowIdx, o := range orders {
-		shipReadyQty := 0
-		preOrderQty := 0
-		for _, item := range o.Items {
-			if item.Type == "ship_ready" {
-				shipReadyQty += item.Quantity
-			} else if item.Type == "pre_order" {
-				preOrderQty += item.Quantity
-			}
-		}
-
-		rowNum := rowIdx + 2
-		f.SetCellValue(sheetName, fmt.Sprintf("A%d", rowNum), o.OrderNumber)
-		f.SetCellValue(sheetName, fmt.Sprintf("B%d", rowNum), o.CreatedAt.Format("2006-01-02"))
-		if o.Customer != nil {
-			var fname, lname string
-			if o.Customer.FirstName != nil {
-				fname = *o.Customer.FirstName
-			}
-			if o.Customer.LastName != nil {
-				lname = *o.Customer.LastName
-			}
-			f.SetCellValue(sheetName, fmt.Sprintf("C%d", rowNum), fname+" "+lname)
-			f.SetCellValue(sheetName, fmt.Sprintf("D%d", rowNum), o.Customer.Email)
-		}
-		f.SetCellValue(sheetName, fmt.Sprintf("E%d", rowNum), shipReadyQty)
-		f.SetCellValue(sheetName, fmt.Sprintf("F%d", rowNum), preOrderQty)
-		f.SetCellValue(sheetName, fmt.Sprintf("G%d", rowNum), fmt.Sprintf("%.2f", o.TotalPrice))
-		f.SetCellValue(sheetName, fmt.Sprintf("H%d", rowNum), o.FinancialStatus)
-		f.SetCellValue(sheetName, fmt.Sprintf("I%d", rowNum), o.FulfillmentStatus)
-	}
-
-	var buf bytes.Buffer
-	if err := f.Write(&buf); err != nil {
-		return nil, fmt.Errorf("failed to write excel file: %w", err)
-	}
-	return buf.Bytes(), nil
+	return buildSalesReport(orders, query, time.Now())
 }
 
 func (s *service) GetOrderTracking(ctx context.Context, userID, orderID string) ([]shipstation.TrackingResponse, error) {

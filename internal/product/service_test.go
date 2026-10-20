@@ -97,6 +97,45 @@ func TestSyncFromShopify_Success(t *testing.T) {
 	}
 }
 
+func TestSyncFromShopify_MapsProductMetadata(t *testing.T) {
+	resp := map[string]interface{}{
+		"data": map[string]interface{}{
+			"products": map[string]interface{}{
+				"edges": []map[string]interface{}{
+					{"node": map[string]interface{}{
+						"id": "gid://shopify/Product/1", "title": "Petal Chair",
+						"handle": "petal-chair", "vendor": "MOMIJI", "productType": "Chair",
+						"tags":            []string{"rattan", "indoor"},
+						"descriptionHtml": "<p>Petal</p>", "status": "ACTIVE",
+						"variants": map[string]interface{}{"edges": []map[string]interface{}{}},
+					}},
+				},
+				"pageInfo": map[string]interface{}{"hasNextPage": false, "endCursor": ""},
+			},
+		},
+	}
+	body, _ := json.Marshal(resp)
+	store := product.NewMockProductStore()
+	svc := product.NewProductService(store, &product.MockShopifyClient{AdminGraphQLResponse: body}, preordercustomtext.NewMockService())
+
+	if err := svc.SyncFromShopify(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	p := store.Products["gid://shopify/Product/1"]
+	if p == nil {
+		t.Fatal("expected product to be upserted")
+	}
+	if p.Handle != "petal-chair" || p.Vendor != "MOMIJI" || p.ProductType != "Chair" {
+		t.Fatalf("expected handle/vendor/product_type to be synced, got %q/%q/%q", p.Handle, p.Vendor, p.ProductType)
+	}
+	if p.Tags != "rattan, indoor" {
+		t.Fatalf("expected tags %q, got %q", "rattan, indoor", p.Tags)
+	}
+	if p.BodyHTML != "<p>Petal</p>" {
+		t.Fatalf("expected body_html to be synced, got %q", p.BodyHTML)
+	}
+}
+
 func TestSyncFromShopify_ClientError(t *testing.T) {
 	store := product.NewMockProductStore()
 	mockClient := &product.MockShopifyClient{AdminGraphQLErr: errors.New("shopify timeout")}

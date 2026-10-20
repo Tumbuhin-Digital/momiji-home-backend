@@ -22,6 +22,7 @@ type PackableUnit struct {
 	BoxCount int
 
 	// Metadata for logging when fallbacks apply.
+	ProductName      string // shown to admins in package error messages
 	LineItemID       string
 	SKU              string
 	ShopifyVariantID string
@@ -114,6 +115,8 @@ func BuildPackages(ctx context.Context, packableUnits []PackableUnit) ([]shipsta
 
 func unitLabel(unit PackableUnit) string {
 	switch {
+	case strings.TrimSpace(unit.ProductName) != "":
+		return strings.TrimSpace(unit.ProductName)
 	case strings.TrimSpace(unit.SKU) != "":
 		return strings.TrimSpace(unit.SKU)
 	case strings.TrimSpace(unit.LineItemID) != "":

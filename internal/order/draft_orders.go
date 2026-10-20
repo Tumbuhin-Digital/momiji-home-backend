@@ -125,7 +125,7 @@ func draftAddressDTO(addr *shopify.DraftOrderAddress) *AddressDTO {
 
 func draftLineKind(line shopify.DraftOrderLine) string {
 	for _, attr := range line.CustomAttributes {
-		if attr.Key == "charge_type" && attr.Value == "pre_order_shipping_deposit" {
+		if attr.Key == "charge_type" && attr.Value == preorderShippingDepositChargeType {
 			return "shipping_deposit"
 		}
 		if attr.Key == "type" && attr.Value == "preorder_dp" {

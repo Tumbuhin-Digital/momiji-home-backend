@@ -95,6 +95,7 @@ type DraftOrderInput struct {
 	ShippingLine     *ShippingLineInput   `json:"shippingLine,omitempty"`
 	CustomAttributes []AttributeInput     `json:"customAttributes,omitempty"`
 	Note             string               `json:"note,omitempty"`
+	Tags             []string             `json:"tags,omitempty"`
 	TaxExempt        bool                 `json:"taxExempt"`
 }
 
@@ -127,6 +128,7 @@ func NewShippingLineInput(title, price, currencyCode string) *ShippingLineInput 
 type DraftOrderLineItem struct {
 	VariantID         string                          `json:"variantId,omitempty"`
 	Title             string                          `json:"title,omitempty"`
+	SKU               string                          `json:"sku,omitempty"` // custom lines only (ignored with VariantID); display data, never moves stock
 	OriginalUnitPrice string                          `json:"originalUnitPrice,omitempty"`
 	PriceOverride     *MoneyInput                     `json:"priceOverride,omitempty"`
 	Quantity          int                             `json:"quantity"`
@@ -217,6 +219,11 @@ func (c *clientImpl) UpdateDraftOrder(ctx context.Context, id string, input Draf
 	}
 	if clearShippingLine {
 		inputMap["shippingLine"] = nil
+	}
+	// A non-nil empty tag list must still be sent so the update clears the draft's tags;
+	// nil means "leave the tags as they are".
+	if input.Tags != nil {
+		inputMap["tags"] = input.Tags
 	}
 
 	query := `
@@ -525,6 +532,7 @@ type DraftOrderDetail struct {
 	ShippingTitle    string
 	ShippingAmount   string
 	OrderName        string
+	Tags             []string
 	CustomAttributes []AttributeInput
 	ShippingAddress  *DraftOrderAddress
 	BillingAddress   *DraftOrderAddress
@@ -543,6 +551,7 @@ func (c *clientImpl) GetDraftOrder(ctx context.Context, id string) (*DraftOrderD
 		    invoiceUrl
 		    createdAt
 		    note2
+		    tags
 		    customAttributes { key value }
 		    shippingAddress {
 		      firstName lastName company address1 address2 city province country zip phone
@@ -648,6 +657,7 @@ type draftOrderNode struct {
 	InvoiceURL       string                 `json:"invoiceUrl"`
 	CreatedAt        string                 `json:"createdAt"`
 	Note             string                 `json:"note2"`
+	Tags             []string               `json:"tags"`
 	CustomAttributes []AttributeInput       `json:"customAttributes"`
 	ShippingAddress  *draftOrderAddressNode `json:"shippingAddress"`
 	BillingAddress   *draftOrderAddressNode `json:"billingAddress"`
@@ -710,6 +720,7 @@ func mapDraftOrderNode(node *draftOrderNode) *DraftOrderDetail {
 		InvoiceURL:       node.InvoiceURL,
 		CreatedAt:        node.CreatedAt,
 		Note:             node.Note,
+		Tags:             node.Tags,
 		CurrencyCode:     node.TotalPriceSet.ShopMoney.CurrencyCode,
 		Subtotal:         node.SubtotalPriceSet.ShopMoney.Amount,
 		TotalTax:         node.TotalTaxSet.ShopMoney.Amount,
@@ -1038,6 +1049,9 @@ func (c *clientImpl) CreateFulfillment(ctx context.Context, shopifyOrderID strin
 			`
 			mutVars := map[string]interface{}{
 				"fulfillment": map[string]interface{}{
+					// Shopify's default, made explicit: callers include pre-order balance
+					// orders, which ship nothing and must not email a shipping notice.
+					"notifyCustomer": false,
 					"lineItemsByFulfillmentOrder": []map[string]interface{}{
 						{
 							"fulfillmentOrderId": edge.Node.ID,

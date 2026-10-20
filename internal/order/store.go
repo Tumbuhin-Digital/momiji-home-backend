@@ -90,6 +90,7 @@ type Store interface {
 	UpsertPreorderShipment(ctx context.Context, shipment *PreorderShipment, packing []PreorderPackingItem) error
 	UpdatePreorderShipping(ctx context.Context, orderID string, finalPrice float64, notes string, creditAmount float64) error
 	UpdatePreorderShippingByShipmentID(ctx context.Context, shipmentID string, finalPrice float64, notes string, creditAmount float64) error
+	UpdateInvoicedPreorderShipping(ctx context.Context, shipmentID string, finalPrice float64, notes string, prepaidApplied float64) error
 	MarkPreorderInvoiceSent(ctx context.Context, orderID string, sentAt time.Time) error
 	MarkPreorderShipmentInvoiceSent(ctx context.Context, shipmentID string, draftOrderID, invoiceURL string, sentAt time.Time, prepaidApplied float64) error
 	MarkPreorderShipmentInvoicePaid(ctx context.Context, shipmentID string, paidAt time.Time) error

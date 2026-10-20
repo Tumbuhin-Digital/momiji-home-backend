@@ -18,6 +18,7 @@ type CartItem struct {
 	ID                string  `json:"id"`
 	VariantID         string  `json:"variant_id"`
 	Title             string  `json:"title"`
+	SKU               string  `json:"sku,omitempty"`
 	ImageSrc          string  `json:"image_src"`
 	Quantity          int     `json:"quantity"`
 	InventoryQuantity int     `json:"inventory_quantity"`

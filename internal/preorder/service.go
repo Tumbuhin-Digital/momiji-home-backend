@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,6 +36,7 @@ type InvoiceOptions struct {
 // GroupInvoiceLine is a prorated remaining-balance line for one order line slice.
 type GroupInvoiceLine struct {
 	Title           string
+	SKU             string // the product variant's SKU, shown on the Shopify line
 	Amount          float64
 	OrderLineItemID string
 	Quantity        int
@@ -54,6 +56,9 @@ type GroupInvoiceOptions struct {
 	Lines         []GroupInvoiceLine
 	ShippingTitle string
 	ShippingPrice float64
+	// DepositOrderNumber is the Shopify order number ("1323") of the deposit order this
+	// invoice settles; empty when unknown. It tags and notes the balance order.
+	DepositOrderNumber string
 	// ShippingPrepaid is the shipping half already collected at checkout. When > 0
 	// the shipping line is labelled as the remainder so the customer can reconcile it.
 	ShippingPrepaid float64
@@ -75,6 +80,7 @@ type PreorderService interface {
 	InvoiceSettlements(ctx context.Context, ids []string) ([]SettlementResponse, error)
 	InvoiceSettlementsWithShipping(ctx context.Context, ids []string, opts InvoiceOptions) ([]SettlementResponse, error)
 	CreateGroupSecondPaymentInvoice(ctx context.Context, opts GroupInvoiceOptions) (*GroupInvoiceResult, error)
+	UpdateGroupSecondPaymentInvoice(ctx context.Context, draftOrderID string, opts GroupInvoiceOptions) (*GroupInvoiceResult, error)
 	SendGroupSecondPaymentInvoiceEmail(ctx context.Context, opts GroupInvoiceOptions, paymentLink string) error
 	MarkSettlementsPaid(ctx context.Context, ids []string) ([]SettlementResponse, error)
 	ProcessReminders(ctx context.Context) error
@@ -225,7 +231,7 @@ func (s *service) InvoiceSettlementsWithShipping(ctx context.Context, ids []stri
 		})
 
 		lineItems = append(lineItems, shopify.DraftOrderLineItem{
-			Title:             fmt.Sprintf("Remaining Balance: %s", st.Title),
+			Title:             cleanPreorderDisplayTitle(st.Title) + " (Remaining 50%)",
 			OriginalUnitPrice: fmt.Sprintf("%.2f", st.BalanceAmount),
 			Quantity:          1,
 			CustomAttributes: []shopify.AttributeInput{
@@ -241,6 +247,7 @@ func (s *service) InvoiceSettlementsWithShipping(ctx context.Context, ids []stri
 		CustomAttributes: []shopify.AttributeInput{
 			shopify.WholesaleSourceAttribute,
 		},
+		Tags: []string{shopify.TagPreorderBalance},
 	}
 
 	if opts.ShippingAddress != nil {
@@ -341,29 +348,102 @@ func (s *service) InvoiceSettlementsWithShipping(ctx context.Context, ids []stri
 // CreateGroupSecondPaymentInvoice builds a Shopify draft for one pre-order group
 // using explicit prorated amounts. It does not change settlement status.
 func (s *service) CreateGroupSecondPaymentInvoice(ctx context.Context, opts GroupInvoiceOptions) (*GroupInvoiceResult, error) {
-	if opts.CustomerEmail == "" {
-		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Customer email is required")
-	}
-	if opts.ShipmentID == "" || opts.OrderID == "" {
-		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Shipment and order IDs are required")
-	}
-	if len(opts.Lines) == 0 && opts.ShippingPrice <= 0 {
-		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Invoice must include balance lines or shipping")
+	if err := validateGroupInvoiceOptions(opts); err != nil {
+		return nil, err
 	}
 
+	draftRes, err := s.shopClient.CreateDraftOrder(ctx, buildGroupInvoiceDraftInput(opts))
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to create shopify draft order for group invoice", "error", err)
+		return nil, apierror.New(http.StatusBadGateway, "shopify_draft_order_error", "Failed to create Shopify draft order for group invoice")
+	}
+	if draftRes == nil || draftRes.InvoiceUrl == "" {
+		return nil, apierror.New(http.StatusBadGateway, "shopify_draft_order_error", "Shopify draft order did not return an invoice URL")
+	}
+
+	return &GroupInvoiceResult{
+		DraftOrderID: draftRes.ID,
+		InvoiceURL:   draftRes.InvoiceUrl,
+	}, nil
+}
+
+// UpdateGroupSecondPaymentInvoice rewrites an unpaid group invoice in place, so the
+// payment link the customer may already hold keeps working and shows the new amounts.
+// A completed (paid) draft is refused: its order already exists and cannot be re-priced.
+func (s *service) UpdateGroupSecondPaymentInvoice(ctx context.Context, draftOrderID string, opts GroupInvoiceOptions) (*GroupInvoiceResult, error) {
+	draftOrderID = strings.TrimSpace(draftOrderID)
+	if draftOrderID == "" {
+		return nil, apierror.New(http.StatusBadRequest, "invalid_request", "Draft order ID is required")
+	}
+	if err := validateGroupInvoiceOptions(opts); err != nil {
+		return nil, err
+	}
+
+	draft, err := s.shopClient.GetDraftOrder(ctx, draftOrderID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to load shopify draft order for group invoice", "error", err, "draft_order_id", draftOrderID)
+		return nil, apierror.New(http.StatusBadGateway, "shopify_draft_order_error", "Failed to load the Shopify invoice for this group")
+	}
+	if draft == nil || !draftBelongsToShipment(draft, opts.ShipmentID) {
+		return nil, apierror.New(http.StatusConflict, "invalid_transition", "The Shopify invoice for this group could not be found")
+	}
+	if strings.EqualFold(draft.Status, "COMPLETED") {
+		return nil, apierror.New(http.StatusConflict, "invalid_transition", "This group's second payment has already been paid; shipping can no longer be changed")
+	}
+
+	input := buildGroupInvoiceDraftInput(opts)
+	input.Tags = shopify.ReplaceManagedTags(draft.Tags, input.Tags...)
+	draftRes, err := s.shopClient.UpdateDraftOrder(ctx, draftOrderID, input, false)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to update shopify draft order for group invoice", "error", err, "draft_order_id", draftOrderID)
+		return nil, apierror.New(http.StatusBadGateway, "shopify_draft_order_error", "Failed to update the Shopify invoice for this group")
+	}
+	if draftRes == nil {
+		return nil, apierror.New(http.StatusBadGateway, "shopify_draft_order_error", "Shopify did not return the updated invoice")
+	}
+
+	result := &GroupInvoiceResult{DraftOrderID: draftRes.ID, InvoiceURL: draftRes.InvoiceUrl}
+	if result.DraftOrderID == "" {
+		result.DraftOrderID = draftOrderID
+	}
+	if result.InvoiceURL == "" {
+		result.InvoiceURL = draft.InvoiceURL
+	}
+	return result, nil
+}
+
+func draftBelongsToShipment(draft *shopify.DraftOrderDetail, shipmentID string) bool {
+	for _, attr := range draft.CustomAttributes {
+		if attr.Key == "shipment_id" {
+			return attr.Value == shipmentID
+		}
+	}
+	return false
+}
+
+func validateGroupInvoiceOptions(opts GroupInvoiceOptions) error {
+	if opts.CustomerEmail == "" {
+		return apierror.New(http.StatusBadRequest, "invalid_request", "Customer email is required")
+	}
+	if opts.ShipmentID == "" || opts.OrderID == "" {
+		return apierror.New(http.StatusBadRequest, "invalid_request", "Shipment and order IDs are required")
+	}
+	if len(opts.Lines) == 0 && opts.ShippingPrice <= 0 {
+		return apierror.New(http.StatusBadRequest, "invalid_request", "Invoice must include balance lines or shipping")
+	}
+	return nil
+}
+
+func buildGroupInvoiceDraftInput(opts GroupInvoiceOptions) shopify.DraftOrderInput {
 	var lineItems []shopify.DraftOrderLineItem
 
 	for _, line := range opts.Lines {
 		if line.Amount <= 0 {
 			continue
 		}
-		displayTitle := cleanPreorderDisplayTitle(line.Title)
-		title := fmt.Sprintf("Remaining balance — %s", displayTitle)
-		if line.Quantity > 0 {
-			title = fmt.Sprintf("Remaining balance — %s (%d pcs)", displayTitle, line.Quantity)
-		}
 		lineItems = append(lineItems, shopify.DraftOrderLineItem{
-			Title:             title,
+			Title:             balanceLineTitle(line),
+			SKU:               strings.TrimSpace(line.SKU),
 			OriginalUnitPrice: fmt.Sprintf("%.2f", line.Amount),
 			Quantity:          1,
 			CustomAttributes: []shopify.AttributeInput{
@@ -384,6 +464,11 @@ func (s *service) CreateGroupSecondPaymentInvoice(ctx context.Context, opts Grou
 			{Key: "shipment_id", Value: opts.ShipmentID},
 			{Key: "original_order_id", Value: opts.OrderID},
 		},
+		Tags: []string{shopify.TagPreorderBalance},
+	}
+	if deposit := strings.TrimSpace(opts.DepositOrderNumber); deposit != "" {
+		draftInput.Tags = append(draftInput.Tags, shopify.DepositOrderTag(deposit))
+		draftInput.Note = fmt.Sprintf("Remaining 50%% balance for order #%s. Shipping and tracking are recorded on order #%s.", deposit, deposit)
 	}
 
 	if opts.ShippingAddress != nil {
@@ -415,19 +500,7 @@ func (s *service) CreateGroupSecondPaymentInvoice(ctx context.Context, opts Grou
 		}
 	}
 
-	draftRes, err := s.shopClient.CreateDraftOrder(ctx, draftInput)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to create shopify draft order for group invoice", "error", err)
-		return nil, apierror.New(http.StatusBadGateway, "shopify_draft_order_error", "Failed to create Shopify draft order for group invoice")
-	}
-	if draftRes == nil || draftRes.InvoiceUrl == "" {
-		return nil, apierror.New(http.StatusBadGateway, "shopify_draft_order_error", "Shopify draft order did not return an invoice URL")
-	}
-
-	return &GroupInvoiceResult{
-		DraftOrderID: draftRes.ID,
-		InvoiceURL:   draftRes.InvoiceUrl,
-	}, nil
+	return draftInput
 }
 
 func (s *service) SendGroupSecondPaymentInvoiceEmail(ctx context.Context, opts GroupInvoiceOptions, paymentLink string) error {
@@ -453,11 +526,7 @@ func groupInvoiceEmailData(opts GroupInvoiceOptions, paymentLink string) email.S
 			continue
 		}
 		totalBalance += line.Amount
-		displayTitle := cleanPreorderDisplayTitle(line.Title)
-		title := fmt.Sprintf("Remaining balance — %s", displayTitle)
-		if line.Quantity > 0 {
-			title = fmt.Sprintf("Remaining balance — %s (%d pcs)", displayTitle, line.Quantity)
-		}
+		title := balanceLineTitle(line)
 		emailTitles = append(emailTitles, title)
 		emailItems = append(emailItems, email.SettlementItemData{
 			Title:  title,
@@ -796,13 +865,31 @@ func remainingShippingLineTitle(method string, prepaid float64) string {
 	return title
 }
 
+// balanceLineTitle names a settlement line after the product, like a regular order line.
+// The line always bills quantity 1 (its amount is a prorated slice), so a multi-unit
+// slice states its unit count in the title instead.
+func balanceLineTitle(line GroupInvoiceLine) string {
+	title := cleanPreorderDisplayTitle(line.Title)
+	if line.Quantity > 1 {
+		return fmt.Sprintf("%s (Remaining 50%%, %d pcs)", title, line.Quantity)
+	}
+	return title + " (Remaining 50%)"
+}
+
+var (
+	preorderTitlePrefix = regexp.MustCompile(`(?i)^\[preorder\]\s*`)
+	depositTitleSuffix  = regexp.MustCompile(`(?i)\s*\((?:deposit|dp)\s*\d+%\)$`)
+)
+
+// cleanPreorderDisplayTitle recovers the product name from a stored deposit line title.
+// Deposit lines were titled "[PREORDER] Name (DP 50%)", then "[PREORDER] Name (Deposit 50%)",
+// and now "Name (Deposit 50%)"; all three reduce to "Name".
 func cleanPreorderDisplayTitle(title string) string {
-	title = strings.TrimSpace(title)
-	for _, prefix := range []string{"[PREORDER] ", "[PREORDER]", "[Preorder] ", "[preorder] "} {
-		if strings.HasPrefix(title, prefix) {
-			title = strings.TrimSpace(strings.TrimPrefix(title, prefix))
-			break
-		}
+	original := strings.TrimSpace(title)
+	title = preorderTitlePrefix.ReplaceAllString(original, "")
+	title = strings.TrimSpace(depositTitleSuffix.ReplaceAllString(title, ""))
+	if title == "" {
+		return original
 	}
 	return title
 }
