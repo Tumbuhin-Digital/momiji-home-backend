@@ -25,6 +25,11 @@ type fakeOrderEditor struct {
 	primary    *shopify.LocationRef
 	primaryErr error
 
+	// variant -> "Sell when out of stock" setting, changed by SetVariantsInventoryPolicy
+	policies     map[string]shopify.VariantInventoryPolicy
+	policySets   int
+	policySetErr error
+
 	discountPerLine   bool    // simulate Shopify applying a fixed discount to the whole line
 	shippingSurcharge float64 // simulate Shopify billing more shipping than asked
 	commitErr         error
@@ -35,6 +40,8 @@ type fakeOrderEditor struct {
 	linePrice   map[string]float64
 	shipping    map[string]float64
 	added       int
+
+	shippingTitle string // title of the last shipping line added
 
 	begun, commits, invoices, moves int
 	notified                        bool
@@ -102,6 +109,7 @@ func (e *fakeOrderEditor) AddOrderEditLineDiscount(_ context.Context, _ string, 
 func (e *fakeOrderEditor) AddOrderEditShippingLine(_ context.Context, _ string, title string, amount float64) (*shopify.CalculatedShippingLine, *shopify.CalculatedOrderTotals, error) {
 	id := "gid://shopify/CalculatedShippingLine/new"
 	e.shipping[id] = amount
+	e.shippingTitle = title
 	e.outstanding += amount + e.shippingSurcharge
 	return &shopify.CalculatedShippingLine{ID: id, Title: title, Price: amount}, e.totals(), nil
 }
@@ -117,6 +125,29 @@ func (e *fakeOrderEditor) CommitOrderEdit(_ context.Context, _ string, notify bo
 	e.notified = notify
 	e.applied = e.commitErr == nil || e.commitApplies
 	return e.commitErr
+}
+
+func (e *fakeOrderEditor) GetVariantInventoryPolicies(_ context.Context, variantIDs []string) (map[string]shopify.VariantInventoryPolicy, error) {
+	out := make(map[string]shopify.VariantInventoryPolicy)
+	for _, v := range variantIDs {
+		if p, ok := e.policies[v]; ok {
+			out[v] = p
+		}
+	}
+	return out, nil
+}
+
+func (e *fakeOrderEditor) SetVariantsInventoryPolicy(_ context.Context, _ string, variantIDs []string, policy string) error {
+	e.policySets++
+	if e.policySetErr != nil {
+		return e.policySetErr
+	}
+	for _, v := range variantIDs {
+		p := e.policies[v]
+		p.Policy = policy
+		e.policies[v] = p
+	}
+	return nil
 }
 
 func (e *fakeOrderEditor) GetPrimaryLocation(context.Context) (*shopify.LocationRef, error) {
@@ -150,6 +181,7 @@ type balanceEditStore struct {
 		lineID   string
 	}
 	statuses map[string]string
+	policies *memPolicyStore
 }
 
 func (s *balanceEditStore) GetPreorderShipments(context.Context, string) ([]PreorderShipment, error) {
@@ -160,13 +192,14 @@ func (s *balanceEditStore) GetVariantStockRefs(context.Context, []string) (map[s
 	return s.stock, nil
 }
 
-func (s *balanceEditStore) ClaimOrderEditBalance(_ context.Context, _ string, expected float64) (bool, error) {
+func (s *balanceEditStore) ClaimOrderEditBalance(_ context.Context, _ string, expected, folded float64) (bool, error) {
 	if s.shipment.BalanceMethod != nil || s.shipment.InvoiceSentAt != nil {
 		return false, nil
 	}
 	method := BalanceMethodOrderEdit
 	s.shipment.BalanceMethod = &method
 	s.shipment.BalanceExpectedOutstanding = &expected
+	s.shipment.BalanceShippingDepositFolded = folded
 	s.shipment.UpdatedAt = time.Now()
 	return true, nil
 }
@@ -175,6 +208,7 @@ func (s *balanceEditStore) ReleaseOrderEditBalanceClaim(context.Context, string)
 	s.released++
 	s.shipment.BalanceMethod = nil
 	s.shipment.BalanceExpectedOutstanding = nil
+	s.shipment.BalanceShippingDepositFolded = 0
 	return nil
 }
 
@@ -211,7 +245,7 @@ const (
 	testDepositLine     = "gid://shopify/LineItem/11"
 	testCalcDeposit     = "gid://shopify/CalculatedLineItem/11"
 	testNewProductLine  = "gid://shopify/LineItem/21"
-	testShippingTitle   = "Shipping & delivery - Remaining 50%"
+	testShippingTitle   = "Shipping & delivery"
 )
 
 // balanceEditFixture is the PRD example: 3 x After the Rain Shelf, deposit $175 each,
@@ -266,6 +300,9 @@ func balanceEditFixture() (*balanceEditStore, *fakeOrderEditor, *service) {
 		catalog:   map[string]float64{shelfVariant: 389},
 		inventory: map[string]shopify.InventoryAtLocation{"gid://shopify/InventoryItem/901": {Tracked: true, Available: 3}},
 		primary:   &shopify.LocationRef{ID: testDefaultLocation, Name: "Manymoons"},
+		policies: map[string]shopify.VariantInventoryPolicy{
+			shelfVariant: {ProductID: "gid://shopify/Product/77", Policy: shopify.InventoryPolicyDeny},
+		},
 	}
 	svc := &service{
 		store:           store,
@@ -295,13 +332,120 @@ func TestRequestSecondPaymentByOrderEdit_TakesStockAtTheShopifyDefaultLocation(t
 	}
 }
 
-func TestRequestSecondPaymentByOrderEdit_StockMessageNamesTheDefaultLocation(t *testing.T) {
-	_, editor, svc := balanceEditFixture()
-	editor.inventory["gid://shopify/InventoryItem/901"] = shopify.InventoryAtLocation{Tracked: true, Available: 0}
+// Short stock no longer blocks the balance: the admin is warned and Shopify stock goes negative.
+func TestRequestSecondPaymentByOrderEdit_ShortStockIsOnlyAWarning(t *testing.T) {
+	store, editor, svc := balanceEditFixture()
+	editor.inventory["gid://shopify/InventoryItem/901"] = shopify.InventoryAtLocation{Tracked: true, Available: 1}
 
-	_, err := svc.RequestSecondPayment(context.Background(), "", "order-1", RequestSecondPaymentRequest{})
-	if errCode(err) != "batch_stock_not_recorded" || !strings.Contains(err.Error(), "Manymoons") {
-		t.Fatalf("expected a stock error naming Manymoons, got %v", err)
+	resp, err := svc.RequestSecondPayment(context.Background(), "", "order-1", RequestSecondPaymentRequest{})
+	if err != nil {
+		t.Fatalf("short stock must not block the balance, got %v", err)
+	}
+	if resp.InvoiceURL == "" || editor.commits != 1 || store.completed == nil {
+		t.Fatalf("expected the balance billed as usual, got %+v (commits=%d)", resp, editor.commits)
+	}
+	if len(resp.StockWarnings) != 1 ||
+		!strings.Contains(resp.StockWarnings[0], "1 in stock at Manymoons") ||
+		!strings.Contains(resp.StockWarnings[0], "will be -2") {
+		t.Fatalf("expected one warning naming Manymoons and the negative stock, got %q", resp.StockWarnings)
+	}
+}
+
+func TestRequestSecondPaymentByOrderEdit_NoWarningWhenStockCovers(t *testing.T) {
+	_, _, svc := balanceEditFixture()
+
+	resp, err := svc.RequestSecondPayment(context.Background(), "", "order-1", RequestSecondPaymentRequest{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.StockWarnings) != 0 {
+		t.Fatalf("expected no warnings, got %q", resp.StockWarnings)
+	}
+}
+
+func TestRequestSecondPaymentByOrderEdit_UnlinkedVariantIsWarnedNotBlocked(t *testing.T) {
+	store, _, svc := balanceEditFixture()
+	store.stock = map[string]VariantStockRef{}
+
+	resp, err := svc.RequestSecondPayment(context.Background(), "", "order-1", RequestSecondPaymentRequest{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.StockWarnings) != 1 || !strings.Contains(resp.StockWarnings[0], "stock not checked") {
+		t.Fatalf("expected a 'stock not checked' warning, got %q", resp.StockWarnings)
+	}
+}
+
+// "Sell when out of stock" is turned on for a product that has it off, and recorded so the
+// app can turn it off again after payment.
+func TestRequestSecondPaymentByOrderEdit_TurnsSellWhenOutOfStockOn(t *testing.T) {
+	store, editor, svc := balanceEditFixture()
+
+	if _, err := svc.RequestSecondPayment(context.Background(), "", "order-1", RequestSecondPaymentRequest{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if editor.policies[shelfVariant].Policy != shopify.InventoryPolicyContinue || editor.policySets != 1 {
+		t.Fatalf("expected CONTINUE set once, got %+v (sets=%d)", editor.policies[shelfVariant], editor.policySets)
+	}
+	rows := store.policyStore().rows
+	if len(rows) != 1 || rows[0].ShipmentID != "ship-1" || rows[0].ShopifyVariantID != shelfVariant ||
+		rows[0].ShopifyProductID != "gid://shopify/Product/77" {
+		t.Fatalf("expected the variant recorded for ship-1, got %+v", rows)
+	}
+}
+
+// A product the admin already set to keep selling is left alone and never recorded, so the
+// app never turns it off.
+func TestRequestSecondPaymentByOrderEdit_LeavesAnAdminContinueAlone(t *testing.T) {
+	store, editor, svc := balanceEditFixture()
+	editor.policies[shelfVariant] = shopify.VariantInventoryPolicy{ProductID: "gid://shopify/Product/77", Policy: shopify.InventoryPolicyContinue}
+
+	if _, err := svc.RequestSecondPayment(context.Background(), "", "order-1", RequestSecondPaymentRequest{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if editor.policySets != 0 || len(store.policyStore().rows) != 0 {
+		t.Fatalf("expected no change and no record, got sets=%d rows=%+v", editor.policySets, store.policyStore().rows)
+	}
+}
+
+// A product the app already turned on for another open balance is shared: this group joins
+// the record so the setting stays on until both are paid.
+func TestRequestSecondPaymentByOrderEdit_JoinsAnotherBalancesContinue(t *testing.T) {
+	store, editor, svc := balanceEditFixture()
+	editor.policies[shelfVariant] = shopify.VariantInventoryPolicy{ProductID: "gid://shopify/Product/77", Policy: shopify.InventoryPolicyContinue}
+	store.policyStore().rows = []InventoryPolicyOverride{{ShipmentID: "ship-other", ShopifyVariantID: shelfVariant, ShopifyProductID: "gid://shopify/Product/77"}}
+
+	if _, err := svc.RequestSecondPayment(context.Background(), "", "order-1", RequestSecondPaymentRequest{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if editor.policySets != 0 {
+		t.Fatalf("CONTINUE is already on; expected no Shopify call, got %d", editor.policySets)
+	}
+	if rows := store.policyStore().rows; len(rows) != 2 || rows[1].ShipmentID != "ship-1" {
+		t.Fatalf("expected ship-1 to join the record, got %+v", rows)
+	}
+
+	// Paying the other balance must not turn it off while ship-1 still needs it.
+	ReleaseInventoryPolicies(context.Background(), store, editor, "ship-other")
+	if editor.policies[shelfVariant].Policy != shopify.InventoryPolicyContinue {
+		t.Fatal("CONTINUE must stay on while ship-1 is unpaid")
+	}
+	ReleaseInventoryPolicies(context.Background(), store, editor, "ship-1")
+	if editor.policies[shelfVariant].Policy != shopify.InventoryPolicyDeny {
+		t.Fatal("expected DENY once no balance needs it")
+	}
+}
+
+func TestRequestSecondPaymentByOrderEdit_PolicyFailureStillReturnsTheLink(t *testing.T) {
+	_, editor, svc := balanceEditFixture()
+	editor.policySetErr = errors.New("shopify down")
+
+	resp, err := svc.RequestSecondPayment(context.Background(), "", "order-1", RequestSecondPaymentRequest{})
+	if err != nil {
+		t.Fatalf("the balance is already on the order; expected the link, got %v", err)
+	}
+	if resp.InvoiceURL == "" || len(resp.StockWarnings) != 1 || !strings.Contains(resp.StockWarnings[0], "Sell when out of stock") {
+		t.Fatalf("expected the link and a warning, got %+v", resp)
 	}
 }
 
@@ -366,13 +510,6 @@ func TestRequestSecondPaymentByOrderEdit_RefusesBeforeTouchingShopify(t *testing
 		setup func(*balanceEditStore, *fakeOrderEditor)
 		code  string
 	}{
-		{
-			name: "batch stock not recorded",
-			setup: func(_ *balanceEditStore, e *fakeOrderEditor) {
-				e.inventory["gid://shopify/InventoryItem/901"] = shopify.InventoryAtLocation{Tracked: true, Available: 1}
-			},
-			code: "batch_stock_not_recorded",
-		},
 		{
 			name: "another group awaits payment",
 			setup: func(s *balanceEditStore, _ *fakeOrderEditor) {

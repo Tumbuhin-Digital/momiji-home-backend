@@ -11,17 +11,73 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 )
 
-// stateOnlyEditor answers balance-state lookups; any edit call would panic on the nil
-// embedded editor, proving reconciliation never edits an order.
+// stateOnlyEditor answers balance-state lookups and records "Sell when out of stock"
+// changes; any edit call would panic on the nil embedded editor, proving reconciliation
+// never edits an order.
 type stateOnlyEditor struct {
 	shopify.OrderEditor
-	state *shopify.OrderBalanceState
-	calls int
+	state    *shopify.OrderBalanceState
+	calls    int
+	policies map[string]string
 }
 
 func (e *stateOnlyEditor) GetOrderBalanceState(context.Context, string) (*shopify.OrderBalanceState, error) {
 	e.calls++
 	return e.state, nil
+}
+
+func (e *stateOnlyEditor) SetVariantsInventoryPolicy(_ context.Context, _ string, variantIDs []string, policy string) error {
+	if e.policies == nil {
+		e.policies = map[string]string{}
+	}
+	for _, v := range variantIDs {
+		e.policies[v] = policy
+	}
+	return nil
+}
+
+// policyReconcileStore adds the app's "Sell when out of stock" records to a reconcile store.
+type policyReconcileStore struct {
+	*reconcileBalanceStore
+	overrides []order.InventoryPolicyOverride
+}
+
+func (s *policyReconcileStore) ReleaseInventoryPolicyOverrides(_ context.Context, shipmentID string) error {
+	now := time.Now()
+	for i := range s.overrides {
+		if s.overrides[i].ShipmentID == shipmentID {
+			s.overrides[i].ReleasedAt = &now
+		}
+	}
+	return nil
+}
+
+func (s *policyReconcileStore) ListRestorableInventoryPolicyOverrides(context.Context) ([]order.InventoryPolicyOverride, error) {
+	open := map[string]bool{}
+	for _, r := range s.overrides {
+		if r.ReleasedAt == nil {
+			open[r.ShopifyVariantID] = true
+		}
+	}
+	var out []order.InventoryPolicyOverride
+	for _, r := range s.overrides {
+		if r.ReleasedAt != nil && r.RestoredAt == nil && !open[r.ShopifyVariantID] {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+func (s *policyReconcileStore) MarkInventoryPolicyOverridesRestored(_ context.Context, variantIDs []string) error {
+	now := time.Now()
+	for i := range s.overrides {
+		for _, v := range variantIDs {
+			if s.overrides[i].ShopifyVariantID == v && s.overrides[i].ReleasedAt != nil {
+				s.overrides[i].RestoredAt = &now
+			}
+		}
+	}
+	return nil
 }
 
 // reconcileBalanceStore is a deposit order whose balance was billed by an edit.
@@ -116,6 +172,42 @@ func TestReconcileOrderEditBalance_NoAwaitingGroupSkipsShopify(t *testing.T) {
 	}
 	if editor.calls != 0 {
 		t.Fatal("orders without an edited balance must not query Shopify")
+	}
+}
+
+// Once the balance is paid, "Sell when out of stock" goes back off for the variants the app
+// turned on, but stays on for one another unpaid balance still needs.
+func TestReconcileOrderEditBalance_PaidBalanceTurnsSellWhenOutOfStockOff(t *testing.T) {
+	base, _, editor, svc := balanceReconcileFixture(0)
+	store := &policyReconcileStore{reconcileBalanceStore: base, overrides: []order.InventoryPolicyOverride{
+		{ShipmentID: "ship-1", ShopifyVariantID: "gid://shopify/ProductVariant/501", ShopifyProductID: "gid://shopify/Product/77"},
+		{ShipmentID: "ship-1", ShopifyVariantID: "gid://shopify/ProductVariant/502", ShopifyProductID: "gid://shopify/Product/78"},
+		{ShipmentID: "ship-other", ShopifyVariantID: "gid://shopify/ProductVariant/502", ShopifyProductID: "gid://shopify/Product/78"},
+	}}
+	svc.orderStore = store
+
+	if err := svc.ReconcileOrderEditBalance(context.Background(), base.order); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if editor.policies["gid://shopify/ProductVariant/501"] != shopify.InventoryPolicyDeny {
+		t.Fatalf("expected 501 back to DENY, got %v", editor.policies)
+	}
+	if _, touched := editor.policies["gid://shopify/ProductVariant/502"]; touched {
+		t.Fatal("502 is still needed by another unpaid balance and must stay on")
+	}
+}
+
+func TestReconcileOrderEditBalance_UnpaidBalanceKeepsSellWhenOutOfStockOn(t *testing.T) {
+	base, _, editor, svc := balanceReconcileFixture(611.56)
+	svc.orderStore = &policyReconcileStore{reconcileBalanceStore: base, overrides: []order.InventoryPolicyOverride{
+		{ShipmentID: "ship-1", ShopifyVariantID: "gid://shopify/ProductVariant/501", ShopifyProductID: "gid://shopify/Product/77"},
+	}}
+
+	if err := svc.ReconcileOrderEditBalance(context.Background(), base.order); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(editor.policies) != 0 {
+		t.Fatalf("an unpaid balance must keep CONTINUE on, got %v", editor.policies)
 	}
 }
 

@@ -199,6 +199,9 @@ type RequestSecondPaymentRequest struct {
 type RequestSecondPaymentResponse struct {
 	InvoiceURL   string `json:"invoice_url"`
 	DraftOrderID string `json:"draft_order_id"`
+	// StockWarnings lists products whose Shopify stock this balance takes below zero, and any
+	// problem turning on "Sell when out of stock". They never block the request.
+	StockWarnings []string `json:"stock_warnings,omitempty"`
 }
 
 type FulfillmentGroupKind string

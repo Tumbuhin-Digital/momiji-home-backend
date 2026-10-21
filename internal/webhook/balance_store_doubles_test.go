@@ -13,7 +13,7 @@ func (s *fulfillmentTestStore) GetVariantStockRefs(context.Context, []string) (m
 	return map[string]order.VariantStockRef{}, nil
 }
 
-func (s *fulfillmentTestStore) ClaimOrderEditBalance(context.Context, string, float64) (bool, error) {
+func (s *fulfillmentTestStore) ClaimOrderEditBalance(context.Context, string, float64, float64) (bool, error) {
 	return true, nil
 }
 
@@ -35,4 +35,24 @@ func (s *fulfillmentTestStore) GetBalanceLinesByOrderID(context.Context, string)
 
 func (s *fulfillmentTestStore) ListAwaitingOrderEditBalances(context.Context) ([]order.PreorderShipment, error) {
 	return nil, nil
+}
+
+func (s *fulfillmentTestStore) AddInventoryPolicyOverrides(context.Context, []order.InventoryPolicyOverride) error {
+	return nil
+}
+
+func (s *fulfillmentTestStore) VariantsWithInventoryPolicyOverride(context.Context, []string, bool) (map[string]bool, error) {
+	return map[string]bool{}, nil
+}
+
+func (s *fulfillmentTestStore) ReleaseInventoryPolicyOverrides(context.Context, string) error {
+	return nil
+}
+
+func (s *fulfillmentTestStore) ListRestorableInventoryPolicyOverrides(context.Context) ([]order.InventoryPolicyOverride, error) {
+	return nil, nil
+}
+
+func (s *fulfillmentTestStore) MarkInventoryPolicyOverridesRestored(context.Context, []string) error {
+	return nil
 }

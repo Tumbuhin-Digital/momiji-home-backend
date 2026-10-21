@@ -42,8 +42,12 @@ type PreorderShipment struct {
 	BalanceExpectedOutstanding *float64 `gorm:"column:balance_expected_outstanding"`
 	// ShopifyShippingLineID is the shipping line the edit added for the remaining shipping.
 	ShopifyShippingLineID *string `gorm:"column:shopify_shipping_line_id"`
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
+	// BalanceShippingDepositFolded is the upfront "Shipping (Pre-Order) - 50%" line the edit
+	// removed and added back into ShopifyShippingLineID, which therefore shows the group's
+	// full shipping. Zero when the upfront line was kept.
+	BalanceShippingDepositFolded float64 `gorm:"column:balance_shipping_deposit_folded;not null;default:0"`
+	CreatedAt                    time.Time
+	UpdatedAt                    time.Time
 
 	PackingItems []PreorderPackingItem `gorm:"foreignKey:PreorderShipmentID"`
 }

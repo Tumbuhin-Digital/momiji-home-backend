@@ -906,6 +906,9 @@ func (s *service) CancelOrder(ctx context.Context, userID, orderID, fulfillmentT
 			}
 		}
 	}
+	if fulfillmentType == "pre_order" {
+		s.releaseInventoryPoliciesForOrder(ctx, orderID)
+	}
 
 	// Check if ALL items are cancelled, if so, cancel the whole order
 	allCancelled := true

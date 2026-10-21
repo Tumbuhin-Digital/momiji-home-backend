@@ -70,6 +70,8 @@ func (s *service) ReconcileOrderEditBalance(ctx context.Context, o *order.Order)
 		if err := s.orderStore.MarkPreorderShipmentInvoicePaid(ctx, sh.ID, now); err != nil {
 			return err
 		}
+		// Paid: "Sell when out of stock" goes back off unless another open balance needs it.
+		order.ReleaseInventoryPolicies(ctx, s.orderStore, s.orderEditor, sh.ID)
 	}
 	return s.handleSettlementOnlyPayment(ctx, o.ID)
 }
@@ -99,6 +101,8 @@ func (s *service) ReconcilePendingOrderEditBalances(ctx context.Context) error {
 			slog.WarnContext(ctx, "balance reconciliation failed", slog.String("order_id", sh.OrderID), slog.Any("error", err))
 		}
 	}
+	// Retry turning "Sell when out of stock" back off where an earlier attempt failed.
+	order.RestoreInventoryPolicies(ctx, s.orderStore, s.orderEditor)
 	return nil
 }
 

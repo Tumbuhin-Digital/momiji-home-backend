@@ -21,6 +21,8 @@ type OrderEditor interface {
 	RemoveOrderEditShippingLine(ctx context.Context, calculatedOrderID, shippingLineID string) (*CalculatedOrderTotals, error)
 	CommitOrderEdit(ctx context.Context, calculatedOrderID string, notifyCustomer bool, staffNote string) error
 	GetPrimaryLocation(ctx context.Context) (*LocationRef, error)
+	GetVariantInventoryPolicies(ctx context.Context, variantIDs []string) (map[string]VariantInventoryPolicy, error)
+	SetVariantsInventoryPolicy(ctx context.Context, productID string, variantIDs []string, policy string) error
 	GetInventoryAtLocation(ctx context.Context, inventoryItemIDs []string, locationID string) (map[string]InventoryAtLocation, error)
 	MoveFulfillmentOrderLines(ctx context.Context, fulfillmentOrderID, locationID string, lines []FulfillmentOrderLineQuantity) error
 	SendOrderInvoice(ctx context.Context, orderID string) error
@@ -90,6 +92,20 @@ type InventoryAtLocation struct {
 type LocationRef struct {
 	ID   string
 	Name string
+}
+
+// Inventory policies: whether a variant can be bought once its stock runs out
+// ("Sell when out of stock" in the Shopify admin).
+const (
+	InventoryPolicyContinue = "CONTINUE"
+	InventoryPolicyDeny     = "DENY"
+)
+
+// VariantInventoryPolicy is a variant's "Sell when out of stock" setting and its product,
+// which Shopify needs to change the setting.
+type VariantInventoryPolicy struct {
+	ProductID string
+	Policy    string
 }
 
 type FulfillmentOrderLineQuantity struct {
@@ -648,6 +664,66 @@ func LineItemGID(id int64) string {
 		return ""
 	}
 	return fmt.Sprintf("gid://shopify/LineItem/%d", id)
+}
+
+func (c *clientImpl) GetVariantInventoryPolicies(ctx context.Context, variantIDs []string) (map[string]VariantInventoryPolicy, error) {
+	out := make(map[string]VariantInventoryPolicy, len(variantIDs))
+	if len(variantIDs) == 0 {
+		return out, nil
+	}
+	query := `
+		query VariantInventoryPolicies($ids: [ID!]!) {
+		  nodes(ids: $ids) {
+		    ... on ProductVariant { id inventoryPolicy product { id } }
+		  }
+		}`
+	var data struct {
+		Nodes []*struct {
+			ID              string `json:"id"`
+			InventoryPolicy string `json:"inventoryPolicy"`
+			Product         *struct {
+				ID string `json:"id"`
+			} `json:"product"`
+		} `json:"nodes"`
+	}
+	if err := c.runAdminGraphQL(ctx, "variant inventory policies", query, map[string]interface{}{"ids": variantIDs}, &data); err != nil {
+		return nil, err
+	}
+	for _, n := range data.Nodes {
+		if n == nil || n.ID == "" || n.Product == nil {
+			continue
+		}
+		out[n.ID] = VariantInventoryPolicy{ProductID: n.Product.ID, Policy: n.InventoryPolicy}
+	}
+	return out, nil
+}
+
+// SetVariantsInventoryPolicy turns "Sell when out of stock" on (CONTINUE) or off (DENY) for
+// variants of one product.
+func (c *clientImpl) SetVariantsInventoryPolicy(ctx context.Context, productID string, variantIDs []string, policy string) error {
+	if len(variantIDs) == 0 {
+		return nil
+	}
+	query := `
+		mutation SetInventoryPolicy($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+		  productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+		    userErrors { field message }
+		  }
+		}`
+	variants := make([]map[string]interface{}, 0, len(variantIDs))
+	for _, id := range variantIDs {
+		variants = append(variants, map[string]interface{}{"id": id, "inventoryPolicy": policy})
+	}
+	var data struct {
+		ProductVariantsBulkUpdate struct {
+			UserErrors []userErrorNode `json:"userErrors"`
+		} `json:"productVariantsBulkUpdate"`
+	}
+	vars := map[string]interface{}{"productId": productID, "variants": variants}
+	if err := c.runAdminGraphQL(ctx, "set inventory policy", query, vars, &data); err != nil {
+		return err
+	}
+	return firstUserError("set inventory policy", data.ProductVariantsBulkUpdate.UserErrors)
 }
 
 var _ OrderEditor = (*clientImpl)(nil)

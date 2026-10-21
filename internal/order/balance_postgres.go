@@ -45,13 +45,14 @@ func (s *PostgresStore) GetVariantStockRefs(ctx context.Context, shopifyVariantI
 // ClaimOrderEditBalance marks a group as having a balance edit about to be committed. Only
 // a group with no invoice and no claim can be claimed, so two requests racing for the same
 // group cannot both commit an edit.
-func (s *PostgresStore) ClaimOrderEditBalance(ctx context.Context, shipmentID string, expectedOutstanding float64) (bool, error) {
+func (s *PostgresStore) ClaimOrderEditBalance(ctx context.Context, shipmentID string, expectedOutstanding, shippingDepositFolded float64) (bool, error) {
 	res := s.db.WithContext(ctx).Model(&PreorderShipment{}).
 		Where("id = ? AND invoice_sent_at IS NULL AND balance_method IS NULL", shipmentID).
 		Updates(map[string]interface{}{
-			"balance_method":               BalanceMethodOrderEdit,
-			"balance_expected_outstanding": expectedOutstanding,
-			"updated_at":                   time.Now(),
+			"balance_method":                  BalanceMethodOrderEdit,
+			"balance_expected_outstanding":    expectedOutstanding,
+			"balance_shipping_deposit_folded": shippingDepositFolded,
+			"updated_at":                      time.Now(),
 		})
 	if res.Error != nil {
 		return false, res.Error
@@ -64,9 +65,10 @@ func (s *PostgresStore) ReleaseOrderEditBalanceClaim(ctx context.Context, shipme
 	return s.db.WithContext(ctx).Model(&PreorderShipment{}).
 		Where("id = ? AND invoice_sent_at IS NULL AND balance_method = ?", shipmentID, BalanceMethodOrderEdit).
 		Updates(map[string]interface{}{
-			"balance_method":               nil,
-			"balance_expected_outstanding": nil,
-			"updated_at":                   time.Now(),
+			"balance_method":                  nil,
+			"balance_expected_outstanding":    nil,
+			"balance_shipping_deposit_folded": 0,
+			"updated_at":                      time.Now(),
 		}).Error
 }
 
@@ -131,6 +133,67 @@ func (s *PostgresStore) GetBalanceLinesByOrderID(ctx context.Context, orderID st
 		Order("preorder_balance_lines.created_at ASC").
 		Find(&lines).Error
 	return lines, err
+}
+
+func (s *PostgresStore) AddInventoryPolicyOverrides(ctx context.Context, rows []InventoryPolicyOverride) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "shipment_id"}, {Name: "shopify_variant_id"}},
+		DoNothing: true,
+	}).Create(&rows).Error
+}
+
+func (s *PostgresStore) VariantsWithInventoryPolicyOverride(ctx context.Context, variantIDs []string, openOnly bool) (map[string]bool, error) {
+	out := make(map[string]bool)
+	if len(variantIDs) == 0 {
+		return out, nil
+	}
+	q := s.db.WithContext(ctx).Model(&InventoryPolicyOverride{}).
+		Distinct("shopify_variant_id").
+		Where("shopify_variant_id IN ?", variantIDs)
+	if openOnly {
+		q = q.Where("released_at IS NULL")
+	} else {
+		q = q.Where("restored_at IS NULL")
+	}
+	var ids []string
+	if err := q.Pluck("shopify_variant_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out, nil
+}
+
+func (s *PostgresStore) ReleaseInventoryPolicyOverrides(ctx context.Context, shipmentID string) error {
+	return s.db.WithContext(ctx).Model(&InventoryPolicyOverride{}).
+		Where("shipment_id = ? AND released_at IS NULL", shipmentID).
+		Update("released_at", time.Now()).Error
+}
+
+func (s *PostgresStore) ListRestorableInventoryPolicyOverrides(ctx context.Context) ([]InventoryPolicyOverride, error) {
+	var rows []InventoryPolicyOverride
+	err := s.db.WithContext(ctx).
+		Where("released_at IS NOT NULL AND restored_at IS NULL").
+		Where(`NOT EXISTS (
+			SELECT 1 FROM preorder_inventory_policy_overrides open_rows
+			WHERE open_rows.shopify_variant_id = preorder_inventory_policy_overrides.shopify_variant_id
+			  AND open_rows.released_at IS NULL)`).
+		Order("created_at ASC").
+		Find(&rows).Error
+	return rows, err
+}
+
+func (s *PostgresStore) MarkInventoryPolicyOverridesRestored(ctx context.Context, variantIDs []string) error {
+	if len(variantIDs) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).Model(&InventoryPolicyOverride{}).
+		Where("shopify_variant_id IN ? AND released_at IS NOT NULL AND restored_at IS NULL", variantIDs).
+		Update("restored_at", time.Now()).Error
 }
 
 // ListAwaitingOrderEditBalances returns groups whose balance edit is committed but unpaid.

@@ -103,6 +103,7 @@ type Store interface {
 	GetUSZipStateAbbr(ctx context.Context, zip string) (string, bool)
 
 	BalanceEditStore
+	InventoryPolicyStore
 	FulfillmentStore
 }
 
@@ -110,7 +111,9 @@ type Store interface {
 // (docs/prd/pre-order-revisi-satu-order.md).
 type BalanceEditStore interface {
 	GetVariantStockRefs(ctx context.Context, shopifyVariantIDs []string) (map[string]VariantStockRef, error)
-	ClaimOrderEditBalance(ctx context.Context, shipmentID string, expectedOutstanding float64) (bool, error)
+	// ClaimOrderEditBalance also records the upfront shipping line the edit folds into the
+	// group's shipping line (0 when it is kept), so an adopted edit knows it too.
+	ClaimOrderEditBalance(ctx context.Context, shipmentID string, expectedOutstanding, shippingDepositFolded float64) (bool, error)
 	ReleaseOrderEditBalanceClaim(ctx context.Context, shipmentID string) error
 	CompleteOrderEditBalance(ctx context.Context, shipmentID string, result OrderEditBalanceResult) error
 	UpdateOrderEditBalanceShipping(ctx context.Context, shipmentID string, expectedOutstanding float64, shippingLineID, paymentURL string) error

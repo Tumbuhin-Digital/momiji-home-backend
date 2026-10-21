@@ -11,6 +11,7 @@ import (
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/platform/shopify"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/preorder"
 	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shared/apierror"
+	"github.com/tumbuhindigi-sys/momiji-home-backend/internal/shipping"
 )
 
 // Pre-order balances billed by editing the deposit order, so one purchase stays one
@@ -97,9 +98,7 @@ func (s *service) requestSecondPaymentByOrderEdit(ctx context.Context, userID st
 	if err != nil {
 		return nil, err
 	}
-	if err := s.checkBatchStock(ctx, lines, location); err != nil {
-		return nil, err
-	}
+	warnings := s.stockWarnings(ctx, lines, location)
 
 	before, err := s.orderEditor.GetOrderBalanceState(ctx, shopifyOrderID)
 	if err != nil {
@@ -117,9 +116,17 @@ func (s *service) requestSecondPaymentByOrderEdit(ctx context.Context, userID st
 		return nil, errShopifyOrderEdit()
 	}
 	shippingTitle := balanceShippingTitle(plan.opts)
-	editPlan, err := planBalanceEdit(lines, calc.LineItems, plan.opts.ShippingPrice, shippingTitle)
+	foldDeposit := foldableShippingDeposit(shipments, plan.prepaidApplied)
+	editPlan, err := planBalanceEdit(lines, calc.LineItems, plan.opts.ShippingPrice, shippingTitle, foldDeposit)
 	if err != nil {
 		return nil, err
+	}
+	folded := 0.0
+	if editPlan.ShippingDeposit != nil {
+		folded = editPlan.ShippingDeposit.Amount
+	} else if foldDeposit > 0 {
+		slog.WarnContext(ctx, "balance edit: upfront shipping line not found at the prepaid amount; keeping it",
+			"order_id", o.ID, "shipment_id", sh.ID, "prepaid", foldDeposit)
 	}
 	totals, err := s.applyBalanceEdit(ctx, calc.ID, editPlan, locationID)
 	if err != nil {
@@ -136,7 +143,7 @@ func (s *service) requestSecondPaymentByOrderEdit(ctx context.Context, userID st
 			fmt.Sprintf("Shopify would bill $%.2f but the app expects $%.2f. Nothing was changed; contact the tech team.", totals.Outstanding, expected))
 	}
 
-	claimed, err := s.store.ClaimOrderEditBalance(ctx, sh.ID, expected)
+	claimed, err := s.store.ClaimOrderEditBalance(ctx, sh.ID, expected, folded)
 	if err != nil {
 		return nil, apierror.ErrInternal
 	}
@@ -164,7 +171,7 @@ func (s *service) requestSecondPaymentByOrderEdit(ctx context.Context, userID st
 		known[shopify.GIDNumericID(l.ID)] = true
 	}
 	shippingLineID := newShippingLineID(before.ShippingLines, after.ShippingLines, shippingTitle)
-	return s.finishOrderEditBalance(ctx, userID, plan, after, known, editPlan.Additions, expected, shippingLineID, locationID)
+	return s.finishOrderEditBalance(ctx, userID, plan, after, known, editPlan.Additions, expected, shippingLineID, locationID, warnings)
 }
 
 // adoptOrderEditBalance finishes an edit that was committed by an earlier request whose save
@@ -216,7 +223,7 @@ func (s *service) adoptOrderEditBalance(ctx context.Context, userID string, plan
 	shippingTitle := balanceShippingTitle(plan.opts)
 	shippingLineID := newShippingLineID(nil, state.ShippingLines, shippingTitle)
 	slog.WarnContext(ctx, "balance edit: adopting an edit committed by an earlier request", "order_id", o.ID, "shipment_id", sh.ID)
-	resp, err := s.finishOrderEditBalance(ctx, userID, plan, state, known, additions, *sh.BalanceExpectedOutstanding, shippingLineID, locationID)
+	resp, err := s.finishOrderEditBalance(ctx, userID, plan, state, known, additions, *sh.BalanceExpectedOutstanding, shippingLineID, locationID, nil)
 	return resp, true, err
 }
 
@@ -233,6 +240,7 @@ func (s *service) finishOrderEditBalance(
 	expected float64,
 	shippingLineID string,
 	locationID string,
+	warnings []string,
 ) (*RequestSecondPaymentResponse, error) {
 	o, sh := plan.order, plan.shipment
 	shopifyOrderID := *o.ShopifyOrderID
@@ -266,11 +274,76 @@ func (s *service) finishOrderEditBalance(
 	}
 
 	s.moveBalanceLinesToLocation(ctx, shopifyOrderID, lines, locationID)
+	// Before anything that can fail: a retry returns the saved link early and would never
+	// get back here.
+	warnings = append(warnings, s.allowOverselling(ctx, sh.ID, additions)...)
 
 	if err := s.markGroupAwaitingSecondPayment(ctx, userID, o.ID, plan.groupItems); err != nil {
 		return nil, err
 	}
-	return &RequestSecondPaymentResponse{InvoiceURL: url}, nil
+	return &RequestSecondPaymentResponse{InvoiceURL: url, StockWarnings: warnings}, nil
+}
+
+// allowOverselling turns on "Sell when out of stock" for the group's products that have it
+// off, so the customer can pay the balance while Shopify stock is short, and records them
+// so it is turned off again once no open balance needs it. Products already on are left
+// alone and never turned off by the app. Problems come back as warnings for the admin.
+func (s *service) allowOverselling(ctx context.Context, shipmentID string, additions []variantAddition) []string {
+	failed := []string{`Could not turn on "Sell when out of stock" in Shopify; the customer may be unable to pay while stock is short.`}
+	var variantIDs []string
+	seen := make(map[string]bool)
+	for _, a := range additions {
+		if !seen[a.ShopifyVariantID] {
+			seen[a.ShopifyVariantID] = true
+			variantIDs = append(variantIDs, a.ShopifyVariantID)
+		}
+	}
+	if len(variantIDs) == 0 {
+		return nil
+	}
+
+	policies, err := s.orderEditor.GetVariantInventoryPolicies(ctx, variantIDs)
+	if err != nil {
+		slog.ErrorContext(ctx, "balance edit: reading sell-when-out-of-stock failed", "shipment_id", shipmentID, "error", err)
+		return failed
+	}
+	// Variants another open balance already turned on are shared, so the setting stays on
+	// until every balance relying on it is paid.
+	appOwned, err := s.store.VariantsWithInventoryPolicyOverride(ctx, variantIDs, false)
+	if err != nil {
+		slog.ErrorContext(ctx, "balance edit: loading sell-when-out-of-stock records failed", "shipment_id", shipmentID, "error", err)
+		return failed
+	}
+
+	var rows []InventoryPolicyOverride
+	toEnable := make(map[string][]string)
+	for _, v := range variantIDs {
+		p, ok := policies[v]
+		if !ok {
+			continue
+		}
+		switch {
+		case p.Policy == shopify.InventoryPolicyDeny:
+			rows = append(rows, InventoryPolicyOverride{ShipmentID: shipmentID, ShopifyVariantID: v, ShopifyProductID: p.ProductID})
+			toEnable[p.ProductID] = append(toEnable[p.ProductID], v)
+		case appOwned[v]:
+			rows = append(rows, InventoryPolicyOverride{ShipmentID: shipmentID, ShopifyVariantID: v, ShopifyProductID: p.ProductID})
+		}
+	}
+	// Record first: a recorded variant that never got switched is only "restored" to the
+	// DENY it already has, while a switched one nobody recorded would stay on for good.
+	if err := s.store.AddInventoryPolicyOverrides(ctx, rows); err != nil {
+		slog.ErrorContext(ctx, "balance edit: saving sell-when-out-of-stock records failed", "shipment_id", shipmentID, "error", err)
+		return failed
+	}
+	for productID, ids := range toEnable {
+		if err := s.orderEditor.SetVariantsInventoryPolicy(ctx, productID, ids, shopify.InventoryPolicyContinue); err != nil {
+			slog.ErrorContext(ctx, "balance edit: turning sell-when-out-of-stock on failed",
+				"shipment_id", shipmentID, "product_id", productID, "error", err)
+			return failed
+		}
+	}
+	return nil
 }
 
 // applyBalanceEdit stages the planned changes in an edit session and returns what the
@@ -322,6 +395,14 @@ func (s *service) applyBalanceEdit(ctx context.Context, calculatedOrderID string
 				". Raise the Shopify price to at least the website price, then request the balance again.")
 	}
 
+	if plan.ShippingDeposit != nil {
+		t, err := s.orderEditor.SetOrderEditQuantity(ctx, calculatedOrderID, plan.ShippingDeposit.CalculatedLineID, 0)
+		if err != nil {
+			slog.ErrorContext(ctx, "balance edit: removing the upfront shipping line failed", "line", plan.ShippingDeposit.CalculatedLineID, "error", err)
+			return nil, errShopifyOrderEdit()
+		}
+		totals = t
+	}
 	if plan.Shipping != nil {
 		_, t, err := s.orderEditor.AddOrderEditShippingLine(ctx, calculatedOrderID, plan.Shipping.Title, plan.Shipping.Amount)
 		if err != nil {
@@ -336,10 +417,10 @@ func (s *service) applyBalanceEdit(ctx context.Context, calculatedOrderID string
 	return totals, nil
 }
 
-// checkBatchStock refuses to bill a balance before the batch stock is recorded at the
-// location the edit takes stock from. Shopify itself only warns and would let the stock go
-// negative.
-func (s *service) checkBatchStock(ctx context.Context, lines []balanceEditLine, location *shopify.LocationRef) error {
+// stockWarnings tells the admin which products Shopify does not have enough stock for at the
+// location the edit takes stock from. It never blocks: the stock is allowed to go negative,
+// and "Sell when out of stock" is turned on so the customer can still pay.
+func (s *service) stockWarnings(ctx context.Context, lines []balanceEditLine, location *shopify.LocationRef) []string {
 	need := make(map[string]int)
 	titles := make(map[string]string)
 	var variantIDs []string
@@ -350,52 +431,52 @@ func (s *service) checkBatchStock(ctx context.Context, lines []balanceEditLine, 
 		}
 		need[l.ShopifyVariantID] += l.Units
 	}
+	if len(variantIDs) == 0 {
+		return nil
+	}
+	notChecked := []string{"Shopify stock could not be checked; it may go negative after this balance."}
 	refs, err := s.store.GetVariantStockRefs(ctx, variantIDs)
 	if err != nil {
-		return apierror.ErrInternal
+		slog.WarnContext(ctx, "balance edit: loading inventory links failed", "error", err)
+		return notChecked
 	}
+	var warnings []string
 	var itemIDs []string
 	for _, v := range variantIDs {
 		ref, ok := refs[v]
 		if !ok || ref.InventoryItemID == "" {
-			return errBalanceEdit("batch_stock_unknown",
-				fmt.Sprintf("%s is missing its Shopify inventory link; sync products and try again", titles[v]))
+			warnings = append(warnings, fmt.Sprintf("%s: stock not checked (no Shopify inventory link).", titles[v]))
+			continue
 		}
 		if ref.Tracked {
 			itemIDs = append(itemIDs, inventoryItemGID(ref.InventoryItemID))
 		}
 	}
 	if len(itemIDs) == 0 {
-		return nil
+		return warnings
 	}
 	levels, err := s.orderEditor.GetInventoryAtLocation(ctx, itemIDs, location.ID)
 	if err != nil {
-		slog.ErrorContext(ctx, "balance edit: stock check failed", "error", err)
-		return errShopifyOrderEdit()
+		slog.WarnContext(ctx, "balance edit: stock check failed", "error", err)
+		return append(warnings, notChecked...)
 	}
-	var short []string
+	name := strings.TrimSpace(location.Name)
+	if name == "" {
+		name = "the Shopify default location"
+	}
 	for _, v := range variantIDs {
-		ref := refs[v]
-		if !ref.Tracked {
+		ref, ok := refs[v]
+		if !ok || !ref.Tracked {
 			continue
 		}
 		level := levels[inventoryItemGID(ref.InventoryItemID)]
-		if !level.Tracked {
+		if !level.Tracked || level.Available >= need[v] {
 			continue
 		}
-		if level.Available < need[v] {
-			short = append(short, fmt.Sprintf("%s: need %d, available %d", titles[v], need[v], level.Available))
-		}
+		warnings = append(warnings, fmt.Sprintf("%s: %d in stock at %s, will be %d after this balance.",
+			titles[v], level.Available, name, level.Available-need[v]))
 	}
-	if len(short) > 0 {
-		name := strings.TrimSpace(location.Name)
-		if name == "" {
-			name = "the Shopify default location"
-		}
-		return errBalanceEdit("batch_stock_not_recorded",
-			fmt.Sprintf("Record the batch stock in Shopify at %s first. %s", name, strings.Join(short, "; ")))
-	}
-	return nil
+	return warnings
 }
 
 // balanceLocation is where a balance edit books its stock: Shopify's primary (default)
@@ -482,7 +563,8 @@ func (s *service) repriceOrderEditBalance(
 	if err != nil {
 		return 0, err
 	}
-	newRemaining := round2(plan.opts.ShippingPrice)
+	// A group that folded the upfront shipping line into its own keeps billing it there.
+	newShipping := round2(plan.opts.ShippingPrice + shipment.BalanceShippingDepositFolded)
 	title := balanceShippingTitle(plan.opts)
 
 	before, err := s.orderEditor.GetOrderBalanceState(ctx, shopifyOrderID)
@@ -518,8 +600,8 @@ func (s *service) repriceOrderEditBalance(
 	} else if storedLineID != "" {
 		slog.WarnContext(ctx, "balance re-price: the group's shipping line was not found on the order", "order_id", o.ID, "shipment_id", shipment.ID)
 	}
-	if newRemaining > 0 {
-		_, t, err := s.orderEditor.AddOrderEditShippingLine(ctx, calc.ID, title, newRemaining)
+	if newShipping > 0 {
+		_, t, err := s.orderEditor.AddOrderEditShippingLine(ctx, calc.ID, title, newShipping)
 		if err != nil {
 			slog.ErrorContext(ctx, "balance re-price: adding new shipping failed", "order_id", o.ID, "error", err)
 			return 0, errShopifyOrderEdit()
@@ -531,7 +613,7 @@ func (s *service) repriceOrderEditBalance(
 		return prepaidApplied, nil
 	}
 
-	expected := round2(before.Outstanding - oldAmount + newRemaining)
+	expected := round2(before.Outstanding - oldAmount + newShipping)
 	if !moneyEqual(totals.Outstanding, expected) {
 		slog.ErrorContext(ctx, "balance re-price: Shopify outstanding differs from app balance; edit discarded",
 			"order_id", o.ID, "shipment_id", shipment.ID, "shopify_outstanding", totals.Outstanding, "expected", expected)
@@ -598,14 +680,25 @@ func balanceEditLines(plan *groupSecondPaymentPlan) ([]balanceEditLine, error) {
 	return out, nil
 }
 
-// balanceShippingTitle names a group's remaining-shipping line; the batch name keeps the
-// lines of different groups apart on one order.
+// balanceShippingTitle names a group's shipping line like a regular order's shipping; the
+// batch name keeps the lines of different groups apart on one order.
 func balanceShippingTitle(opts preorder.GroupInvoiceOptions) string {
-	title := preorder.RemainingShippingLineTitle(opts.ShippingTitle, opts.ShippingPrepaid)
+	title := shipping.CustomerShippingLineTitle(opts.ShippingTitle)
 	if batch := strings.TrimSpace(opts.BatchName); batch != "" {
 		title += " (" + batch + ")"
 	}
 	return title
+}
+
+// foldableShippingDeposit is the checkout shipping prepayment when this group consumes all
+// of it, so its upfront line can give way to one full shipping line. A prepayment shared
+// with other groups keeps the line, since it still pays for them.
+func foldableShippingDeposit(shipments []PreorderShipment, prepaidApplied float64) float64 {
+	pool := PrepaidShippingPool(shipments)
+	if pool <= 0 || !moneyEqual(prepaidApplied, pool) {
+		return 0
+	}
+	return pool
 }
 
 func balanceStaffNote(plan *groupSecondPaymentPlan) string {

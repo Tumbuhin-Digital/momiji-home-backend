@@ -50,11 +50,20 @@ type shippingAddition struct {
 	Amount float64
 }
 
+// shippingDepositRemoval takes the checkout's upfront "Shipping (Pre-Order) - 50%" line off
+// the order. What the customer paid for it is credited back and billed again inside the
+// group's shipping line, so the order shows one full shipping charge like a regular order.
+type shippingDepositRemoval struct {
+	CalculatedLineID string
+	Amount           float64
+}
+
 // balanceEditPlan swaps a group's deposit units for the real product at full price.
 type balanceEditPlan struct {
-	Reductions []depositReduction
-	Additions  []variantAddition
-	Shipping   *shippingAddition
+	Reductions      []depositReduction
+	Additions       []variantAddition
+	ShippingDeposit *shippingDepositRemoval
+	Shipping        *shippingAddition
 	// OutstandingIncrease is how much the edit adds to what the customer owes. Removing a
 	// deposit unit takes its paid price off the order total while the payment stays, so the
 	// increase per unit is the full price minus the deposit actually charged for it.
@@ -82,6 +91,22 @@ func calculatedAttr(line shopify.CalculatedLineItem, key string) string {
 
 func isDepositCalculatedLine(line shopify.CalculatedLineItem) bool {
 	return calculatedAttr(line, preorderDepositAttrType) == preorderDepositAttrValue
+}
+
+// shippingDepositCalculatedLine returns the order's live upfront shipping line, or nil when
+// there is none or more than one.
+func shippingDepositCalculatedLine(calcLines []shopify.CalculatedLineItem) *shopify.CalculatedLineItem {
+	var found *shopify.CalculatedLineItem
+	for i := range calcLines {
+		if calcLines[i].Quantity < 1 || calculatedAttr(calcLines[i], "charge_type") != preorderShippingDepositChargeType {
+			continue
+		}
+		if found != nil {
+			return nil
+		}
+		found = &calcLines[i]
+	}
+	return found
 }
 
 func sameShopifyID(a, b string) bool {
@@ -128,7 +153,11 @@ func findDepositLine(line balanceEditLine, calcLines []shopify.CalculatedLineIte
 
 // planBalanceEdit works out the edit that bills a group's balance on the deposit order.
 // It reads but never changes anything, so every rule is testable without Shopify.
-func planBalanceEdit(lines []balanceEditLine, calcLines []shopify.CalculatedLineItem, remainingShipping float64, shippingTitle string) (*balanceEditPlan, error) {
+//
+// foldDeposit is the checkout shipping prepayment when this group consumes all of it (0
+// otherwise). The upfront shipping line is then removed and its amount added to the
+// group's shipping line; the customer owes the same either way.
+func planBalanceEdit(lines []balanceEditLine, calcLines []shopify.CalculatedLineItem, remainingShipping float64, shippingTitle string, foldDeposit float64) (*balanceEditPlan, error) {
 	plan := &balanceEditPlan{}
 	remainingByDeposit := make(map[string]int)
 	ownerByDeposit := make(map[string]string)
@@ -185,10 +214,21 @@ func planBalanceEdit(lines []balanceEditLine, calcLines []shopify.CalculatedLine
 	}
 	sortReductions(plan.Reductions)
 
-	if shipping := round2(remainingShipping); shipping > 0 {
+	shipping := round2(remainingShipping)
+	if foldDeposit > 0 {
+		// Only when the line still holds exactly that prepayment; otherwise it stays.
+		if line := shippingDepositCalculatedLine(calcLines); line != nil &&
+			moneyEqual(round2(line.DiscountedUnitPrice*float64(line.Quantity)), foldDeposit) {
+			amount := round2(foldDeposit)
+			plan.ShippingDeposit = &shippingDepositRemoval{CalculatedLineID: line.ID, Amount: amount}
+			plan.OutstandingIncrease -= amount
+			shipping = round2(shipping + amount)
+		}
+	}
+	if shipping > 0 {
 		title := strings.TrimSpace(shippingTitle)
 		if title == "" {
-			title = "Shipping - Remaining 50%"
+			title = "Shipping & delivery"
 		}
 		plan.Shipping = &shippingAddition{Title: title, Amount: shipping}
 		plan.OutstandingIncrease += shipping

@@ -50,7 +50,7 @@ func errCode(err error) string {
 func TestPlanBalanceEdit_ReplacesTheDepositAtFullPrice(t *testing.T) {
 	calc := []shopify.CalculatedLineItem{depositCalcLine("gid://shopify/CalculatedLineItem/11", shelfVariant, 3, 175)}
 
-	plan, err := planBalanceEdit([]balanceEditLine{shelfLine(3)}, calc, 86.56, "UPS Ground - Remaining 50%")
+	plan, err := planBalanceEdit([]balanceEditLine{shelfLine(3)}, calc, 86.56, "Shipping & delivery (UPS Ground)", 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestPlanBalanceEdit_ReplacesTheDepositAtFullPrice(t *testing.T) {
 func TestPlanBalanceEdit_MultiBatchReducesTheDepositPartially(t *testing.T) {
 	calc := []shopify.CalculatedLineItem{depositCalcLine("gid://shopify/CalculatedLineItem/11", shelfVariant, 3, 175)}
 
-	plan, err := planBalanceEdit([]balanceEditLine{shelfLine(2)}, calc, 0, "")
+	plan, err := planBalanceEdit([]balanceEditLine{shelfLine(2)}, calc, 0, "", 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestPlanBalanceEdit_StoredLineIDPicksTheDepositLine(t *testing.T) {
 	line := shelfLine(3)
 	line.DepositLineID = "gid://shopify/LineItem/12"
 
-	plan, err := planBalanceEdit([]balanceEditLine{line}, calc, 0, "")
+	plan, err := planBalanceEdit([]balanceEditLine{line}, calc, 0, "", 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestPlanBalanceEdit_RefusesWhatItCannotDoSafely(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := planBalanceEdit(tc.lines, tc.calc, 10, "Shipping")
+			_, err := planBalanceEdit(tc.lines, tc.calc, 10, "Shipping", 0)
 			if got := errCode(err); got != tc.code {
 				t.Fatalf("expected %s, got %q (%v)", tc.code, got, err)
 			}
@@ -172,7 +172,7 @@ func TestPlanBalanceEdit_TwoItemsTwoDepositLines(t *testing.T) {
 		Units: 5, TargetUnitPrice: 289, AppBalance: 722.50,
 	}
 
-	plan, err := planBalanceEdit([]balanceEditLine{shelfLine(3), tote}, calc, 32.92, "Shipping")
+	plan, err := planBalanceEdit([]balanceEditLine{shelfLine(3), tote}, calc, 32.92, "Shipping", 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
