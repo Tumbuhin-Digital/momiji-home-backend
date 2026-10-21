@@ -266,6 +266,12 @@ func (s *service) UpdatePreorderShipping(ctx context.Context, userID, orderID st
 	if shipment != nil && shipment.InvoicePaidAt != nil {
 		return nil, errSecondPaymentAlreadyPaid
 	}
+	// A balance edit whose outcome is still unknown was priced with the current shipping;
+	// changing it now would make finishing that edit save a price Shopify is not billing.
+	if shipment.IsOrderEditBalance() && shipment.InvoiceSentAt == nil {
+		return nil, errBalanceEdit("balance_edit_in_progress",
+			"This group's balance request has not finished yet. Request the balance again to finish it, then change the shipping.")
+	}
 
 	// Final price can be set without a carrier/checkout estimate (LTL freight,
 	// or when ShipStation cannot rate the shipment). Packing is required when
@@ -409,6 +415,9 @@ func (s *service) repriceSecondPaymentInvoice(
 	finalPrice float64,
 	notes string,
 ) (float64, error) {
+	if shipment.IsOrderEditBalance() {
+		return s.repriceOrderEditBalance(ctx, o, batchID, invoiceItems, shipment, finalPrice, notes)
+	}
 	_, draftOrderID := shipmentInvoiceRefs(shipment)
 	if draftOrderID == "" {
 		// Invoices sent before per-group drafts were tracked have no draft to update.
@@ -492,6 +501,7 @@ func (s *service) allPreorderGroupsHaveFinalShipping(ctx context.Context, o *Ord
 }
 
 type groupSecondPaymentPlan struct {
+	order          *Order
 	shipment       *PreorderShipment
 	groupItems     []OrderItem
 	opts           preorder.GroupInvoiceOptions
@@ -505,11 +515,16 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 	if err != nil {
 		return nil, err
 	}
-	if plan.existingURL != "" {
+	// A committed balance edit with no payment link was invoiced by Shopify's own email.
+	if plan.existingURL != "" || plan.shipment.AwaitingOrderEditPayment() {
 		return &RequestSecondPaymentResponse{
 			InvoiceURL:   plan.existingURL,
 			DraftOrderID: plan.existingDraft,
 		}, nil
+	}
+
+	if s.useOrderEditBalance(plan.shipment) {
+		return s.requestSecondPaymentByOrderEdit(ctx, userID, plan)
 	}
 
 	result, err := s.preorderService.CreateGroupSecondPaymentInvoice(ctx, plan.opts)
@@ -522,28 +537,37 @@ func (s *service) RequestSecondPayment(ctx context.Context, userID, orderID stri
 		return nil, apierror.ErrInternal
 	}
 
-	o, err := s.store.GetOrder(ctx, orderID, userID)
-	if err != nil || o == nil {
-		return nil, apierror.ErrInternal
-	}
-	if err := s.store.UpdateOrderStatus(ctx, orderID, "on_progress", o.FinancialStatus, "waiting"); err != nil {
-		return nil, apierror.ErrInternal
-	}
-	for _, it := range plan.groupItems {
-		if err := s.store.UpdateItemStatusByID(ctx, it.ID, "waiting_payment"); err != nil {
-			return nil, apierror.ErrInternal
-		}
-		if it.FulfillmentStep < preOrderStepSecondPayment {
-			if err := s.store.UpdateOrderItemStep(ctx, it.ID, preOrderStepSecondPayment); err != nil {
-				return nil, apierror.ErrInternal
-			}
-		}
+	if err := s.markGroupAwaitingSecondPayment(ctx, userID, orderID, plan.groupItems); err != nil {
+		return nil, err
 	}
 
 	return &RequestSecondPaymentResponse{
 		InvoiceURL:   result.InvoiceURL,
 		DraftOrderID: result.DraftOrderID,
 	}, nil
+}
+
+// markGroupAwaitingSecondPayment moves a group whose balance was just billed to "waiting
+// for payment".
+func (s *service) markGroupAwaitingSecondPayment(ctx context.Context, userID, orderID string, groupItems []OrderItem) error {
+	o, err := s.store.GetOrder(ctx, orderID, userID)
+	if err != nil || o == nil {
+		return apierror.ErrInternal
+	}
+	if err := s.store.UpdateOrderStatus(ctx, orderID, "on_progress", o.FinancialStatus, "waiting"); err != nil {
+		return apierror.ErrInternal
+	}
+	for _, it := range groupItems {
+		if err := s.store.UpdateItemStatusByID(ctx, it.ID, "waiting_payment"); err != nil {
+			return apierror.ErrInternal
+		}
+		if it.FulfillmentStep < preOrderStepSecondPayment {
+			if err := s.store.UpdateOrderItemStep(ctx, it.ID, preOrderStepSecondPayment); err != nil {
+				return apierror.ErrInternal
+			}
+		}
+	}
+	return nil
 }
 
 func (s *service) ResendSecondPaymentInvoice(ctx context.Context, userID, orderID string, req RequestSecondPaymentRequest) error {
@@ -554,6 +578,11 @@ func (s *service) ResendSecondPaymentInvoice(ctx context.Context, userID, orderI
 	plan, err := s.prepareGroupSecondPayment(ctx, userID, orderID, req)
 	if err != nil {
 		return err
+	}
+	if resp.InvoiceURL == "" && plan.shipment.IsOrderEditBalance() {
+		// No payment link came back from Shopify, so its own invoice email is the only way
+		// for the customer to pay the edited order.
+		return s.resendOrderEditInvoice(ctx, plan.order)
 	}
 	return s.preorderService.SendGroupSecondPaymentInvoiceEmail(ctx, plan.opts, resp.InvoiceURL)
 }
@@ -585,7 +614,7 @@ func (s *service) prepareGroupSecondPayment(ctx context.Context, userID, orderID
 	}
 
 	existingURL, _ := shipmentInvoiceRefs(shipment)
-	if existingURL == "" && shipment.InvoiceSentAt != nil {
+	if existingURL == "" && shipment.InvoiceSentAt != nil && !shipment.IsOrderEditBalance() {
 		return nil, apierror.New(http.StatusConflict, "invalid_transition", "Second payment invoice already sent for this group")
 	}
 
@@ -736,6 +765,7 @@ func (s *service) buildGroupSecondPaymentPlan(
 	}
 
 	return &groupSecondPaymentPlan{
+		order:      o,
 		shipment:   shipment,
 		groupItems: groupItems,
 		opts: preorder.GroupInvoiceOptions{

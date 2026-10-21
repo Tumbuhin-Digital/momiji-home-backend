@@ -33,14 +33,72 @@ type PreorderShipment struct {
 	ShopifyDraftOrderID  *string    `gorm:"column:shopify_draft_order_id"`
 	InvoiceURL           *string    `gorm:"column:invoice_url"`
 	InvoicePaidAt        *time.Time `gorm:"column:invoice_paid_at"`
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	// BalanceMethod is how the second payment is billed: nil or BalanceMethodDraftOrder for
+	// a separate draft-order invoice, BalanceMethodOrderEdit for an edit of the deposit order.
+	// An order-edit group with no InvoiceSentAt has an edit in flight whose outcome is unknown.
+	BalanceMethod *string `gorm:"column:balance_method"`
+	// BalanceExpectedOutstanding is what the deposit order must owe once this group's edit is
+	// committed; it identifies a committed edit whose save failed.
+	BalanceExpectedOutstanding *float64 `gorm:"column:balance_expected_outstanding"`
+	// ShopifyShippingLineID is the shipping line the edit added for the remaining shipping.
+	ShopifyShippingLineID *string `gorm:"column:shopify_shipping_line_id"`
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 
 	PackingItems []PreorderPackingItem `gorm:"foreignKey:PreorderShipmentID"`
 }
 
 func (PreorderShipment) TableName() string {
 	return "preorder_shipments"
+}
+
+const (
+	BalanceMethodDraftOrder = "draft_order"
+	BalanceMethodOrderEdit  = "order_edit"
+)
+
+// IsOrderEditBalance reports whether this group's balance is billed by editing the deposit order.
+func (s *PreorderShipment) IsOrderEditBalance() bool {
+	return s != nil && s.BalanceMethod != nil && *s.BalanceMethod == BalanceMethodOrderEdit
+}
+
+// AwaitingOrderEditPayment reports whether this group's balance edit is committed and unpaid.
+func (s *PreorderShipment) AwaitingOrderEditPayment() bool {
+	return s.IsOrderEditBalance() && s.InvoiceSentAt != nil && s.InvoicePaidAt == nil
+}
+
+// PreorderBalanceLine is a real product line that a balance edit added to the deposit order.
+// Lines added by an order edit cannot carry custom attributes, so this row is the only link
+// from the Shopify line back to the app line item it bills.
+type PreorderBalanceLine struct {
+	ID                string  `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	ShipmentID        string  `gorm:"column:shipment_id;not null"`
+	OrderLineItemID   string  `gorm:"column:order_line_item_id;not null"`
+	ShopifyLineItemID string  `gorm:"column:shopify_line_item_id;not null"`
+	Quantity          int     `gorm:"not null"`
+	UnitPrice         float64 `gorm:"column:unit_price;not null"`
+	CreatedAt         time.Time
+}
+
+func (PreorderBalanceLine) TableName() string {
+	return "preorder_balance_lines"
+}
+
+// OrderEditBalanceResult is what a committed balance edit is saved as.
+type OrderEditBalanceResult struct {
+	PaymentURL          string
+	PrepaidApplied      float64
+	ExpectedOutstanding float64
+	ShippingLineID      string
+	Lines               []PreorderBalanceLine
+	SentAt              time.Time
+}
+
+// VariantStockRef identifies a variant's Shopify inventory item.
+type VariantStockRef struct {
+	ShopifyVariantID string
+	InventoryItemID  string
+	Tracked          bool
 }
 
 // PreorderPackingItem stores per-line-item box packing for a pre-order shipment group.

@@ -855,6 +855,17 @@ func (s *service) ExportPreordersToExcel(ctx context.Context, filter SettlementF
 	return buf.Bytes(), nil
 }
 
+// RemainingShippingLineTitle labels a group's remaining shipping charge, for callers outside
+// this package that bill the balance themselves.
+func RemainingShippingLineTitle(method string, prepaid float64) string {
+	return remainingShippingLineTitle(method, prepaid)
+}
+
+// CleanPreorderDisplayTitle recovers the product name from a stored deposit line title.
+func CleanPreorderDisplayTitle(title string) string {
+	return cleanPreorderDisplayTitle(title)
+}
+
 // remainingShippingLineTitle labels the settlement shipping charge. When part of the
 // shipping was already collected at checkout, the line is marked as the remaining half.
 func remainingShippingLineTitle(method string, prepaid float64) string {

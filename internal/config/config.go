@@ -17,6 +17,20 @@ type Config struct {
 	Shopify     ShopifyConfig
 	Email       EmailConfig
 	ShipStation ShipStationConfig
+	Preorder    PreorderConfig
+}
+
+// Pre-order balance billing methods.
+const (
+	PreorderBalanceDraftOrder = "draft_order"
+	PreorderBalanceOrderEdit  = "order_edit"
+)
+
+type PreorderConfig struct {
+	// BalanceMethod bills new pre-order balances as a separate draft-order invoice
+	// (draft_order, default) or as an edit of the deposit order (order_edit). The Shopify
+	// location used for each group is set per warehouse in Settings.
+	BalanceMethod string
 }
 
 type AppConfig struct {
@@ -169,6 +183,16 @@ func Load() (*Config, error) {
 	cfg.ShipStation.GroundServiceCode = os.Getenv("SHIPSTATION_GROUND_SERVICE_CODE")
 	if cfg.ShipStation.GroundServiceCode == "" {
 		cfg.ShipStation.GroundServiceCode = "ups_ground"
+	}
+
+	cfg.Preorder.BalanceMethod = strings.TrimSpace(strings.ToLower(os.Getenv("PREORDER_BALANCE_METHOD")))
+	switch cfg.Preorder.BalanceMethod {
+	case "":
+		cfg.Preorder.BalanceMethod = PreorderBalanceDraftOrder
+	case PreorderBalanceDraftOrder, PreorderBalanceOrderEdit:
+	default:
+		return nil, fmt.Errorf("invalid PREORDER_BALANCE_METHOD %q (use %s or %s)",
+			cfg.Preorder.BalanceMethod, PreorderBalanceDraftOrder, PreorderBalanceOrderEdit)
 	}
 
 	return cfg, nil

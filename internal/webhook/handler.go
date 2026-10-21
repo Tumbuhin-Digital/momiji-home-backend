@@ -24,6 +24,7 @@ func (h *Handler) SetupRoutes(router fiber.Router) {
 	webhooks := router.Group("/webhooks/shopify")
 	webhooks.Use(h.verifyShopifyHMAC)
 	webhooks.Post("/orders/paid", h.withDedupe("orders/paid", h.HandleOrderPaid))
+	webhooks.Post("/orders/updated", h.withDedupe("orders/updated", h.HandleOrderUpdated))
 	webhooks.Post("/inventory_levels/update", h.withDedupe("inventory_levels/update", h.HandleInventoryUpdate))
 	webhooks.Post("/fulfillments/create", h.withDedupe("fulfillments/create", h.HandleFulfillment))
 	webhooks.Post("/fulfillments/update", h.withDedupe("fulfillments/update", h.HandleFulfillment))
@@ -94,6 +95,27 @@ func (h *Handler) HandleOrderPaid(c *fiber.Ctx) error {
 	slog.InfoContext(c.Context(), "Received orders/paid webhook", slog.Int64("order_id", payload.ID), slog.Int("order_number", payload.OrderNumber))
 
 	if err := h.service.HandleOrderPaid(c.Context(), payload); err != nil {
+		return response.Error(c, err)
+	}
+	return c.SendStatus(fiber.StatusOK)
+}
+
+// HandleOrderUpdated godoc
+// @Summary Shopify Order Updated Webhook
+// @Description Detects a pre-order balance paid on an edited deposit order.
+// @Tags Webhooks
+// @Accept json
+// @Produce json
+// @Param request body ShopifyOrderWebhook true "Webhook Payload"
+// @Success 200 "OK"
+// @Router /webhooks/shopify/orders/updated [post]
+func (h *Handler) HandleOrderUpdated(c *fiber.Ctx) error {
+	var payload ShopifyOrderWebhook
+	if err := json.Unmarshal(c.Body(), &payload); err != nil {
+		slog.ErrorContext(c.Context(), "Failed to unmarshal orders/updated payload", slog.Any("error", err))
+		return response.Error(c, err)
+	}
+	if err := h.service.HandleOrderUpdated(c.Context(), payload); err != nil {
 		return response.Error(c, err)
 	}
 	return c.SendStatus(fiber.StatusOK)

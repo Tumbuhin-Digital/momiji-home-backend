@@ -59,6 +59,10 @@ type service struct {
 	preorderService   preorder.PreorderService
 	emailService      email.NotificationService
 	batchService      BatchAllocationService
+
+	// Pre-order balances billed by editing the deposit order; nil editor = draft invoices.
+	orderEditor  shopify.OrderEditor
+	orderEditCfg OrderEditBalanceConfig
 }
 
 type BatchAllocationService interface {

@@ -47,6 +47,8 @@ func (s *PostgresStore) UpsertFulfillmentOrder(ctx context.Context, orderID, sho
 					ShopifyFulfillmentOrderLineItemID: li.ShopifyFulfillmentOrderLineItemID,
 					TotalQuantity:                     li.TotalQuantity,
 					RemainingQuantity:                 li.RemainingQuantity,
+					ShopifyLineItemID:                 optionalString(li.ShopifyLineItemID),
+					Kind:                              optionalString(li.Kind),
 				}
 				if err := tx.Create(&foli).Error; err != nil {
 					return err
@@ -54,11 +56,19 @@ func (s *PostgresStore) UpsertFulfillmentOrder(ctx context.Context, orderID, sho
 			} else if err != nil {
 				return err
 			} else {
-				if err := tx.Model(&foli).Updates(map[string]interface{}{
+				updates := map[string]interface{}{
+					"order_line_item_id": li.OrderLineItemID,
 					"total_quantity":     li.TotalQuantity,
 					"remaining_quantity": li.RemainingQuantity,
 					"updated_at":         time.Now(),
-				}).Error; err != nil {
+				}
+				if li.ShopifyLineItemID != "" {
+					updates["shopify_line_item_id"] = li.ShopifyLineItemID
+				}
+				if li.Kind != "" {
+					updates["kind"] = li.Kind
+				}
+				if err := tx.Model(&foli).Updates(updates).Error; err != nil {
 					return err
 				}
 			}

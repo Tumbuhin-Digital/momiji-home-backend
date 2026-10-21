@@ -26,11 +26,22 @@ type FulfillmentOrderLineItem struct {
 	ShopifyFulfillmentOrderLineItemID   string `gorm:"uniqueIndex"`
 	TotalQuantity                       int
 	RemainingQuantity                   int
-	CreatedAt                           time.Time
-	UpdatedAt                           time.Time
+	// ShopifyLineItemID is the order line this fulfillment order line ships; Kind says
+	// whether that line is the product itself or a money-only deposit line.
+	ShopifyLineItemID *string `gorm:"column:shopify_line_item_id"`
+	Kind              *string `gorm:"column:kind"`
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 func (FulfillmentOrderLineItem) TableName() string { return "fulfillment_order_line_items" }
+
+const (
+	// FOLIKindProduct ships the product itself (a real variant line).
+	FOLIKindProduct = "product"
+	// FOLIKindDeposit is a custom deposit line that only carries money.
+	FOLIKindDeposit = "deposit"
+)
 
 type Fulfillment struct {
 	ID                   string `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
@@ -78,6 +89,8 @@ type SyncedFulfillmentOrderLineItem struct {
 	OrderLineItemID                   string
 	TotalQuantity                     int
 	RemainingQuantity                 int
+	ShopifyLineItemID                 string
+	Kind                              string
 }
 
 type FulfillmentStore interface {

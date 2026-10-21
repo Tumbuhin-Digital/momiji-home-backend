@@ -52,6 +52,9 @@ type OrderItem struct {
 	AmountCharged    *float64
 	BalanceDue       *float64
 	ShopifyOrderID   *string
+	// ShopifyLineItemID is the Shopify line this item was bought on (for pre-order lines,
+	// the deposit line a balance edit reduces). Unset on orders placed before it was stored.
+	ShopifyLineItemID *string
 	TrackingNumber    *string
 	TrackingURL       *string
 	TrackingCompany   *string
@@ -99,5 +102,18 @@ type Store interface {
 	GetVariantDimensions(ctx context.Context, shopifyVariantIDs []string) (map[string]VariantDimensions, error)
 	GetUSZipStateAbbr(ctx context.Context, zip string) (string, bool)
 
+	BalanceEditStore
 	FulfillmentStore
+}
+
+// BalanceEditStore persists pre-order balances billed by editing the deposit order
+// (docs/prd/pre-order-revisi-satu-order.md).
+type BalanceEditStore interface {
+	GetVariantStockRefs(ctx context.Context, shopifyVariantIDs []string) (map[string]VariantStockRef, error)
+	ClaimOrderEditBalance(ctx context.Context, shipmentID string, expectedOutstanding float64) (bool, error)
+	ReleaseOrderEditBalanceClaim(ctx context.Context, shipmentID string) error
+	CompleteOrderEditBalance(ctx context.Context, shipmentID string, result OrderEditBalanceResult) error
+	UpdateOrderEditBalanceShipping(ctx context.Context, shipmentID string, expectedOutstanding float64, shippingLineID, paymentURL string) error
+	GetBalanceLinesByOrderID(ctx context.Context, orderID string) ([]PreorderBalanceLine, error)
+	ListAwaitingOrderEditBalances(ctx context.Context) ([]PreorderShipment, error)
 }

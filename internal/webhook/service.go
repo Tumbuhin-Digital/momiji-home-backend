@@ -27,6 +27,8 @@ import (
 
 type WebhookService interface {
 	HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebhook) error
+	HandleOrderUpdated(ctx context.Context, payload ShopifyOrderWebhook) error
+	ReconcilePendingOrderEditBalances(ctx context.Context) error
 	HandleInventoryUpdate(ctx context.Context, payload ShopifyInventoryLevelWebhook) error
 	HandleFulfillment(ctx context.Context, payload ShopifyFulfillmentWebhook) error
 	HandleProductDelete(ctx context.Context, payload ShopifyProductDeleteWebhook) error
@@ -51,6 +53,7 @@ type service struct {
 	fulfillmentSync  FulfillmentSyncer
 	batchService     BatchAllocator
 	batchLockService BatchLockReleaser
+	orderEditor      shopify.OrderEditor
 }
 
 type BatchAllocator interface {
@@ -438,7 +441,15 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 		slog.InfoContext(ctx, "Reconciling existing Shopify order webhook",
 			slog.String("shopify_order_id", shopifyOrderIDStr),
 			slog.String("order_id", existingOrder.ID))
-		return s.finalizePaidCheckoutOrder(ctx, existingOrder, meta)
+		if err := s.finalizePaidCheckoutOrder(ctx, existingOrder, meta); err != nil {
+			return err
+		}
+		// A deposit order whose balance was billed by an edit becomes paid again here.
+		if err := s.ReconcileOrderEditBalance(ctx, existingOrder); err != nil {
+			slog.WarnContext(ctx, "balance reconciliation after paid webhook failed; the periodic check will retry",
+				slog.String("order_id", existingOrder.ID), slog.Any("error", err))
+		}
+		return nil
 	}
 
 	// 2. Resolve User
@@ -625,17 +636,18 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 			balanceDue := bal
 
 			orderItems = append(orderItems, order.OrderItem{
-				ShopifyVariantID: variant.ShopifyVariantID,
-				Type:             "pre_order",
-				Quantity:         item.Quantity,
-				ItemStatus:       "pending_deposit",
-				FulfillmentStep:  1,
-				FinalAmount:      &finalAmount,
-				DpAmount:         &dpAmount,
-				Title:            &title,
-				UnitPrice:        &unitPrice,
-				AmountCharged:    &amountCharged,
-				BalanceDue:       &balanceDue,
+				ShopifyVariantID:  variant.ShopifyVariantID,
+				ShopifyLineItemID: optionalLineItemGID(item.ID),
+				Type:              "pre_order",
+				Quantity:          item.Quantity,
+				ItemStatus:        "pending_deposit",
+				FulfillmentStep:   1,
+				FinalAmount:       &finalAmount,
+				DpAmount:          &dpAmount,
+				Title:             &title,
+				UnitPrice:         &unitPrice,
+				AmountCharged:     &amountCharged,
+				BalanceDue:        &balanceDue,
 			})
 
 			draftItems = append(draftItems, shopify.DraftOrderLineItem{
@@ -657,15 +669,16 @@ func (s *service) HandleOrderPaid(ctx context.Context, payload ShopifyOrderWebho
 			amountCharged := actualAmountCharged
 
 			orderItems = append(orderItems, order.OrderItem{
-				ShopifyVariantID: variant.ShopifyVariantID,
-				Type:             "ship_ready",
-				Quantity:         item.Quantity,
-				ItemStatus:       "paid", // webhook is orders/paid
-				FulfillmentStep:  1,
-				FinalAmount:      &finalAmount,
-				Title:            &title,
-				UnitPrice:        &unitPrice,
-				AmountCharged:    &amountCharged,
+				ShopifyVariantID:  variant.ShopifyVariantID,
+				ShopifyLineItemID: optionalLineItemGID(item.ID),
+				Type:              "ship_ready",
+				Quantity:          item.Quantity,
+				ItemStatus:        "paid", // webhook is orders/paid
+				FulfillmentStep:   1,
+				FinalAmount:       &finalAmount,
+				Title:             &title,
+				UnitPrice:         &unitPrice,
+				AmountCharged:     &amountCharged,
 			})
 		}
 	}
@@ -817,11 +830,34 @@ func (s *service) HandleFulfillment(ctx context.Context, payload ShopifyFulfillm
 	var flis []order.FulfillmentLineItem
 	var preOrderItemIDs []string
 
+	// Product lines a balance edit added carry the product title, not the deposit title the
+	// item was stored with, so they are matched by line ID first.
+	balanceLineToItem := make(map[string]string)
+	if lines, err := s.orderStore.GetBalanceLinesByOrderID(ctx, o.ID); err != nil {
+		slog.WarnContext(ctx, "Failed to load balance lines for fulfillment webhook", slog.String("order_id", o.ID), slog.Any("error", err))
+	} else {
+		for _, l := range lines {
+			balanceLineToItem[shopify.GIDNumericID(l.ShopifyLineItemID)] = l.OrderLineItemID
+		}
+	}
+
 	for _, li := range payload.LineItems {
 		variantGID := fmt.Sprintf("gid://shopify/ProductVariant/%d", li.VariantID)
 		var itemID string
 		var dbItem order.OrderItem
+		if balanceItemID, ok := balanceLineToItem[strconv.FormatInt(li.ID, 10)]; ok {
+			for _, it := range o.Items {
+				if it.ID == balanceItemID {
+					itemID = it.ID
+					dbItem = it
+					break
+				}
+			}
+		}
 		for _, it := range o.Items {
+			if itemID != "" {
+				break
+			}
 			if it.ShopifyVariantID != variantGID {
 				continue
 			}

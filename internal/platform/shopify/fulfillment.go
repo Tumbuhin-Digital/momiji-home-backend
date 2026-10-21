@@ -12,11 +12,13 @@ type FulfillmentOrderData struct {
 	ID                   string
 	Status               string
 	AssignedLocationName string
+	AssignedLocationID   string
 	LineItems            []FulfillmentOrderLineItemData
 }
 
 type FulfillmentOrderLineItemData struct {
 	ID                string
+	LineItemID        string // the order line item this fulfillment order line ships
 	VariantGID        string
 	LineItemTitle     string
 	TotalQuantity     int
@@ -65,6 +67,7 @@ func (c *clientImpl) FetchFulfillmentOrders(ctx context.Context, shopifyOrderID 
 				  status
 				  assignedLocation {
 					name
+					location { id }
 				  }
 				  lineItems(first: 50) {
 					edges {
@@ -73,6 +76,7 @@ func (c *clientImpl) FetchFulfillmentOrders(ctx context.Context, shopifyOrderID 
 						totalQuantity
 						remainingQuantity
 						lineItem {
+						  id
 						  title
 						  variant {
 							id
@@ -107,7 +111,10 @@ func (c *clientImpl) FetchFulfillmentOrders(ctx context.Context, shopifyOrderID 
 							ID               string `json:"id"`
 							Status           string `json:"status"`
 							AssignedLocation *struct {
-								Name string `json:"name"`
+								Name     string `json:"name"`
+								Location *struct {
+									ID string `json:"id"`
+								} `json:"location"`
 							} `json:"assignedLocation"`
 							LineItems struct {
 								Edges []struct {
@@ -116,6 +123,7 @@ func (c *clientImpl) FetchFulfillmentOrders(ctx context.Context, shopifyOrderID 
 										TotalQuantity     int    `json:"totalQuantity"`
 										RemainingQuantity int    `json:"remainingQuantity"`
 										LineItem          struct {
+											ID      string `json:"id"`
 											Title   string `json:"title"`
 											Variant struct {
 												ID string `json:"id"`
@@ -144,10 +152,14 @@ func (c *clientImpl) FetchFulfillmentOrders(ctx context.Context, shopifyOrderID 
 		}
 		if edge.Node.AssignedLocation != nil {
 			fo.AssignedLocationName = edge.Node.AssignedLocation.Name
+			if edge.Node.AssignedLocation.Location != nil {
+				fo.AssignedLocationID = edge.Node.AssignedLocation.Location.ID
+			}
 		}
 		for _, liEdge := range edge.Node.LineItems.Edges {
 			fo.LineItems = append(fo.LineItems, FulfillmentOrderLineItemData{
 				ID:                liEdge.Node.ID,
+				LineItemID:        liEdge.Node.LineItem.ID,
 				VariantGID:        liEdge.Node.LineItem.Variant.ID,
 				LineItemTitle:     liEdge.Node.LineItem.Title,
 				TotalQuantity:     liEdge.Node.TotalQuantity,

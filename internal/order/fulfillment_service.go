@@ -32,17 +32,40 @@ func (s *service) SyncFulfillmentOrdersFromShopify(ctx context.Context, orderID,
 
 	preOrderVariantToItem := make(map[string]string)
 	preOrderTitleToItem := make(map[string]string)
+	depositLineToItem := make(map[string]string)
+	shipReadyLines := make(map[string]bool)
 	for _, it := range o.Items {
+		lineKey := ""
+		if it.ShopifyLineItemID != nil {
+			lineKey = shopify.GIDNumericID(*it.ShopifyLineItemID)
+		}
 		if it.Type != "pre_order" {
+			if lineKey != "" {
+				shipReadyLines[lineKey] = true
+			}
 			continue
 		}
 		preOrderVariantToItem[it.ShopifyVariantID] = it.ID
 		if it.Title != nil && *it.Title != "" {
 			preOrderTitleToItem[normalizeLineItemTitle(*it.Title)] = it.ID
 		}
+		if lineKey != "" {
+			depositLineToItem[lineKey] = it.ID
+		}
 	}
 	if len(preOrderVariantToItem) == 0 {
 		return nil
+	}
+
+	// Real product lines a balance edit added to this order belong to the pre-order item
+	// they bill; they cannot carry attributes, so the link is stored on our side.
+	balanceLineToItem := make(map[string]string)
+	if lines, err := s.store.GetBalanceLinesByOrderID(ctx, orderID); err != nil {
+		slog.WarnContext(ctx, "failed to load balance lines for fulfillment sync", slog.String("order_id", orderID), slog.Any("error", err))
+	} else {
+		for _, l := range lines {
+			balanceLineToItem[shopify.GIDNumericID(l.ShopifyLineItemID)] = l.OrderLineItemID
+		}
 	}
 
 	fos, err := s.shopClient.FetchFulfillmentOrders(ctx, shopifyOrderID)
@@ -51,24 +74,41 @@ func (s *service) SyncFulfillmentOrdersFromShopify(ctx context.Context, orderID,
 		return err
 	}
 
-	resolveItemID := func(li shopify.FulfillmentOrderLineItemData) (string, bool) {
+	resolveItemID := func(li shopify.FulfillmentOrderLineItemData) (itemID, kind string, ok bool) {
+		lineKey := shopify.GIDNumericID(li.LineItemID)
+		if lineKey != "" {
+			if id, found := balanceLineToItem[lineKey]; found {
+				return id, FOLIKindProduct, true
+			}
+			if id, found := depositLineToItem[lineKey]; found {
+				return id, FOLIKindDeposit, true
+			}
+			if shipReadyLines[lineKey] {
+				return "", "", false
+			}
+		}
+		if draftAttrValue(li.CustomAttributes, "type") == preorderDepositAttrValue {
+			if id, found := preOrderVariantToItem[draftAttrValue(li.CustomAttributes, preorderVariantRefAttr)]; found {
+				return id, FOLIKindDeposit, true
+			}
+		}
 		if li.VariantGID != "" {
-			if itemID, ok := preOrderVariantToItem[li.VariantGID]; ok {
-				return itemID, true
+			if id, found := preOrderVariantToItem[li.VariantGID]; found {
+				return id, FOLIKindProduct, true
 			}
 		}
 		if li.LineItemTitle != "" {
-			if itemID, ok := preOrderTitleToItem[normalizeLineItemTitle(li.LineItemTitle)]; ok {
-				return itemID, true
+			if id, found := preOrderTitleToItem[normalizeLineItemTitle(li.LineItemTitle)]; found {
+				return id, FOLIKindDeposit, true
 			}
 		}
-		return "", false
+		return "", "", false
 	}
 
 	for _, fo := range fos {
 		var synced []SyncedFulfillmentOrderLineItem
 		for _, li := range fo.LineItems {
-			itemID, ok := resolveItemID(li)
+			itemID, kind, ok := resolveItemID(li)
 			if !ok {
 				continue
 			}
@@ -77,6 +117,8 @@ func (s *service) SyncFulfillmentOrdersFromShopify(ctx context.Context, orderID,
 				OrderLineItemID:                   itemID,
 				TotalQuantity:                     li.TotalQuantity,
 				RemainingQuantity:                 li.RemainingQuantity,
+				ShopifyLineItemID:                 li.LineItemID,
+				Kind:                              kind,
 			})
 		}
 		if len(synced) == 0 {
@@ -173,6 +215,10 @@ func (s *service) CreatePreorderFulfillment(ctx context.Context, userID, orderID
 	folis, err := s.store.GetFOLIByOrderLineItemIDs(ctx, orderID, lineItemIDs)
 	if err != nil {
 		return nil, apierror.ErrInternal
+	}
+	folis, err = s.groupFulfillmentLines(ctx, orderID, req.BatchID, folis)
+	if err != nil {
+		return nil, err
 	}
 	foliByLineItem := pickBestFOLIByLineItem(folis)
 
@@ -399,6 +445,55 @@ func hasChargeType(attrs []shopify.AttributeInput, chargeType string) bool {
 		}
 	}
 	return false
+}
+
+// groupFulfillmentLines narrows the fulfillment order lines to the ones this group ships.
+// A group billed by order edit ships the real product lines its edit added, never a
+// deposit line. Other groups never take a line an edit added for another group: one item
+// split across batches has one product line per batch, and the most-remaining line would
+// otherwise win.
+func (s *service) groupFulfillmentLines(ctx context.Context, orderID string, batchID *string, folis []FulfillmentOrderLineItem) ([]FulfillmentOrderLineItem, error) {
+	lines, err := s.store.GetBalanceLinesByOrderID(ctx, orderID)
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	if len(lines) == 0 {
+		return folis, nil
+	}
+	shipment, err := s.store.GetPreorderShipmentByBatch(ctx, orderID, normalizeBatchIDPtr(batchID))
+	if err != nil {
+		return nil, apierror.ErrInternal
+	}
+	lineShipment := make(map[string]string, len(lines))
+	for _, l := range lines {
+		lineShipment[shopify.GIDNumericID(l.ShopifyLineItemID)] = l.ShipmentID
+	}
+	shipmentOf := func(f FulfillmentOrderLineItem) string {
+		if f.ShopifyLineItemID == nil {
+			return ""
+		}
+		return lineShipment[shopify.GIDNumericID(*f.ShopifyLineItemID)]
+	}
+
+	out := make([]FulfillmentOrderLineItem, 0, len(folis))
+	if shipment.IsOrderEditBalance() {
+		for _, f := range folis {
+			if shipmentOf(f) == shipment.ID {
+				out = append(out, f)
+			}
+		}
+		if len(out) == 0 {
+			return nil, apierror.New(http.StatusConflict, "balance_lines_not_synced",
+				"The product lines for this group were not found on the Shopify order yet. Refresh and try again.")
+		}
+		return out, nil
+	}
+	for _, f := range folis {
+		if shipmentOf(f) == "" {
+			out = append(out, f)
+		}
+	}
+	return out, nil
 }
 
 // pickBestFOLIByLineItem keeps the FOLI with the highest remaining quantity per line.

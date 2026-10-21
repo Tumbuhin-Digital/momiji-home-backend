@@ -165,6 +165,22 @@ func main() {
 	}); ok {
 		setter.SetStockLockStore(stockLockStore)
 	}
+	// Pre-order balances billed on the deposit order (docs/prd/pre-order-revisi-satu-order.md).
+	// The editor is wired whatever PREORDER_BALANCE_METHOD says, so balances already billed by
+	// an edit keep being reconciled and shipped after switching back to draft invoices.
+	if editor, ok := shopifyClient.(shopify.OrderEditor); ok {
+		if setter, ok := orderService.(interface {
+			SetOrderEditBalance(shopify.OrderEditor, order.OrderEditBalanceConfig)
+		}); ok {
+			setter.SetOrderEditBalance(editor, order.OrderEditBalanceConfig{
+				Enabled: cfg.Preorder.BalanceMethod == config.PreorderBalanceOrderEdit,
+			})
+		}
+		if setter, ok := webhookService.(interface{ SetOrderEditor(shopify.OrderEditor) }); ok {
+			setter.SetOrderEditor(editor)
+		}
+	}
+	log.Info("Pre-order balance billing", slog.String("method", cfg.Preorder.BalanceMethod))
 	dashboardService := dashboard.NewDashboardService(dashboardStore)
 	settingsService := settings.NewSettingsService(settingsStore)
 
@@ -239,6 +255,13 @@ func main() {
 		log.Info("Cleaning expired stock locks")
 		_ = stockLockService.CleanExpiredLocks(ctx)
 		_ = batchLockService.CleanExpiredBatchLocks(ctx)
+	})
+
+	// Backs up the webhooks that mark a pre-order balance paid on an edited deposit order.
+	scheduler.StartIntervalJob(context.Background(), 15*time.Minute, func(ctx context.Context) {
+		if err := webhookService.ReconcilePendingOrderEditBalances(ctx); err != nil {
+			log.Warn("Pre-order balance reconciliation failed", slog.Any("error", err))
+		}
 	})
 
 	// Start server in a separate goroutinee
